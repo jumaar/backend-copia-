@@ -1,10 +1,24 @@
-import { IsString, IsNotEmpty, MinLength, IsIn, IsEmail } from 'class-validator';
-import { ROLES } from '../../config/roles.config';
+import { IsString, IsNotEmpty, MinLength, IsEmail, IsNumber, IsOptional } from 'class-validator';
 
 export class CreateUserDto {
   @IsString()
   @IsNotEmpty()
+  nombre_usuario: string;
+
+  @IsString()
+  @IsOptional()
+  apellido_usuario?: string;
+
+  @IsString()
+  @IsNotEmpty()
+  identificacion_usuario: string;
+
+  @IsNumber()
+  @IsNotEmpty()
+  celular: number;
+
   @IsEmail()
+  @IsNotEmpty()
   email: string;
 
   @IsString()
@@ -12,10 +26,9 @@ export class CreateUserDto {
   @MinLength(6, { message: 'La contraseña debe tener al menos 6 caracteres' })
   password: string;
 
-  @IsString()
+  @IsNumber()
   @IsNotEmpty()
-  @IsIn(Object.values(ROLES))
-  role: string;
+  id_rol: number;
 
   @IsString()
   @IsNotEmpty()

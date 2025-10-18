@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
   output   = "../generated/prisma"
@@ -14,10 +11,197 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id    Int     @id @default(autoincrement())
-  email String  @unique
-  name  String?
+model ROLES {
+  id_rol     Int        @id @default(autoincrement())
+  nombre_rol String?
+  usuarios   USUARIOS[]
+}
 
-  @@map("users")
+model USUARIOS {
+  id_usuario             Int             @id @default(autoincrement())
+  nombre_usuario         String
+  apellido_usuario       String?
+  identificacion_usuario String          @unique
+  celular                Decimal         @unique
+  email                  String          @unique
+  contraseña            String
+  activo                 Boolean
+  fecha_creacion         DateTime        @default(now())
+  fecha_ultima_modifi    DateTime        @updatedAt
+  id_rol                 Int
+  rol                    ROLES           @relation(fields: [id_rol], references: [id_rol])
+  tiendas                TIENDAS[]
+  frigorificos           FRIGORIFICO[]
+  logisticas             LOGISTICA[]
+  proveedores            PROVEEDORES[]
+  transacciones          TRANSACCIONES[]
+}
+
+model DEPARTAMENTO {
+  id__departamento    Int      @id @default(autoincrement())
+  nombre_departamento String?
+  ciudades            CIUDAD[]
+}
+
+model CIUDAD {
+  id_ciudad        Int          @id @default(autoincrement())
+  nombre_ciudad    String?
+  id__departamento Int
+  departamento     DEPARTAMENTO @relation(fields: [id__departamento], references: [id__departamento])
+  tiendas          TIENDAS[]
+}
+
+model TIENDAS {
+  id_tienda     Int       @id @default(autoincrement())
+  id_usuario    Int
+  nombre_tienda String
+  direccion     String    @unique
+  id_ciudad     Int
+  usuario       USUARIOS  @relation(fields: [id_usuario], references: [id_usuario])
+  ciudad        CIUDAD    @relation(fields: [id_ciudad], references: [id_ciudad])
+  neveras       NEVERAS[]
+}
+
+model FRIGORIFICO {
+  id_frigorifico     Int        @id @default(autoincrement())
+  id_usuario         Int
+  nombre_frigorifico String
+  direccion          String     @unique
+  usuario            USUARIOS   @relation(fields: [id_usuario], references: [id_usuario])
+  empaques           EMPAQUES[]
+}
+
+model LOGISTICA {
+  id_logistica   Int        @id @default(autoincrement())
+  id_usuario     Int
+  nombre_empresa String
+  placa_vehiculo String     @unique
+  usuario        USUARIOS   @relation(fields: [id_usuario], references: [id_usuario])
+  empaques       EMPAQUES[]
+}
+
+model ESTADO_NEVERA {
+  id_estado_nevera Int      @id @default(autoincrement())
+  estado_nevera    String
+  neveras          NEVERAS[]
+}
+
+model NEVERAS {
+  fridge_id        Int                  @id @default(autoincrement())
+  contraseña       String
+  id_estado_nevera Int                  @unique
+  id_tienda        Int
+  version_software Decimal
+  ultima_conexion  DateTime?
+  tienda           TIENDAS              @relation(fields: [id_tienda], references: [id_tienda])
+  estadoNevera     ESTADO_NEVERA        @relation(fields: [id_estado_nevera], references: [id_estado_nevera])
+  empaques         EMPAQUES[]
+  temperaturas     TEMPERATURA_NEVERA[]
+}
+
+model PRODUCTOS {
+  id_producto                   Int        @id @default(autoincrement())
+  nombre_producto               String
+  descripcion                   String?
+  precio_venta_por_gramo_actual Decimal
+  precio_costo_por_gramo_actual Decimal
+  empaques                      EMPAQUES[]
+}
+
+model ESTADO_LOTE {
+  estado_lote   Int        @id @default(autoincrement())
+  nombre_estado String?
+  empaques      EMPAQUES[]
+}
+
+model PROMOCIONES {
+  id_promocion  Int             @id @default(autoincrement())
+  nombre        String?
+  tipo          String?
+  valor         Decimal
+  condiciones   Json
+  fecha_inicio  DateTime?
+  fecha_fin     DateTime?
+  activo        Boolean
+  empaques      EMPAQUES[]
+  transacciones TRANSACCIONES[]
+}
+
+model EMPAQUES {
+  id_empaque                  Int             @id @default(autoincrement())
+  EPC_id                      String          @unique
+  fecha_empaque_1             DateTime?
+  id_frigorifico              Int
+  id_producto                 Int
+  peso_exacto                 Decimal
+  costo_frigorifico_congelado Decimal
+  precio_venta_congelado      Decimal
+  fecha_vencimiento           DateTime?       @db.Date
+  hora_en_logistica_2         DateTime?
+  id_logistica                Int
+  fridge_id                   Int
+  hora_en_nevera_3            DateTime?
+  hora_pendiente_pago_4       DateTime?
+  hora_para_cambio_5          DateTime?
+  fridge_id_final             Int?
+  hora_surtido_final_6        DateTime?
+  fecha_finalizacion_7_8      DateTime?
+  estado_lote                 Int
+  promocion                   Int?
+  frigorifico                 FRIGORIFICO     @relation(fields: [id_frigorifico], references: [id_frigorifico])
+  producto                    PRODUCTOS       @relation(fields: [id_producto], references: [id_producto])
+  logistica                   LOGISTICA       @relation(fields: [id_logistica], references: [id_logistica])
+  nevera                      NEVERAS         @relation(fields: [fridge_id], references: [fridge_id], map: "fridge_id")
+  estadoLote                  ESTADO_LOTE     @relation(fields: [estado_lote], references: [estado_lote])
+  promocionRel                PROMOCIONES?    @relation(fields: [promocion], references: [id_promocion], map: "promocion")
+  transacciones               TRANSACCIONES[]
+}
+
+model TEMPERATURA_NEVERA {
+  id_estatus_code Int      @id @default(autoincrement())
+  id_nevera       Int
+  temperatura     Decimal
+  fecha_lectura   DateTime @default(now())
+  nevera          NEVERAS  @relation(fields: [id_nevera], references: [fridge_id])
+}
+
+model TIPO_TRANSACCION {
+  id_tipo              Int             @id @default(autoincrement())
+  nombre_codigo        String
+  descripcion_amigable String?
+  transacciones        TRANSACCIONES[]
+}
+
+model ESTADO_TRANSACCION {
+  id_estado_transaccion Int             @id @default(autoincrement())
+  nombre_estado         String
+  transacciones         TRANSACCIONES[]
+}
+
+model TRANSACCIONES {
+  id_transaccion      Int                @id @default(autoincrement())
+  id_empaque          Int?
+  id_usuario          Int
+  id_transaccion_rel  Int?
+  monto               Decimal
+  hora_transaccion    DateTime?
+  descripcion         String?
+  estado_transaccion  Int
+  id_tipo_transaccion Int
+  promocion_id        Int?
+  empaque             EMPAQUES?          @relation(fields: [id_empaque], references: [id_empaque])
+  usuario             USUARIOS           @relation(fields: [id_usuario], references: [id_usuario])
+  transaccionRel      TRANSACCIONES?     @relation("TransaccionRel", fields: [id_transaccion_rel], references: [id_transaccion])
+  transacciones       TRANSACCIONES[]    @relation("TransaccionRel")
+  estadoTransaccion   ESTADO_TRANSACCION @relation(fields: [estado_transaccion], references: [id_estado_transaccion])
+  tipoTransaccion     TIPO_TRANSACCION   @relation(fields: [id_tipo_transaccion], references: [id_tipo])
+  promocion           PROMOCIONES?       @relation(fields: [promocion_id], references: [id_promocion])
+}
+
+model PROVEEDORES {
+  id_proveedor     Int      @id @default(autoincrement())
+  id_usuario       Int
+  nombre_proveedor String
+  nit              String   @unique
+  usuario          USUARIOS @relation(fields: [id_usuario], references: [id_usuario])
 }
