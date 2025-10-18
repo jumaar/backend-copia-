@@ -1,0 +1,15 @@
+export const ROLES = {
+  SUPER_ADMIN: 'super_admin',
+  ADMIN: 'admin',
+  FRIGORIFICO: 'frigorifico',
+  LOGISTICA: 'logistica',
+  TIENDA: 'tienda',
+};
+
+export const creationPermissions = {
+  [ROLES.SUPER_ADMIN]: [ROLES.ADMIN, ROLES.FRIGORIFICO, ROLES.LOGISTICA, ROLES.TIENDA],
+  [ROLES.ADMIN]: [ROLES.FRIGORIFICO, ROLES.LOGISTICA, ROLES.TIENDA],
+  [ROLES.FRIGORIFICO]: [ROLES.TIENDA],
+  [ROLES.LOGISTICA]: [ROLES.TIENDA],
+  [ROLES.TIENDA]: [],
+};
