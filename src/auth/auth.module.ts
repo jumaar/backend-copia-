@@ -7,6 +7,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { TurnstileService } from './services/turnstile.service';
 import { DatabaseModule } from '../database/database.module';
+import { RegistrationTokensModule } from '../registration-tokens/registration-tokens.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { DatabaseModule } from '../database/database.module';
         signOptions: { expiresIn: '1d' },
       }),
     }),
+    RegistrationTokensModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, TurnstileService],

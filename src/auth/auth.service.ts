@@ -10,6 +10,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
 import { TurnstileService } from './services/turnstile.service';
 import { DatabaseService } from '../database/database.service';
+import { RegistrationTokensService } from '../registration-tokens/registration-tokens.service';
 
 @Injectable()
 export class AuthService {
@@ -17,6 +18,7 @@ export class AuthService {
     private databaseService: DatabaseService,
     private jwtService: JwtService,
     private turnstileService: TurnstileService,
+    private registrationTokensService: RegistrationTokensService,
   ) {}
 
   async login(loginDto: LoginDto) {
@@ -46,7 +48,9 @@ export class AuthService {
   }
 
   async createUser(createUserDto: CreateUserDto) {
-    const { email, password, turnstileToken, ...restCreateUserDto } = createUserDto;
+    const { email, password, turnstileToken, registrationToken, ...restCreateUserDto } = createUserDto;
+
+    const token = await this.registrationTokensService.validateToken(registrationToken);
 
     const isValidTurnstile = await this.turnstileService.verifyToken(turnstileToken);
     if (!isValidTurnstile) {
@@ -63,14 +67,23 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    const userData: any = {
+      email,
+      contraseña: hashedPassword,
+      activo: true,
+      id_rol: token.id_rol_nuevo_usuario,
+    };
+
+    if (restCreateUserDto.nombre_usuario) userData.nombre_usuario = restCreateUserDto.nombre_usuario;
+    if (restCreateUserDto.apellido_usuario) userData.apellido_usuario = restCreateUserDto.apellido_usuario;
+    if (restCreateUserDto.identificacion_usuario) userData.identificacion_usuario = restCreateUserDto.identificacion_usuario;
+    if (restCreateUserDto.celular) userData.celular = restCreateUserDto.celular;
+
     const user = await this.databaseService.uSUARIOS.create({
-      data: {
-        ...restCreateUserDto,
-        email,
-        contraseña: hashedPassword,
-        activo: true, // O el valor por defecto que prefieras
-      },
+      data: userData,
     });
+
+    await this.registrationTokensService.markTokenAsUsed(registrationToken, user.id_usuario);
 
     const { contraseña, ...result } = user;
     return {

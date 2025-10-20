@@ -5,30 +5,40 @@ import {
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { creationPermissions } from '../../config/roles.config';
+import { PrismaClient } from '../../../generated/prisma';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  private prisma = new PrismaClient();
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
-    const user = request.user;
-    const { role: roleToCreate } = request.body;
+    const user = request.user; // Viene del JwtAuthGuard
+    const { id_rol: roleToCreate } = request.body;
+
+    if (!user || !user.roleId) {
+      throw new ForbiddenException('No se pudo determinar el rol del usuario.');
+    }
 
     if (!roleToCreate) {
       throw new BadRequestException('El rol del nuevo usuario es requerido.');
     }
 
-    const allowedRolesToCreate = creationPermissions[user.role];
+    const permission = await this.prisma.pERMISOS_ROLES.findUnique({
+      where: {
+        id_rol_creador_id_rol_creable: {
+          id_rol_creador: user.roleId,
+          id_rol_creable: roleToCreate,
+        },
+      },
+    });
 
-    if (allowedRolesToCreate && allowedRolesToCreate.includes(roleToCreate)) {
+    if (permission) {
       return true;
     }
 
     throw new ForbiddenException(
-      `El rol '${user.role}' no tiene permiso para crear usuarios con el rol '${roleToCreate}'.`,
+      `No tienes permiso para crear usuarios con el rol especificado.`,
     );
   }
 }

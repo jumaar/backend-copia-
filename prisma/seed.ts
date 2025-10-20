@@ -24,7 +24,41 @@ async function main() {
   }
   console.log('✅ Roles creados');
 
-  // 2. USUARIOS
+  // 2. PERMISOS DE ROLES
+  console.log('🔒 Creando permisos de roles...');
+  const permissions = [
+    // Super Admin puede crear Admin, Frigorifico, Logistica, Tienda
+    { id_rol_creador: 1, id_rol_creable: 1 }, // Super Admin -> Super Admin
+    { id_rol_creador: 1, id_rol_creable: 2 }, // Super Admin -> Admin
+    { id_rol_creador: 1, id_rol_creable: 3 }, // Super Admin -> Frigorifico
+    { id_rol_creador: 1, id_rol_creable: 4 }, // Super Admin -> Logistica
+    { id_rol_creador: 1, id_rol_creable: 5 }, // Super Admin -> Tienda
+    // Admin puede crear otro Admin, Frigorifico, Logistica, Tienda
+    { id_rol_creador: 2, id_rol_creable: 2 }, // Admin -> Admin
+    { id_rol_creador: 2, id_rol_creable: 3 }, // Admin -> Frigorifico
+    { id_rol_creador: 2, id_rol_creable: 4 }, // Admin -> Logistica
+    { id_rol_creador: 2, id_rol_creable: 5 }, // Admin -> Tienda
+    // Frigorifico no puede crear nada
+    // Logistica puede crear Tienda
+    { id_rol_creador: 4, id_rol_creable: 5 },
+    // Tienda no puede crear nada
+  ];
+
+  for (const p of permissions) {
+    await prisma.pERMISOS_ROLES.upsert({
+      where: {
+        id_rol_creador_id_rol_creable: {
+          id_rol_creador: p.id_rol_creador,
+          id_rol_creable: p.id_rol_creable,
+        },
+      },
+      update: {},
+      create: p,
+    });
+  }
+  console.log('✅ Permisos de roles creados');
+
+  // 3. USUARIOS
   console.log('👤 Creando usuarios...');
   const hashedPassword = await import('bcryptjs').then(bcrypt => bcrypt.hash('21621234"#$#$4234234', 10));
 
@@ -40,50 +74,6 @@ async function main() {
       activo: true,
       id_rol: 1,
     },
-    {
-      id_usuario: 2,
-      nombre_usuario: 'evaristo',
-      apellido_usuario: 'evaristo',
-      identificacion_usuario: '1322624162',
-      celular: 3214568799,
-      email: 'hhhhh@mail.com',
-      contraseña: hashedPassword,
-      activo: true,
-      id_rol: 3,
-    },
-    {
-      id_usuario: 3,
-      nombre_usuario: 'hoffman',
-      apellido_usuario: 'hoffman',
-      identificacion_usuario: '3244654665',
-      celular: 3214565674,
-      email: 'ggggg@mail.com',
-      contraseña: hashedPassword,
-      activo: true,
-      id_rol: 2,
-    },
-    {
-      id_usuario: 4,
-      nombre_usuario: 'emanuel',
-      apellido_usuario: 'emanuel',
-      identificacion_usuario: '6546246546',
-      celular: 3214568793,
-      email: 'sssss@mail.com',
-      contraseña: hashedPassword,
-      activo: true,
-      id_rol: 4,
-    },
-    {
-      id_usuario: 5,
-      nombre_usuario: 'oscar',
-      apellido_usuario: 'oscar',
-      identificacion_usuario: '8979466320',
-      celular: 3214568791,
-      email: 'zzzzz@mail.com',
-      contraseña: hashedPassword,
-      activo: true,
-      id_rol: 5,
-    },
   ];
 
   for (const usuario of usuarios) {
@@ -95,7 +85,7 @@ async function main() {
   }
   console.log('✅ Usuarios creados');
 
-  // 3. DEPARTAMENTO
+  // 4. DEPARTAMENTO
   console.log('🏔️ Creando departamentos...');
   const departamentos = [
     { id__departamento: 1, nombre_departamento: 'Risaralda' },
@@ -113,7 +103,7 @@ async function main() {
   }
   console.log('✅ Departamentos creados');
 
-  // 4. CIUDAD
+  // 5. CIUDAD
   console.log('🏙️ Creando ciudades...');
   const ciudades = [
     { id_ciudad: 1, nombre_ciudad: 'Santa Rosa De Cabal', id__departamento: 1 },
@@ -130,127 +120,8 @@ async function main() {
     });
   }
   console.log('✅ Ciudades creadas');
-
-  // 5. ESTADO_LOTE
-  console.log('📦 Creando estados de lote...');
-  const estadosLote = [
-    { estado_lote: 1, nombre_estado: 'EN FRIGORIFICO' },
-    { estado_lote: 2, nombre_estado: 'EN LOGISTICA' },
-    { estado_lote: 3, nombre_estado: 'EN NEVERA' },
-    { estado_lote: 4, nombre_estado: 'PENDIENTE PAGO' },
-    { estado_lote: 5, nombre_estado: 'PARA CAMBIO' },
-    { estado_lote: 6, nombre_estado: 'EN LOGISTICA PRIORIDAD' },
-    { estado_lote: 7, nombre_estado: 'VENCIDO/PERDIDA' },
-    { estado_lote: 8, nombre_estado: 'FINALIZADO CON EXITO' },
-  ];
-
-  for (const estado of estadosLote) {
-    await prisma.eSTADO_LOTE.upsert({
-      where: { estado_lote: estado.estado_lote },
-      update: {},
-      create: estado,
-    });
-  }
-  console.log('✅ Estados de lote creados');
-
-  // 6. TIPO_TRANSACCION
-  console.log('💰 Creando tipos de transacción...');
-  const tiposTransaccion = [
-    { id_tipo: 1, nombre_codigo: 'venta', descripcion_amigable: 'Venta de empaque a tienda' },
-    { id_tipo: 2, nombre_codigo: 'costo_frigorifico', descripcion_amigable: 'Deuda de logística con frigorífico' },
-    { id_tipo: 3, nombre_codigo: 'ticket_consolidado', descripcion_amigable: 'Ticket de cobro a tienda' },
-    { id_tipo: 4, nombre_codigo: 'pago_recibido', descripcion_amigable: 'Dinero recibido de un deudor' },
-    { id_tipo: 5, nombre_codigo: 'pago_realizado', descripcion_amigable: 'Dinero entregado a un acreedor' },
-    { id_tipo: 6, nombre_codigo: 'devolucion', descripcion_amigable: 'Anulación de una venta' },
-    { id_tipo: 7, nombre_codigo: 'perdida_vencimiento', descripcion_amigable: 'Ajuste por producto vencido' },
-    { id_tipo: 8, nombre_codigo: 'gasto_operativo', descripcion_amigable: 'Gasto (ej. gasolina)' },
-  ];
-
-  for (const tipo of tiposTransaccion) {
-    await prisma.tIPO_TRANSACCION.upsert({
-      where: { id_tipo: tipo.id_tipo },
-      update: {},
-      create: tipo,
-    });
-  }
-  console.log('✅ Tipos de transacción creados');
-
-  // 7. ESTADO_TRANSACCION
-  console.log('📊 Creando estados de transacción...');
-  const estadosTransaccion = [
-    { id_estado_transaccion: 1, nombre_estado: 'PENDIENTE' },
-    { id_estado_transaccion: 2, nombre_estado: 'PAGADO' },
-    { id_estado_transaccion: 3, nombre_estado: 'ANULADO' },
-    { id_estado_transaccion: 4, nombre_estado: 'CONSOLIDADO' },
-  ];
-
-  for (const estado of estadosTransaccion) {
-    await prisma.eSTADO_TRANSACCION.upsert({
-      where: { id_estado_transaccion: estado.id_estado_transaccion },
-      update: {},
-      create: estado,
-    });
-  }
-  console.log('✅ Estados de transacción creados');
-
-  // 8. PROMOCIONES
-  console.log('🎉 Creando promociones...');
-  const promociones = [
-    { id_promocion: 1, nombre: '20% Descuento', tipo: 'PORCENTAJE', valor: 20.0, condiciones: {}, activo: true },
-    { id_promocion: 2, nombre: '2x1 (50% en 2da unidad)', tipo: 'BOGOF', valor: 50.0, condiciones: {}, activo: true },
-    { id_promocion: 3, nombre: '50% Descuento', tipo: 'PORCENTAJE', valor: 50.0, condiciones: {}, activo: true },
-    { id_promocion: 4, nombre: 'Liquidación Total', tipo: 'PORCENTAJE', valor: 80.0, condiciones: {}, activo: true },
-  ];
-
-  for (const promocion of promociones) {
-    await prisma.pROMOCIONES.upsert({
-      where: { id_promocion: promocion.id_promocion },
-      update: {},
-      create: promocion,
-    });
-  }
-  console.log('✅ Promociones creadas');
-
-  // 9. PRODUCTOS
-  console.log('📦 Creando productos...');
-  const productos = [
-    { id_producto: 1, nombre_producto: 'lomo cerdo', descripcion: 'lomo cerdo', precio_venta_por_gramo_actual: 10000, precio_costo_por_gramo_actual: 9500 },
-    { id_producto: 2, nombre_producto: 'lomo cerdo', descripcion: 'lomo cerdo', precio_venta_por_gramo_actual: 2500, precio_costo_por_gramo_actual: 2375 },
-    { id_producto: 3, nombre_producto: 'costilla cerdo', descripcion: 'costilla cerdo', precio_venta_por_gramo_actual: 2500, precio_costo_por_gramo_actual: 2450 },
-    { id_producto: 4, nombre_producto: 'costilla cerdo', descripcion: 'costilla cerdo', precio_venta_por_gramo_actual: 5000, precio_costo_por_gramo_actual: 4900 },
-    { id_producto: 5, nombre_producto: 'costilla cerdo', descripcion: 'costilla cerdo', precio_venta_por_gramo_actual: 10000, precio_costo_por_gramo_actual: 9800 },
-    { id_producto: 6, nombre_producto: 'panceta', descripcion: 'panceta', precio_venta_por_gramo_actual: 10000, precio_costo_por_gramo_actual: 9500 },
-    { id_producto: 7, nombre_producto: 'chorizo', descripcion: 'de cerdo *3', precio_venta_por_gramo_actual: 9000, precio_costo_por_gramo_actual: 8550 },
-    { id_producto: 8, nombre_producto: 'chorizo', descripcion: 'de cerdo *7', precio_venta_por_gramo_actual: 19000, precio_costo_por_gramo_actual: 18050 },
-  ];
-
-  for (const producto of productos) {
-    await prisma.pRODUCTOS.upsert({
-      where: { id_producto: producto.id_producto },
-      update: {},
-      create: producto,
-    });
-  }
-  console.log('✅ Productos creados');
-
-  // 10. TIENDAS
-  console.log('🏪 Creando tiendas...');
-  const tiendas = [
-    { id_tienda: 1, id_usuario: 1, nombre_tienda: 'tienda el tesoro', direccion: 'calle 24 15 59', id_ciudad: 1 },
-    { id_tienda: 2, id_usuario: 2, nombre_tienda: 'tienda las delicias', direccion: 'cra 356 23', id_ciudad: 1 },
-    { id_tienda: 3, id_usuario: 3, nombre_tienda: 'el bolivar', direccion: 'cll 34 56', id_ciudad: 1 },
-  ];
-
-  for (const tienda of tiendas) {
-    await prisma.tIENDAS.upsert({
-      where: { id_tienda: tienda.id_tienda },
-      update: {},
-      create: tienda,
-    });
-  }
-  console.log('✅ Tiendas creadas');
-
-  // 11. ESTADO_NEVERA
+  
+  // 9. ESTADO_NEVERA
   console.log('🏠 Creando estados de nevera...');
   const estadosNevera = [
     { id_estado_nevera: 1, estado_nevera: 'En Bodega' },
@@ -268,200 +139,177 @@ async function main() {
   }
   console.log('✅ Estados de nevera creados');
 
-  // 12. NEVERAS
-  console.log('🧊 Creando neveras...');
-  const neveras = [
-    { fridge_id: 1, contraseña: '21621234"#$#$4234234', id_estado_nevera: 2, id_tienda: 1, version_software: 0.3, ultima_conexion: new Date('2025-01-01T00:00:00Z') },
-    { fridge_id: 2, contraseña: '21621234"#$#$4234234', id_estado_nevera: 4, id_tienda: 1, version_software: 0.3, ultima_conexion: new Date('2025-01-01T00:00:00Z') },
-    { fridge_id: 3, contraseña: '21621234"#$#$4234234', id_estado_nevera: 1, id_tienda: 2, version_software: 0.3, ultima_conexion: new Date('2025-01-01T00:00:00Z') },
+  // 11. PRODUCTOS
+  console.log('📦 Creando productos...');
+  const productos = [
+    { id_producto: 1, nombre_producto: 'lomo cerdo', descripcion_producto: 'lomo cerdo 1000g', peso_nominal_g: 1000, precio_venta: 10000, dias_vencimiento: 30, precio_frigorifico: 95.0 },
+    { id_producto: 2, nombre_producto: 'lomo cerdo', descripcion_producto: 'lomo cerdo 250g', peso_nominal_g: 250, precio_venta: 2500, dias_vencimiento: 30, precio_frigorifico: 95.0 },
+    { id_producto: 3, nombre_producto: 'costilla cerdo', descripcion_producto: 'costilla cerdo 250g', peso_nominal_g: 250, precio_venta: 2500, dias_vencimiento: 25, precio_frigorifico: 98.0 },
+    { id_producto: 4, nombre_producto: 'costilla cerdo', descripcion_producto: 'costilla cerdo 500g', peso_nominal_g: 500, precio_venta: 5000, dias_vencimiento: 25, precio_frigorifico: 98.0 },
+    { id_producto: 5, nombre_producto: 'costilla cerdo', descripcion_producto: 'costilla cerdo 1000g', peso_nominal_g: 1000, precio_venta: 10000, dias_vencimiento: 25, precio_frigorifico: 98.0 },
+    { id_producto: 6, nombre_producto: 'panceta', descripcion_producto: 'panceta 1000g', peso_nominal_g: 1000, precio_venta: 10000, dias_vencimiento: 40, precio_frigorifico: 95.0 },
+    { id_producto: 7, nombre_producto: 'chorizo', descripcion_producto: 'de cerdo *3', peso_nominal_g: 300, precio_venta: 9000, dias_vencimiento: 20, precio_frigorifico: 95.0 },
+    { id_producto: 8, nombre_producto: 'chorizo', descripcion_producto: 'de cerdo *7', peso_nominal_g: 700, precio_venta: 19000, dias_vencimiento: 20, precio_frigorifico: 95.0 },
   ];
 
-  for (const nevera of neveras) {
-    await prisma.nEVERAS.upsert({
-      where: { fridge_id: nevera.fridge_id },
+  for (const producto of productos) {
+    await prisma.pRODUCTOS.upsert({
+      where: { id_producto: producto.id_producto },
       update: {},
-      create: nevera,
+      create: producto,
     });
   }
-  console.log('✅ Neveras creadas');
-
-  // 13. FRIGORIFICO
-  console.log('🏭 Creando frigoríficos...');
-  const frigorificos = [
-    { id_frigorifico: 1, id_usuario: 1, nombre_frigorifico: 'tienda el tesoro', direccion: 'calle 24 15 59' },
-    { id_frigorifico: 2, id_usuario: 2, nombre_frigorifico: 'tienda las delicias', direccion: 'cra 356 23' },
-    { id_frigorifico: 3, id_usuario: 3, nombre_frigorifico: 'el bolivar', direccion: 'cll 34 56' },
+  console.log('✅ Productos creados');
+  
+  // 12. ESTADO_EMPAQUE
+  console.log('📦 Creando estados de empaque...');
+  const estadosEmpaque = [
+    { id_estado_empaque: 1, nombre_estado: 'EN FRIGORIFICO' },
+    { id_estado_empaque: 2, nombre_estado: 'EN LOGISTICA' },
+    { id_estado_empaque: 3, nombre_estado: 'EN NEVERA' },
+    { id_estado_empaque: 4, nombre_estado: 'PENDIENTE PAGO' },
+    { id_estado_empaque: 5, nombre_estado: 'PARA CAMBIO' },
+    { id_estado_empaque: 6, nombre_estado: 'EN LOGISTICA PRIORIDAD' },
+    { id_estado_empaque: 7, nombre_estado: 'VENCIDO/PERDIDA' },
+    { id_estado_empaque: 8, nombre_estado: 'FINALIZADO CON EXITO' },
   ];
 
-  for (const frigorifico of frigorificos) {
-    await prisma.fRIGORIFICO.upsert({
-      where: { id_frigorifico: frigorifico.id_frigorifico },
+  for (const estado of estadosEmpaque) {
+    await prisma.eSTADO_EMPAQUE.upsert({
+      where: { id_estado_empaque: estado.id_estado_empaque },
       update: {},
-      create: frigorifico,
+      create: estado,
     });
   }
-  console.log('✅ Frigoríficos creados');
+  console.log('✅ Estados de empaque creados');
 
-  // 14. LOGISTICA
-  console.log('🚚 Creando logística...');
-  const logisticas = [
-    { id_logistica: 1, id_usuario: 4, nombre_empresa: 'Rapido y Furioso', placa_vehiculo: 'XYZ123' },
+  // 13. PROMOCIONES
+  console.log('🎉 Creando promociones...');
+  const promociones = [
+    { id_promocion: 1, nombre: '20% Descuento', tipo: 'PORCENTAJE', valor: 20.0 },
+    { id_promocion: 2, nombre: '2x1 (50% en 2da unidad)', tipo: 'BOGOF', valor: 50.0 },
+    { id_promocion: 3, nombre: '50% Descuento', tipo: 'PORCENTAJE', valor: 50.0 },
+    { id_promocion: 4, nombre: 'Liquidación Total', tipo: 'PORCENTAJE', valor: 80.0 },
+  ];  
+
+  for (const promocion of promociones) {
+    await prisma.pROMOCIONES.upsert({
+      where: { id_promocion: promocion.id_promocion },
+      update: {},
+      create: promocion,
+    });  
+  }  
+  console.log('✅ Promociones creadas');
+
+  
+  // 15. TEMPERATURA NEVERA
+  console.log('📝 Creando estados de temperatura de nevera...');
+  const estadosTemperatura = [
+    { id_temperatura_nevera: 1, nombre_estado: 'OK' },
+    { id_temperatura_nevera: 2, nombre_estado: 'Fuera de rango 0° - 4°' },
+    { id_temperatura_nevera: 3, nombre_estado: 'Falla sensor' },
+    { id_temperatura_nevera: 4, nombre_estado: 'Desconocido' },
   ];
 
-  for (const logistica of logisticas) {
-    await prisma.lOGISTICA.upsert({
-      where: { id_logistica: logistica.id_logistica },
+  for (const estado of estadosTemperatura) {
+    await prisma.tEMPERATURA_NEVERA.upsert({
+      where: { id_temperatura_nevera: estado.id_temperatura_nevera },
       update: {},
-      create: logistica,
+      create: estado,
     });
   }
-  console.log('✅ Logística creada');
+  console.log('✅ Estados de temperatura de nevera creados');
+ 
+ 
+  // 17. TIPO_TRANSACCION
+  console.log('💰 Creando tipos de transacción...');
+  const tiposTransaccion = [
+    { id_tipo: 1, nombre_codigo: 'venta', descripcion_amigable: 'Venta de empaque a tienda' },
+    { id_tipo: 2, nombre_codigo: 'costo_frigorifico', descripcion_amigable: 'Deuda de logística con frigorífico' },
+    { id_tipo: 3, nombre_codigo: 'ticket_consolidado', descripcion_amigable: 'Ticket de cobro a tienda' },
+    { id_tipo: 4, nombre_codigo: 'pago_recibido', descripcion_amigable: 'Dinero recibido de un deudor' },
+    { id_tipo: 5, nombre_codigo: 'pago_realizado', descripcion_amigable: 'Dinero entregado a un acreedor' },
+    { id_tipo: 6, nombre_codigo: 'devolucion', descripcion_amigable: 'Anulación de una venta' },
+    { id_tipo: 7, nombre_codigo: 'perdida_vencimiento', descripcion_amigable: 'Ajuste por producto vencido' },
+    { id_tipo: 8, nombre_codigo: 'gasto_operativo', descripcion_amigable: 'Gasto (ej. gasolina)' },
+  ];  
 
-  // 15. EMPAQUES
-  console.log('📦 Creando empaques...');
-  const empaques = [
-    {
-      id_empaque: 1,
-      EPC_id: '300833B2DDD9014000000000',
-      fecha_empaque_1: new Date('2025-01-01T00:00:00Z'),
-      id_frigorifico: 1,
-      id_producto: 1,
-      peso_exacto: 1.0,
-      costo_frigorifico_congelado: 10300,
-      precio_venta_congelado: 10300,
-      fecha_vencimiento: new Date('2025-09-17'),
-      hora_en_logistica_2: new Date('2025-01-01T00:00:00Z'),
-      id_logistica: 1,
-      fridge_id: 1,
-      hora_en_nevera_3: new Date('2025-01-01T00:00:00Z'),
-      hora_pendiente_pago_4: new Date('2025-01-01T00:00:00Z'),
-      hora_para_cambio_5: new Date('2025-01-01T00:00:00Z'),
-      fridge_id_final: 5,
-      hora_surtido_final_6: new Date('2025-01-01T00:00:00Z'),
-      fecha_finalizacion_7_8: new Date('2025-01-01T00:00:00Z'),
-      estado_lote: 3,
-      promocion: null,
-    },
-    {
-      id_empaque: 2,
-      EPC_id: '300833B2DDD9014000000001',
-      fecha_empaque_1: new Date('2025-01-01T00:00:00Z'),
-      id_frigorifico: 1,
-      id_producto: 2,
-      peso_exacto: 0.25,
-      costo_frigorifico_congelado: 2490,
-      precio_venta_congelado: 2490,
-      fecha_vencimiento: new Date('2025-09-17'),
-      hora_en_logistica_2: new Date('2025-01-01T00:00:00Z'),
-      id_logistica: 1,
-      fridge_id: 1,
-      hora_en_nevera_3: new Date('2025-01-01T00:00:00Z'),
-      hora_pendiente_pago_4: new Date('2025-01-01T00:00:00Z'),
-      hora_para_cambio_5: null,
-      fridge_id_final: null,
-      hora_surtido_final_6: null,
-      fecha_finalizacion_7_8: new Date('2025-01-01T00:00:00Z'),
-      estado_lote: 1,
-      promocion: null,
-    },
-    {
-      id_empaque: 3,
-      EPC_id: '300833B2DDD9014000000002',
-      fecha_empaque_1: new Date('2025-01-01T00:00:00Z'),
-      id_frigorifico: 1,
-      id_producto: 3,
-      peso_exacto: 0.25,
-      costo_frigorifico_congelado: 5200,
-      precio_venta_congelado: 5200,
-      fecha_vencimiento: new Date('2025-09-18'),
-      hora_en_logistica_2: new Date('2025-01-01T00:00:00Z'),
-      id_logistica: 1,
-      fridge_id: 1,
-      hora_en_nevera_3: new Date('2025-01-01T00:00:00Z'),
-      hora_pendiente_pago_4: null,
-      hora_para_cambio_5: new Date('2025-01-01T00:00:00Z'),
-      fridge_id_final: 4,
-      hora_surtido_final_6: new Date('2025-01-01T00:00:00Z'),
-      fecha_finalizacion_7_8: new Date('2025-01-01T00:00:00Z'),
-      estado_lote: 1,
-      promocion: null,
-    },
-    {
-      id_empaque: 4,
-      EPC_id: '300833B2DDD9014000000003',
-      fecha_empaque_1: new Date('2025-01-01T00:00:00Z'),
-      id_frigorifico: 1,
-      id_producto: 4,
-      peso_exacto: 0.5,
-      costo_frigorifico_congelado: 6300,
-      precio_venta_congelado: 6300,
-      fecha_vencimiento: new Date('2025-09-18'),
-      hora_en_logistica_2: new Date('2025-01-01T00:00:00Z'),
-      id_logistica: 1,
-      fridge_id: 1,
-      hora_en_nevera_3: new Date('2025-01-01T00:00:00Z'),
-      hora_pendiente_pago_4: null,
-      hora_para_cambio_5: null,
-      fridge_id_final: null,
-      hora_surtido_final_6: null,
-      fecha_finalizacion_7_8: new Date('2025-01-01T00:00:00Z'),
-      estado_lote: 2,
-      promocion: null,
-    },
-    {
-      id_empaque: 5,
-      EPC_id: '300833B2DDD9014000000004',
-      fecha_empaque_1: new Date('2025-01-01T00:00:00Z'),
-      id_frigorifico: 1,
-      id_producto: 4,
-      peso_exacto: 1.0,
-      costo_frigorifico_congelado: 7500,
-      precio_venta_congelado: 7500,
-      fecha_vencimiento: new Date('2025-09-19'),
-      hora_en_logistica_2: new Date('2025-01-01T00:00:00Z'),
-      id_logistica: 1,
-      fridge_id: 1,
-      hora_en_nevera_3: new Date('2025-01-01T00:00:00Z'),
-      hora_pendiente_pago_4: null,
-      hora_para_cambio_5: null,
-      fridge_id_final: null,
-      hora_surtido_final_6: null,
-      fecha_finalizacion_7_8: new Date('2025-01-01T00:00:00Z'),
-      estado_lote: 2,
-      promocion: 1,
-    },
-    {
-      id_empaque: 6,
-      EPC_id: '300833B2DDD9014000000005',
-      fecha_empaque_1: new Date('2025-01-01T00:00:00Z'),
-      id_frigorifico: 1,
-      id_producto: 5,
-      peso_exacto: 1.0,
-      costo_frigorifico_congelado: 654,
-      precio_venta_congelado: 654,
-      fecha_vencimiento: new Date('2025-09-19'),
-      hora_en_logistica_2: new Date('2025-01-01T00:00:00Z'),
-      id_logistica: 1,
-      fridge_id: 1,
-      hora_en_nevera_3: new Date('2025-01-01T00:00:00Z'),
-      hora_pendiente_pago_4: null,
-      hora_para_cambio_5: null,
-      fridge_id_final: null,
-      hora_surtido_final_6: null,
-      fecha_finalizacion_7_8: new Date('2025-01-01T00:00:00Z'),
-      estado_lote: 5,
-      promocion: 2,
-    },
+  for (const tipo of tiposTransaccion) {
+    await prisma.tIPO_TRANSACCION.upsert({
+      where: { id_tipo: tipo.id_tipo },
+      update: {},
+      create: tipo,
+    });  
+  }  
+  console.log('✅ Tipos de transacción creados');
+
+
+  // 18. ESTADO_TRANSACCION
+  console.log('📊 Creando estados de transacción...');
+  const estadosTransaccion = [
+    { id_estado_transaccion: 1, nombre_estado: 'PENDIENTE' },
+    { id_estado_transaccion: 2, nombre_estado: 'PAGADO' },
+    { id_estado_transaccion: 3, nombre_estado: 'ANULADO' },
+    { id_estado_transaccion: 4, nombre_estado: 'CONSOLIDADO' },
+  ];  
+
+  for (const estado of estadosTransaccion) {
+    await prisma.eSTADO_TRANSACCION.upsert({
+      where: { id_estado_transaccion: estado.id_estado_transaccion },
+      update: {},
+      create: estado,
+    });  
+  }  
+  console.log('✅ Estados de transacción creados');
+
+  // 19. LISTA_DE_REPRODUCCION
+  console.log('📋 Creando listas de reproducción...');
+  const listasReproduccion = [
+    { id_lista_reproduccion: 1, nombre: 'LISTA DIARIA' },
   ];
 
-  for (const empaque of empaques) {
-    await prisma.eMPAQUES.upsert({
-      where: { EPC_id: empaque.EPC_id },
+  for (const lista of listasReproduccion) {
+    await prisma.lISTA_DE_REPRODUCCION.upsert({
+      where: { id_lista_reproduccion: lista.id_lista_reproduccion },
       update: {},
-      create: empaque,
+      create: lista,
     });
   }
-  console.log('✅ Empaques creados');
+  console.log('✅ Listas de reproducción creadas');
+
+  // 20. BIBLIOTECA
+  console.log('📚 Creando biblioteca...');
+  const biblioteca = [
+    { id: 1, nombre: 'CHORIZOS DE CERDO', tipo: 'IMAGEN' as const, url: '/images/chorizos-cerdo.jpg' },
+    { id: 2, nombre: 'PROMOCION DE CHORIZO', tipo: 'VIDEO' as const, url: '/videos/promocion-chorizo.mp4' },
+    { id: 3, nombre: 'PUBLICIDAD DIARIA', tipo: 'VIDEO' as const, url: '/videos/publicidad-diaria.mp4' },
+  ];
+
+  for (const item of biblioteca) {
+    await prisma.bIBLIOTECA.upsert({
+      where: { id: item.id },
+      update: {},
+      create: item,
+    });
+  }
+  console.log('✅ Biblioteca creada');
+
+  // 21. ITEMS_DE_REPRODUCCION
+  console.log('🎵 Creando items de reproducción...');
+  const itemsReproduccion = [
+    { id: 1, id_lista_reproduccion: 1, id_biblioteca: 1, tiempo_reproduccion_s: 20, orden_reproduccion: 1 },
+    { id: 2, id_lista_reproduccion: 1, id_biblioteca: 2, tiempo_reproduccion_s: 20, orden_reproduccion: 2 },
+    { id: 3, id_lista_reproduccion: 1, id_biblioteca: 3, tiempo_reproduccion_s: 30, orden_reproduccion: 3 },
+  ];
+
+  for (const item of itemsReproduccion) {
+    await prisma.iTEMS_DE_REPRODUCCION.upsert({
+      where: { id: item.id },
+      update: {},
+      create: item,
+    });
+  }
+  console.log('✅ Items de reproducción creados');
 
   console.log('🎉 Seeding completado exitosamente!');
 }

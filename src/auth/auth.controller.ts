@@ -23,7 +23,6 @@ export class AuthController {
   }
 
   @Post('create-user')
-  @UseGuards(JwtAuthGuard, RolesGuard)
   createUser(@Body() createUserDto: CreateUserDto) {
     return this.authService.createUser(createUserDto);
   }

@@ -7,6 +7,7 @@ import { KioskAdminModule } from './kiosk-admin/kiosk-admin.module';
 import { LogisticaModule } from './logistica/logistica.module';
 import { DatabaseModule } from './database/database.module';
 import { TiendasModule } from './tiendas/tiendas.module';
+import { RegistrationTokensModule } from './registration-tokens/registration-tokens.module';
 
 @Module({
   imports: [
@@ -17,7 +18,8 @@ import { TiendasModule } from './tiendas/tiendas.module';
     KioskAdminModule,
     LogisticaModule,
     DatabaseModule,
-    TiendasModule
+    TiendasModule,
+    RegistrationTokensModule
   ],
 })
 export class AppModule {}
