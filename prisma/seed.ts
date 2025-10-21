@@ -1,4 +1,4 @@
-import { PrismaClient } from '../generated/prisma';
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -263,19 +263,40 @@ async function main() {
   console.log('✅ Estados de transacción creados');
 
   // 19. LISTA_DE_REPRODUCCION
-  console.log('📋 Creando listas de reproducción...');
-  const listasReproduccion = [
-    { id_lista_reproduccion: 1, nombre: 'LISTA DIARIA' },
-  ];
+console.log('📋 Creando listas de reproducción...');
 
-  for (const lista of listasReproduccion) {
-    await prisma.lISTA_DE_REPRODUCCION.upsert({
-      where: { id_lista_reproduccion: lista.id_lista_reproduccion },
-      update: {},
-      create: lista,
-    });
-  }
-  console.log('✅ Listas de reproducción creadas');
+const listasReproduccion = [
+  {
+    id_lista_reproduccion: 1,
+    nombre: 'LISTA DIARIA',
+    
+    
+    lista_json: [
+        {
+          "url": "http://0.0.0.0:8000/local_media/4253351-uhd_4096_2160_25fps.mp4",
+          "type": "video"
+        },
+        {
+          "url": "https://cdn.pixabay.com/photo/2019/11/04/14/56/chorizo-4601353_1280.jpg",
+          "type": "image",
+          "duration_seconds": 20
+        }
+      ]
+  },
+];
+
+for (const lista of listasReproduccion) {
+  const { id_lista_reproduccion, ...dataParaCrearOActualizar } = lista;
+
+  await prisma.lISTA_DE_REPRODUCCION.upsert({
+    where: { id_lista_reproduccion: id_lista_reproduccion },
+    
+    update: dataParaCrearOActualizar,
+    
+    create: dataParaCrearOActualizar,
+  });
+}
+console.log('✅ Listas de reproducción creadas');
 
   // 20. BIBLIOTECA
   console.log('📚 Creando biblioteca...');

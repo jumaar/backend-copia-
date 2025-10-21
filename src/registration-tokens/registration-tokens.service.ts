@@ -3,20 +3,20 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
-import { PrismaClient } from '../../generated/prisma';
 import * as crypto from 'crypto';
 import { CreateRegistrationTokenDto } from './dto/create-registration-token.dto';
+import { DatabaseService } from '../database/database.service';
 
 @Injectable()
 export class RegistrationTokensService {
-  private prisma = new PrismaClient();
+  constructor(private databaseService: DatabaseService) {}
 
   async createToken(createTokenDto: CreateRegistrationTokenDto, creatorId: number) {
     const tokenString = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7); // El token expira en 7 días
 
-    await this.prisma.tOKEN_REGISTRO.create({
+    await this.databaseService.tOKEN_REGISTRO.create({
       data: {
         token: tokenString,
         expira_en: expiresAt,
@@ -26,7 +26,7 @@ export class RegistrationTokensService {
     });
 
     // Después de crear, buscamos el token para devolverlo con la información del rol
-    return this.prisma.tOKEN_REGISTRO.findUnique({
+    return this.databaseService.tOKEN_REGISTRO.findUnique({
       where: { token: tokenString },
       select: {
         token: true,
@@ -46,7 +46,7 @@ export class RegistrationTokensService {
   }
 
   async validateToken(token: string) {
-    const foundToken = await this.prisma.tOKEN_REGISTRO.findUnique({
+    const foundToken = await this.databaseService.tOKEN_REGISTRO.findUnique({
       where: { token },
     });
 
@@ -66,7 +66,7 @@ export class RegistrationTokensService {
   }
 
   async markTokenAsUsed(token: string, userId: number) {
-    return this.prisma.tOKEN_REGISTRO.update({
+    return this.databaseService.tOKEN_REGISTRO.update({
       where: { token },
       data: {
         es_usado: true,
@@ -76,7 +76,7 @@ export class RegistrationTokensService {
   }
 
   async findAllUnused(creatorId: number) {
-    return this.prisma.tOKEN_REGISTRO.findMany({
+    return this.databaseService.tOKEN_REGISTRO.findMany({
       where: {
         id_usuario_creador: creatorId,
         es_usado: false,

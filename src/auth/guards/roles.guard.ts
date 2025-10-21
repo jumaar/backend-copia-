@@ -3,42 +3,48 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
-  BadRequestException,
+  Logger,
 } from '@nestjs/common';
-import { PrismaClient } from '../../../generated/prisma';
+import { Reflector } from '@nestjs/core';
+import { ROLES_KEY } from '../decorators/roles.decorator';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
-  private prisma = new PrismaClient();
+  private readonly logger = new Logger(RolesGuard.name);
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const user = request.user; // Viene del JwtAuthGuard
-    const { id_rol: roleToCreate } = request.body;
+  constructor(private reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const requiredRoles = this.reflector.getAllAndOverride<number[]>(
+      ROLES_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    this.logger.debug(`Roles requeridos: ${JSON.stringify(requiredRoles)}`);
+
+    if (!requiredRoles) {
+      this.logger.debug('No se requieren roles específicos');
+      return true; // No roles specified, access granted
+    }
+
+    const { user } = context.switchToHttp().getRequest();
+    this.logger.debug(`Usuario en request: ${JSON.stringify(user)}`);
 
     if (!user || !user.roleId) {
+      this.logger.warn('Usuario no encontrado o sin roleId');
       throw new ForbiddenException('No se pudo determinar el rol del usuario.');
     }
 
-    if (!roleToCreate) {
-      throw new BadRequestException('El rol del nuevo usuario es requerido.');
-    }
+    const hasRole = requiredRoles.some((roleId) => user.roleId === roleId);
+    this.logger.debug(`Usuario tiene rol requerido: ${hasRole}, roleId del usuario: ${user.roleId}`);
 
-    const permission = await this.prisma.pERMISOS_ROLES.findUnique({
-      where: {
-        id_rol_creador_id_rol_creable: {
-          id_rol_creador: user.roleId,
-          id_rol_creable: roleToCreate,
-        },
-      },
-    });
-
-    if (permission) {
+    if (hasRole) {
       return true;
     }
 
+    this.logger.warn('Acceso denegado por falta de permisos');
     throw new ForbiddenException(
-      `No tienes permiso para crear usuarios con el rol especificado.`,
+      'No tienes permiso para acceder a este recurso.',
     );
   }
 }

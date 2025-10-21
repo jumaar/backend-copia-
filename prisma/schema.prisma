@@ -3,7 +3,6 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../generated/prisma"
 }
 
 datasource db {
@@ -62,6 +61,7 @@ model USUARIOS {
   transacciones           TRANSACCIONES[]
   tokens_creados          TOKEN_REGISTRO[] @relation("creador")
   tokens_usados           TOKEN_REGISTRO[] @relation("nuevo_usuario")
+  refresh_tokens          REFRESH_TOKENS[]
 }
 
 model DEPARTAMENTO {
@@ -267,6 +267,7 @@ model BIBLIOTECA {
 model LISTA_DE_REPRODUCCION {
   id_lista_reproduccion   Int                     @id @default(autoincrement())
   nombre                  String
+  lista_json           Json?
   items                   ITEMS_DE_REPRODUCCION[]
   neveras                 NEVERAS[]
 }
@@ -279,4 +280,12 @@ model ITEMS_DE_REPRODUCCION {
   orden_reproduccion      Int
   lista_reproduccion      LISTA_DE_REPRODUCCION @relation(fields: [id_lista_reproduccion], references: [id_lista_reproduccion])
   biblioteca              BIBLIOTECA            @relation(fields: [id_biblioteca], references: [id])
+}
+model REFRESH_TOKENS {
+  id_refresh_token     Int      @id @default(autoincrement())
+  id_usuario           Int
+  token                String   @unique
+  expira_en            DateTime
+  fecha_creacion       DateTime @default(now())
+  usuario              USUARIOS @relation(fields: [id_usuario], references: [id_usuario])
 }

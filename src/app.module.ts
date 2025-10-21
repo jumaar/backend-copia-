@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { NeverasModule } from './neveras/neveras.module';
@@ -8,18 +8,23 @@ import { LogisticaModule } from './logistica/logistica.module';
 import { DatabaseModule } from './database/database.module';
 import { TiendasModule } from './tiendas/tiendas.module';
 import { RegistrationTokensModule } from './registration-tokens/registration-tokens.module';
+import { LoggingMiddleware } from './common/middleware/logging.middleware';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    AuthModule,
+    AuthModule, // <-- Mover al principio para asegurar que sus guards se registren primero
+    DatabaseModule,
     FrigorificoModule,
     NeverasModule,
     KioskAdminModule,
     LogisticaModule,
-    DatabaseModule,
     TiendasModule,
-    RegistrationTokensModule
+    RegistrationTokensModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(LoggingMiddleware).forRoutes('*');
+  }
+}
