@@ -9,11 +9,20 @@ import { DatabaseModule } from './database/database.module';
 import { TiendasModule } from './tiendas/tiendas.module';
 import { RegistrationTokensModule } from './registration-tokens/registration-tokens.module';
 import { LoggingMiddleware } from './common/middleware/logging.middleware';
+import { GestionUsuariosModule } from './gestion-usuarios/gestion-usuarios.module';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    AuthModule, // <-- Mover al principio para asegurar que sus guards se registren primero
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000, // 60 segundos
+        limit: 60, // 60 peticiones por IP (1 por segundo)
+      },
+    ]),
+    AuthModule,
     DatabaseModule,
     FrigorificoModule,
     NeverasModule,
@@ -21,6 +30,13 @@ import { LoggingMiddleware } from './common/middleware/logging.middleware';
     LogisticaModule,
     TiendasModule,
     RegistrationTokensModule,
+    GestionUsuariosModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
   ],
 })
 export class AppModule implements NestModule {

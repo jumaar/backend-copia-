@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   ConflictException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { JwtService } from '@nestjs/jwt';
@@ -16,6 +17,8 @@ import { RegistrationTokensService } from '../registration-tokens/registration-t
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private databaseService: DatabaseService,
     private jwtService: JwtService,
@@ -77,36 +80,62 @@ export class AuthService {
   }
 
   async createUser(createUserDto: CreateUserDto) {
-    const { email, password, turnstileToken, registrationToken, ...restCreateUserDto } = createUserDto;
+    const {
+      email,
+      password,
+      turnstileToken,
+      registrationToken,
+      nombre_usuario,
+      apellido_usuario,
+      identificacion_usuario,
+      celular,
+    } = createUserDto;
 
+    // 1. Validar tokens (Turnstile y de Registro)
     const token = await this.registrationTokensService.validateToken(registrationToken);
-
     const isValidTurnstile = await this.turnstileService.verifyToken(turnstileToken);
     if (!isValidTurnstile) {
       throw new BadRequestException('Verificación de seguridad fallida. Por favor, intenta de nuevo.');
     }
 
+    // 2. Verificar unicidad de email, identificación y celular
+    if (identificacion_usuario) {
+      const existingId = await this.databaseService.uSUARIOS.findUnique({ where: { identificacion_usuario } });
+      if (existingId) {
+        throw new ConflictException(`La identificación '${identificacion_usuario}' ya está registrada.`);
+      }
+    }
+    if (celular) {
+      const existingCelular = await this.databaseService.uSUARIOS.findUnique({ where: { celular } });
+      if (existingCelular) {
+        throw new ConflictException(`El celular '${celular}' ya está registrado.`);
+      }
+    }
     const userExists = await this.databaseService.uSUARIOS.findUnique({
       where: { email },
     });
-
     if (userExists) {
-      throw new ConflictException('El usuario ya existe');
+      throw new ConflictException(`El email '${email}' ya está registrado.`);
     }
 
+    // 3. Hashear contraseña
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const userData: any = {
+    // 4. Construir el objeto de datos explícitamente para evitar pasar campos no deseados
+    const userData = {
       email,
       contraseña: hashedPassword,
       activo: true,
       id_rol: token.id_rol_nuevo_usuario,
+      nombre_usuario,
+      apellido_usuario,
+      identificacion_usuario,
+      celular,
     };
 
-    if (restCreateUserDto.nombre_usuario) userData.nombre_usuario = restCreateUserDto.nombre_usuario;
-    if (restCreateUserDto.apellido_usuario) userData.apellido_usuario = restCreateUserDto.apellido_usuario;
-    if (restCreateUserDto.identificacion_usuario) userData.identificacion_usuario = restCreateUserDto.identificacion_usuario;
-    if (restCreateUserDto.celular) userData.celular = restCreateUserDto.celular;
+    // 5. Crear el usuario
+    // Limpiar el objeto de datos para remover claves con valor 'undefined'
+    Object.keys(userData).forEach(key => userData[key] === undefined && delete userData[key]);
 
     const user = await this.databaseService.uSUARIOS.create({
       data: userData,
@@ -148,9 +177,12 @@ export class AuthService {
   }
 
   async refreshToken(refreshToken: string) {
+    this.logger.debug(`--- Iniciando proceso de Refresh Token ---`);
     if (!refreshToken) {
+      this.logger.error('Refresh fallido: No se proporcionó un refresh token en la cookie.');
       throw new UnauthorizedException('No se proporcionó un refresh token.');
     }
+    this.logger.debug(`Token recibido (parcial): ${refreshToken.substring(0, 10)}...`);
 
     // 1. Buscar y eliminar el token en una transacción para evitar race conditions
     const storedToken = await this.databaseService.$transaction(async (prisma) => {
@@ -159,27 +191,33 @@ export class AuthService {
         include: { usuario: true },
       });
 
-      if (!tokenData || tokenData.expira_en < new Date()) {
-        // Si el token no existe o ha expirado, invalidamos todos los tokens del usuario como medida de seguridad
-        if (tokenData) {
-          await prisma.rEFRESH_TOKENS.deleteMany({
-            where: { id_usuario: tokenData.id_usuario },
-          });
-        }
+      if (!tokenData) {
+        this.logger.error(`Refresh fallido: El token no fue encontrado en la base de datos.`);
+        throw new UnauthorizedException('Refresh Token inválido o expirado.');
+      }
+      
+      if (tokenData.expira_en < new Date()) {
+        this.logger.error(`Refresh fallido: El token encontrado ha expirado. Expiró en: ${tokenData.expira_en}`);
+        // Medida de seguridad: si se intenta usar un token expirado, invalidamos todos los de ese usuario.
+        await prisma.rEFRESH_TOKENS.deleteMany({
+          where: { id_usuario: tokenData.id_usuario },
+        });
         throw new UnauthorizedException('Refresh Token inválido o expirado.');
       }
 
+      this.logger.debug(`Token encontrado para el usuario ID: ${tokenData.usuario.id_usuario}`);
+
       // Eliminar el token usado
-      // Usamos deleteMany para evitar un error si peticiones concurrentes ya eliminaron el token.
-      // Esto hace la rotación de tokens resiliente a race conditions.
       await prisma.rEFRESH_TOKENS.deleteMany({
         where: { id_refresh_token: tokenData.id_refresh_token },
       });
+      this.logger.debug(`Token ID ${tokenData.id_refresh_token} eliminado de la DB.`);
 
       return tokenData;
     });
 
     const { usuario } = storedToken;
+    this.logger.debug(`Generando nuevos tokens para el usuario: ${usuario.email}`);
 
     // 2. Generar un nuevo Access Token
     const accessTokenExpiry = this.configService.get<number>('ACCESS_TOKEN_EXPIRY', 900);

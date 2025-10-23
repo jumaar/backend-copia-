@@ -27,21 +27,14 @@ async function main() {
   // 2. PERMISOS DE ROLES
   console.log('🔒 Creando permisos de roles...');
   const permissions = [
-    // Super Admin puede crear Admin, Frigorifico, Logistica, Tienda
-    { id_rol_creador: 1, id_rol_creable: 1 }, // Super Admin -> Super Admin
-    { id_rol_creador: 1, id_rol_creable: 2 }, // Super Admin -> Admin
-    { id_rol_creador: 1, id_rol_creable: 3 }, // Super Admin -> Frigorifico
-    { id_rol_creador: 1, id_rol_creable: 4 }, // Super Admin -> Logistica
-    { id_rol_creador: 1, id_rol_creable: 5 }, // Super Admin -> Tienda
-    // Admin puede crear otro Admin, Frigorifico, Logistica, Tienda
-    { id_rol_creador: 2, id_rol_creable: 2 }, // Admin -> Admin
-    { id_rol_creador: 2, id_rol_creable: 3 }, // Admin -> Frigorifico
-    { id_rol_creador: 2, id_rol_creable: 4 }, // Admin -> Logistica
-    { id_rol_creador: 2, id_rol_creable: 5 }, // Admin -> Tienda
-    // Frigorifico no puede crear nada
-    // Logistica puede crear Tienda
+    // Super Admin (1) solo puede crear Admin (2)
+    { id_rol_creador: 1, id_rol_creable: 2 },
+    // Admin (2) puede crear Tienda (5), Frigorifico (3), y Logistica (4)
+    { id_rol_creador: 2, id_rol_creable: 5 },
+    { id_rol_creador: 2, id_rol_creable: 3 },
+    { id_rol_creador: 2, id_rol_creable: 4 },
+    // Logistica (4) puede crear Tienda (5)
     { id_rol_creador: 4, id_rol_creable: 5 },
-    // Tienda no puede crear nada
   ];
 
   for (const p of permissions) {

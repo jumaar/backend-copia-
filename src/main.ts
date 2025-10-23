@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { Logger } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
@@ -11,6 +11,18 @@ async function bootstrap() {
     // @ts-ignore - Acepta LogLevel[] pero la definición de tipos es estricta
     logger: logLevels,
   });
+
+  // Desactivar ETag para evitar respuestas 304 Not Modified y forzar JSON completo
+  app.getHttpAdapter().getInstance().set('etag', false);
+
+  // Habilitar ValidationPipe globalmente
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true, // Elimina propiedades que no están en el DTO
+      forbidNonWhitelisted: true, // Lanza un error si se envían propiedades no permitidas
+      transform: true, // Transforma los datos de entrada a su tipo de DTO
+    }),
+  );
 
   // Middleware para cookies
   app.use(cookieParser());
