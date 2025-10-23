@@ -29,8 +29,7 @@ async function main() {
   const permissions = [
     // Super Admin (1) solo puede crear Admin (2)
     { id_rol_creador: 1, id_rol_creable: 2 },
-    // Admin (2) puede crear Tienda (5), Frigorifico (3), y Logistica (4)
-    { id_rol_creador: 2, id_rol_creable: 5 },
+    // Admin (2) puede crear Frigorifico (3) y Logistica (4)
     { id_rol_creador: 2, id_rol_creable: 3 },
     { id_rol_creador: 2, id_rol_creable: 4 },
     // Logistica (4) puede crear Tienda (5)

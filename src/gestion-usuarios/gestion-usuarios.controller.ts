@@ -11,32 +11,32 @@ export class GestionUsuariosController {
 
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(1, 2, 4) // 1: Super Admin, 2: Admin, 4: Logistica
+  @Roles(1, 2, 3, 4, 5) // Permitimos a todos los roles autenticados
   findAll(@Req() req) {
     // El objeto 'user' (con id y roleId) es adjuntado por la JwtStrategy
     return this.gestionUsuariosService.findAll(req.user);
   }
 
   @Get(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(1, 2) // Solo Super Admin y Admin pueden ver detalles completos
-  findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.gestionUsuariosService.findOne(id);
+  @UseGuards(JwtAuthGuard) // La lógica de roles se mueve al servicio
+  findOne(@Param('id', ParseIntPipe) id: number, @Req() req) {
+    const requester = req.user;
+    return this.gestionUsuariosService.findOne(id, requester);
   }
 
   @Patch(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(1, 2) // Solo Super Admin y Admin pueden actualizar
-  update(@Param('id', ParseIntPipe) id: number, @Body() updateGestionUsuarioDto: UpdateGestionUsuarioDto) {
-    return this.gestionUsuariosService.update(id, updateGestionUsuarioDto);
+  @UseGuards(JwtAuthGuard) // Usamos un guard personalizado en el servicio para la lógica compleja
+  update(@Param('id', ParseIntPipe) id: number, @Body() updateGestionUsuarioDto: UpdateGestionUsuarioDto, @Req() req) {
+    const requester = req.user;
+    return this.gestionUsuariosService.update(id, updateGestionUsuarioDto, requester);
   }
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(1) // Solo Super Admin puede eliminar
+  @Roles(1, 2) // Super Admin y Admin pueden eliminar
   remove(@Param('id', ParseIntPipe) id: number, @Req() req) {
-    const removerId = req.user.id; // Obtenemos el ID del usuario que ejecuta la acción
-    return this.gestionUsuariosService.remove(id, removerId);
+    const remover = req.user; // Obtenemos el usuario completo (id y roleId)
+    return this.gestionUsuariosService.remove(id, remover);
   }
 
   @Patch(':id/toggle-status')
