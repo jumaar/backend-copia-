@@ -99,6 +99,7 @@ model FRIGORIFICO {
   usuario                 USUARIOS   @relation(fields: [id_usuario], references: [id_usuario])
   ciudad                  CIUDAD     @relation(fields: [id_ciudad], references: [id_ciudad])
   empaques                EMPAQUES[]
+  basculas                BASCULAS[]
 }
 
 model LOGISTICA {
@@ -288,4 +289,11 @@ model REFRESH_TOKENS {
   expira_en            DateTime
   fecha_creacion       DateTime @default(now())
   usuario              USUARIOS @relation(fields: [id_usuario], references: [id_usuario])
+}
+
+model BASCULAS {
+  id_bascula        Int         @id @default(autoincrement())
+  id_frigorifico    Int
+  clave_vinculacion String      @unique
+  frigorifico       FRIGORIFICO @relation(fields: [id_frigorifico], references: [id_frigorifico])
 }
