@@ -20,12 +20,12 @@ export class GestionUsuariosService {
     };
   }
 
-  async findAll(user: { id: number; roleId: number }) {
+  async findAll(user: { id_usuario: number; roleId: number }) {
     const userRole = user.roleId;
-    this.logger.debug(`Iniciando findAll para el usuario ID: ${user.id} con Rol ID: ${userRole}`);
+    this.logger.debug(`Iniciando findAll para el usuario ID: ${user.id_usuario} con Rol ID: ${userRole}`);
 
     const currentUser = await this.databaseService.uSUARIOS.findUnique({
-      where: { id_usuario: user.id },
+      where: { id_usuario: user.id_usuario },
       include: { rol: true },
     });
 
@@ -40,7 +40,7 @@ export class GestionUsuariosService {
 
     // Vista jerárquica para Super Admin, Admin, Logistica
     const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
-      where: { id_usuario_creador: user.id, es_usado: false, expira_en: { gte: new Date() } },
+      where: { id_usuario_creador: user.id_usuario, es_usado: false, expira_en: { gte: new Date() } },
       select: {
         token: true,
         expira_en: true,
@@ -78,7 +78,7 @@ export class GestionUsuariosService {
       );
     };
 
-    const hierarchy = await getDescendants(user.id);
+    const hierarchy = await getDescendants(user.id_usuario);
 
     return {
       usuario_actual: this.formatUser(currentUser),

@@ -31,7 +31,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // Confiar en el payload del token. Es seguro porque la firma ya fue verificada.
     // Esto es compatible con el RolesGuard, que espera un objeto `user` con `roleId`.
     return {
-      id: payload.sub,
+      id_usuario: payload.sub,
       email: payload.email,
       roleId: payload.roleId,
     };

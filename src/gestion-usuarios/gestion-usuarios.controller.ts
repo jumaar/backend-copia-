@@ -43,7 +43,7 @@ export class GestionUsuariosController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1, 2) // Admins y Super Admins pueden cambiar el estado
   toggleUserStatus(@Param('id', ParseIntPipe) id: number, @Req() req) {
-    const requesterId = req.user.id;
+    const requesterId = req.user.id_usuario;
     return this.gestionUsuariosService.toggleStatus(id, requesterId);
   }
 }

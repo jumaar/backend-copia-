@@ -12,8 +12,11 @@ export class RegistrationTokensController {
   @Post()
   @UseGuards(JwtAuthGuard)
   create(@Body() createRegistrationTokenDto: CreateRegistrationTokenDto, @Req() req) {
-    // El objeto 'user' ahora contiene id, email, y roleId gracias a nuestra JwtStrategy
-    const creator = req.user;
+    // El objeto 'user' ahora contiene id_usuario, email, y roleId gracias a nuestra JwtStrategy
+    const creator = {
+      id: req.user.id_usuario,
+      roleId: req.user.roleId
+    };
     return this.registrationTokensService.createToken(
       createRegistrationTokenDto,
       creator,
@@ -24,6 +27,6 @@ export class RegistrationTokensController {
   @UseGuards(JwtAuthGuard)
   findAll(@Req() req) {
     const creator = req.user;
-    return this.registrationTokensService.findAllUnused(creator.id);
+    return this.registrationTokensService.findAllUnused(creator.id_usuario);
   }
 }
