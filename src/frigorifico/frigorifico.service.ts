@@ -306,11 +306,46 @@ export class FrigorificoService {
       throw new Error('Frigorífico no encontrado o no autorizado');
     }
 
-    // Generar clave de vinculación única
-    const claveVinculacion = await this.generarClaveVinculacion(idFrigorifico);
+    // Generar ID compuesto para la estación: ID_ESTACION-ID_USUARIO
+    // Primero necesitamos obtener el próximo ID de estación
+    const ultimoId = await this.databaseService.eSTACIONES.findFirst({
+      orderBy: { id_estacion: 'desc' },
+      select: { id_estacion: true },
+    });
 
-    return this.databaseService.eSTACIONES.create({
+    // Extraer el número del último ID compuesto o usar 0 si no hay ninguno
+    // Necesitamos encontrar el número más alto de todas las estaciones
+    const todasLasEstaciones = await this.databaseService.eSTACIONES.findMany({
+      select: { id_estacion: true },
+    });
+
+    let maxNumero = 0;
+    for (const estacion of todasLasEstaciones) {
+      const idString = estacion.id_estacion as string;
+      // Buscar el último separador '00' desde la derecha
+      const indexSeparador = idString.lastIndexOf('00');
+      if (indexSeparador > 0) {
+        const numero = parseInt(idString.substring(0, indexSeparador));
+        if (!isNaN(numero) && numero > maxNumero) {
+          maxNumero = numero;
+        }
+      }
+    }
+
+    const nuevoNumero = maxNumero + 1;
+    const idCompuesto = `${nuevoNumero}00${idUsuario}`;
+
+    // Generar clave de vinculación completa
+    const claveVinculacion = this.generarClaveVinculacionCompleta(
+      nuevoNumero,
+      idFrigorifico,
+      idUsuario
+    );
+
+    // Crear la estación con el ID compuesto
+    const estacion = await this.databaseService.eSTACIONES.create({
       data: {
+        id_estacion: idCompuesto,
         id_frigorifico: idFrigorifico,
         clave_vinculacion: claveVinculacion,
       },
@@ -319,9 +354,11 @@ export class FrigorificoService {
         clave_vinculacion: true,
       },
     });
+
+    return estacion;
   }
 
-  async deleteEstacion(idEstacion: number, idUsuario: number) {
+  async deleteEstacion(idEstacion: string, idUsuario: number) {
     // Verificar que la estación pertenece a un frigorífico del usuario
     const estacion = await this.databaseService.eSTACIONES.findFirst({
       where: {
@@ -339,6 +376,18 @@ export class FrigorificoService {
     return this.databaseService.eSTACIONES.delete({
       where: { id_estacion: idEstacion },
     });
+  }
+
+  private generarClaveVinculacionCompleta(
+    idEstacion: number,
+    idFrigorifico: number,
+    idUsuario: number
+  ): string {
+    // Formato: ID_ESTACION + 00 + ID_FRIGORIFICO + 00 + ID_USUARIO + TOKEN (10 caracteres)
+    const tokenAleatorio = this.generarCadenaAleatoria(10);
+    const clave = `${idEstacion}00${idFrigorifico}00${idUsuario}${tokenAleatorio}`;
+
+    return clave;
   }
 
   private async generarClaveVinculacion(idFrigorifico: number): Promise<string> {
@@ -362,10 +411,17 @@ export class FrigorificoService {
   }
 
   private generarCadenaAleatoria(longitud: number): string {
-    const caracteres = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    let resultado = '';
-    for (let i = 0; i < longitud; i++) {
-      resultado += caracteres.charAt(Math.floor(Math.random() * caracteres.length));
+    // Siempre empezar con una letra para evitar confusión con IDs numéricos
+    const letras = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+    const numeros = '0123456789';
+    const todosCaracteres = letras + numeros;
+
+    // Primer caracter siempre es una letra
+    let resultado = letras.charAt(Math.floor(Math.random() * letras.length));
+
+    // Resto pueden ser letras o números
+    for (let i = 1; i < longitud; i++) {
+      resultado += todosCaracteres.charAt(Math.floor(Math.random() * todosCaracteres.length));
     }
     return resultado;
   }

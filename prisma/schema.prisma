@@ -162,7 +162,7 @@ model EMPAQUES {
   id_empaque             Int             @id @default(autoincrement())
   EPC_id                 String          @unique
   fecha_empaque_1        DateTime
-  id_estacion            Int
+  id_estacion            String
   id_producto            Int
   peso_exacto_g          Decimal
   precio_venta_total     Decimal
@@ -292,7 +292,7 @@ model REFRESH_TOKENS {
 }
 
 model ESTACIONES {
-  id_estacion       Int         @id @default(autoincrement())
+  id_estacion       String      @id
   id_frigorifico    Int
   clave_vinculacion String      @unique
   frigorifico       FRIGORIFICO @relation(fields: [id_frigorifico], references: [id_frigorifico])
