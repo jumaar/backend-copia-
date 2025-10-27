@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { CreateFrigorificoDto } from './dto/create-frigorifico.dto';
 import { UpdateFrigorificoDto } from './dto/update-frigorifico.dto';
@@ -167,7 +167,26 @@ export class FrigorificoService {
       })
     );
 
+    // Obtener información del usuario actual
+    const usuarioActual = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario: idUsuario },
+      include: {
+        rol: {
+          select: {
+            nombre_rol: true,
+          },
+        },
+      },
+    });
+
     return {
+      usuario_actual: {
+        id: usuarioActual?.id_usuario,
+        nombre_completo: `${usuarioActual?.nombre_usuario || ''} ${usuarioActual?.apellido_usuario || ''}`.trim(),
+        celular: usuarioActual?.celular,
+        rol: usuarioActual?.rol?.nombre_rol,
+        activo: usuarioActual?.activo,
+      },
       frigorificos: frigorificos.map(frigorifico => ({
         id_frigorifico: frigorifico.id_frigorifico,
         nombre_frigorifico: frigorifico.nombre_frigorifico,
@@ -231,12 +250,56 @@ export class FrigorificoService {
     });
 
     if (!frigorifico) {
-      throw new Error('Frigorífico no encontrado o no autorizado');
+      throw new HttpException(
+        {
+          status: HttpStatus.NOT_FOUND,
+          error: 'Frigorífico no encontrado',
+          message: 'El frigorífico no existe o no tienes permisos para eliminarlo.',
+          code: 'FRIGORIFICO_NOT_FOUND'
+        },
+        HttpStatus.NOT_FOUND
+      );
     }
 
-    return this.databaseService.fRIGORIFICO.delete({
+    // Verificar si el frigorífico tiene estaciones activas
+    const estacionesCount = await this.databaseService.eSTACIONES.count({
       where: { id_frigorifico: idFrigorifico },
     });
+
+    if (estacionesCount > 0) {
+      throw new HttpException(
+        {
+          status: HttpStatus.FORBIDDEN,
+          error: 'Eliminación bloqueada',
+          message: `No puedes eliminar este frigorífico porque tiene ${estacionesCount} estación(es) asociada(s). Elimina primero todas las estaciones.`,
+          code: 'FRIGORIFICO_HAS_ESTACIONES',
+          estacionesCount: estacionesCount
+        },
+        HttpStatus.FORBIDDEN
+      );
+    }
+
+    try {
+      return await this.databaseService.fRIGORIFICO.delete({
+        where: { id_frigorifico: idFrigorifico },
+      });
+    } catch (error) {
+      // Manejar errores de Prisma (como violaciones de clave foránea)
+      if (error.code === 'P2003') {
+        throw new HttpException(
+          {
+            status: HttpStatus.FORBIDDEN,
+            error: 'Eliminación bloqueada',
+            message: 'No puedes eliminar este frigorífico porque tiene datos relacionados (estaciones, empaques, etc.).',
+            code: 'FRIGORIFICO_HAS_RELATIONS',
+            constraint: error.meta?.constraint
+          },
+          HttpStatus.FORBIDDEN
+        );
+      }
+      // Re-lanzar otros errores
+      throw error;
+    }
   }
 
   async createProducto(createProductoDto: any, idUsuario: number) {
@@ -306,6 +369,27 @@ export class FrigorificoService {
       throw new Error('Frigorífico no encontrado o no autorizado');
     }
 
+    // Verificar que no haya claves inactivas pendientes
+    const clavesInactivas = await this.databaseService.eSTACIONES.count({
+      where: {
+        id_frigorifico: idFrigorifico,
+        activa: false,
+      },
+    });
+
+    if (clavesInactivas > 0) {
+      throw new HttpException(
+        {
+          status: HttpStatus.FORBIDDEN,
+          error: 'Creación de estación bloqueada',
+          message: `No puedes crear una nueva estación. Tienes ${clavesInactivas} clave(s) pendiente(s) de activación.`,
+          code: 'STATION_CREATION_BLOCKED',
+          pendingStations: clavesInactivas
+        },
+        HttpStatus.FORBIDDEN
+      );
+    }
+
     // Generar ID compuesto para la estación: ID_ESTACION-ID_USUARIO
     // Primero necesitamos obtener el próximo ID de estación
     const ultimoId = await this.databaseService.eSTACIONES.findFirst({
@@ -348,10 +432,26 @@ export class FrigorificoService {
         id_estacion: idCompuesto,
         id_frigorifico: idFrigorifico,
         clave_vinculacion: claveVinculacion,
+        activa: false, // Nueva estación inicia inactiva
       },
       select: {
         id_estacion: true,
         clave_vinculacion: true,
+        activa: true,
+      },
+    });
+
+    return estacion;
+  }
+
+  // Método para activar una estación cuando se conecta por primera vez
+  async activarEstacion(idEstacion: string) {
+    const estacion = await this.databaseService.eSTACIONES.update({
+      where: { id_estacion: idEstacion },
+      data: { activa: true },
+      select: {
+        id_estacion: true,
+        activa: true,
       },
     });
 

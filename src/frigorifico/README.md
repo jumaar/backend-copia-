@@ -203,10 +203,42 @@ const inventarioDetallado = await Promise.all(
 4. **Paginación Implícita**: Limitada a productos relevantes
 5. **Caché de Resultados**: Los datos se calculan una vez por request
 
-### Estructura de Respuesta
+### Información del Usuario Actual
+
+Se incluye información completa del usuario autenticado:
+
+```typescript
+// Consulta para obtener datos del usuario
+const usuarioActual = await this.databaseService.uSUARIOS.findUnique({
+  where: { id_usuario: idUsuario },
+  include: {
+    rol: {
+      select: {
+        nombre_rol: true,
+      },
+    },
+  },
+});
+```
+
+**Campos incluidos:**
+- `id`: ID único del usuario
+- `nombre_completo`: Concatenación de nombre y apellido
+- `celular`: Número de teléfono
+- `rol`: Nombre del rol (ej: "Admin", "Usuario", etc.)
+- `activo`: Estado de activación de la cuenta
+
+### Estructura de Respuesta Completa
 
 ```json
 {
+  "usuario_actual": {
+    "id": 3,
+    "nombre_completo": "admin arcila",
+    "celular": "2222222222",
+    "rol": "Admin",
+    "activo": true
+  },
   "frigorificos": [...],
   "ciudades_disponibles": [...],
   "lotes_en_stock": {

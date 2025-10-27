@@ -87,21 +87,30 @@ export class GestionUsuariosService {
     };
   }
   
-  async findOne(id: number, requester: { id: number; roleId: number }) {
-    const isOwner = requester.id === id;
-    const isAdmin = requester.roleId === 1 || requester.roleId === 2;
+  async findOne(id: number, requester: { id_usuario: number; roleId: number }) {
+    const isOwner = requester.id_usuario === id;
+    const canViewAll = requester.roleId === 1 || requester.roleId === 2 || requester.roleId === 4; // Super Admin, Admin, Logistica
+    const canViewOwn = requester.roleId === 3 || requester.roleId === 5; // Frigorifico, Tienda
 
-    if (!isOwner && !isAdmin) {
+    // Validar permisos
+    if (!isOwner && !canViewAll) {
       throw new ForbiddenException('No tienes permiso para ver los detalles de este usuario.');
+    }
+
+    if (!isOwner && canViewOwn) {
+      throw new ForbiddenException('Los usuarios de tipo Frigorífico y Tienda solo pueden ver sus propios datos.');
     }
 
     const usuario = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario: id },
       include: {
         rol: true,
-        tiendas: true,
-        frigorificos: true,
-        logisticas: true,
+        // Incluir relaciones solo para roles administrativos
+        ...(canViewAll ? {
+          tiendas: true,
+          frigorificos: true,
+          logisticas: true,
+        } : {}),
       },
     });
 
@@ -113,12 +122,18 @@ export class GestionUsuariosService {
     return result;
   }
 
-  async update(id: number, updateGestionUsuarioDto: UpdateGestionUsuarioDto, requester: { id: number; roleId: number }) {
-    const isOwner = requester.id === id;
-    const isAdmin = requester.roleId === 1 || requester.roleId === 2;
+  async update(id: number, updateGestionUsuarioDto: UpdateGestionUsuarioDto, requester: { id_usuario: number; roleId: number }) {
+    const isOwner = requester.id_usuario === id;
+    const canModifyAll = requester.roleId === 1 || requester.roleId === 2 || requester.roleId === 4; // Super Admin, Admin, Logistica
+    const canModifyOwn = requester.roleId === 3 || requester.roleId === 5; // Frigorifico, Tienda
 
-    if (!isOwner && !isAdmin) {
+    // Validar permisos
+    if (!isOwner && !canModifyAll) {
       throw new ForbiddenException('No tienes permiso para modificar a este usuario.');
+    }
+
+    if (!isOwner && canModifyOwn) {
+      throw new ForbiddenException('Los usuarios de tipo Frigorífico y Tienda solo pueden modificar sus propios datos.');
     }
 
     const { email, identificacion_usuario, celular } = updateGestionUsuarioDto;

@@ -295,6 +295,7 @@ model ESTACIONES {
   id_estacion       String      @id
   id_frigorifico    Int
   clave_vinculacion String      @unique
+  activa            Boolean     @default(false)
   frigorifico       FRIGORIFICO @relation(fields: [id_frigorifico], references: [id_frigorifico])
   empaques          EMPAQUES[]
 }
