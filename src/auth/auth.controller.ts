@@ -26,6 +26,14 @@ export class AuthController {
   async login(@Body() loginDto: LoginDto, @Res({ passthrough: true }) response: Response) {
     const result = await this.authService.login(loginDto);
 
+    // Establecer Access Token en cookie HttpOnly
+    response.cookie('accessToken', result.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 15 * 60 * 1000, // 15 minutos
+    });
+
     // Establecer Refresh Token en cookie HttpOnly
     response.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
@@ -34,8 +42,8 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
     });
 
-    // No devolver refreshToken en la respuesta JSON
-    const { refreshToken, ...responseData } = result;
+    // No devolver tokens en la respuesta JSON
+    const { accessToken, refreshToken, ...responseData } = result;
     return responseData;
   }
 
@@ -49,6 +57,14 @@ export class AuthController {
     const oldRefreshToken = request.cookies['refreshToken'];
     const result = await this.authService.refreshToken(oldRefreshToken);
 
+    // Establecer el NUEVO Access Token en cookie HttpOnly
+    response.cookie('accessToken', result.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 15 * 60 * 1000, // 15 minutos
+    });
+
     // Establecer el NUEVO Refresh Token en la cookie
     response.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
@@ -57,8 +73,8 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
     });
 
-    // Devolver solo el Access Token en la respuesta
-    return { accessToken: result.accessToken };
+    // No devolver tokens en la respuesta JSON
+    return { message: 'Tokens refreshed successfully' };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -69,7 +85,13 @@ export class AuthController {
       await this.authService.logout(refreshToken);
     }
 
-    // Limpiar la cookie HttpOnly
+    // Limpiar cookies HttpOnly
+    response.clearCookie('accessToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+    });
+
     response.clearCookie('refreshToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

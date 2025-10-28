@@ -1,11 +1,15 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { DatabaseService } from '../database/database.service';
 import { CreateFrigorificoDto } from './dto/create-frigorifico.dto';
 import { UpdateFrigorificoDto } from './dto/update-frigorifico.dto';
 
 @Injectable()
 export class FrigorificoService {
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(
+    private readonly databaseService: DatabaseService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   async create(idUsuario: number, createFrigorificoDto: CreateFrigorificoDto) {
     return this.databaseService.fRIGORIFICO.create({
@@ -524,5 +528,178 @@ export class FrigorificoService {
       resultado += todosCaracteres.charAt(Math.floor(Math.random() * todosCaracteres.length));
     }
     return resultado;
+  }
+
+  async crearEmpaquesBatch(empaques: any[], estacionId: string, frigorificoId: number) {
+    const resultados: { creados: any[], errores: any[] } = { creados: [], errores: [] };
+
+    // Procesar en lotes de 10 para optimizar BD
+    const lotes = this.chunkArray(empaques, 10);
+
+    for (const lote of lotes) {
+      for (const empaqueData of lote) {
+        try {
+          // Generar EPC único
+          const epcId = await this.generarEPC();
+
+          // Calcular fecha de vencimiento (basado en producto)
+          const producto = await this.databaseService.pRODUCTOS.findUnique({
+            where: { id_producto: empaqueData.productoId }
+          });
+
+          if (!producto) {
+            resultados.errores.push({
+              productoId: empaqueData.productoId,
+              error: 'Producto no encontrado'
+            });
+            continue;
+          }
+
+          const fechaEmpaque = new Date();
+          const fechaVencimiento = new Date(fechaEmpaque);
+          fechaVencimiento.setDate(fechaEmpaque.getDate() + producto.dias_vencimiento);
+
+          // Crear empaque
+          const empaque = await this.databaseService.eMPAQUES.create({
+            data: {
+              EPC_id: epcId,
+              fecha_empaque_1: fechaEmpaque,
+              id_estacion: estacionId,
+              id_producto: empaqueData.productoId,
+              peso_exacto_g: empaqueData.peso,
+              precio_venta_total: empaqueData.precioCalculado,
+              fecha_vencimiento: fechaVencimiento,
+              costo_frigorifico: empaqueData.precioCalculado * (producto.precio_frigorifico.toNumber() / 100),
+              id_estado_empaque: 1, // En stock
+            }
+          });
+
+          resultados.creados.push({
+            id_empaque: empaque.id_empaque,
+            EPC_id: epcId,
+            producto: producto.nombre_producto,
+            peso: empaqueData.peso,
+            precio: empaqueData.precioCalculado
+          });
+
+        } catch (error) {
+          resultados.errores.push({
+            productoId: empaqueData.productoId,
+            error: error.message
+          });
+        }
+      }
+    }
+
+    return resultados;
+  }
+
+  async getCatalogoProductos(frigorificoId: number) {
+    // Obtener productos disponibles para el frigorífico
+    return this.databaseService.pRODUCTOS.findMany({
+      where: {
+        // Los productos son globales, pero podríamos filtrar por frigorífico si es necesario
+      },
+      select: {
+        id_producto: true,
+        nombre_producto: true,
+        descripcion_producto: true,
+        peso_nominal_g: true,
+        precio_venta: true,
+        precio_frigorifico: true,
+        dias_vencimiento: true,
+      },
+      orderBy: {
+        nombre_producto: 'asc'
+      }
+    });
+  }
+
+  private async generarEPC(): Promise<string> {
+    // Generar código EPC único (similar a RFID)
+    const timestamp = Date.now().toString(36);
+    const random = Math.random().toString(36).substring(2, 8);
+    return `EPC-${timestamp}-${random}`.toUpperCase();
+  }
+
+  private chunkArray<T>(array: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+    }
+    return chunks;
+  }
+
+  async loginEstacion(claveVinculacion: string) {
+    // Validar longitud mínima de la clave (simulación)
+    if (!claveVinculacion || claveVinculacion.length < 5) {
+      throw new HttpException(
+        {
+          status: HttpStatus.BAD_REQUEST,
+          error: 'Clave inválida',
+          message: 'La clave de vinculación debe tener al menos 5 caracteres.',
+          code: 'CLAVE_INVALIDA'
+        },
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    // Buscar la estación por clave de vinculación
+    const estacion = await this.databaseService.eSTACIONES.findUnique({
+      where: { clave_vinculacion: claveVinculacion },
+      include: {
+        frigorifico: {
+          select: {
+            id_frigorifico: true,
+            nombre_frigorifico: true,
+          },
+        },
+      },
+    });
+
+    if (!estacion) {
+      throw new HttpException(
+        {
+          status: HttpStatus.NOT_FOUND,
+          error: 'Estación no encontrada',
+          message: 'La clave de vinculación no corresponde a ninguna estación registrada.',
+          code: 'ESTACION_NOT_FOUND'
+        },
+        HttpStatus.NOT_FOUND
+      );
+    }
+
+    // Si la estación ya está activada, permitir el login sin cambiar el estado
+    // Esto permite que la misma clave se use múltiples veces
+    if (!estacion.activa) {
+      // Solo activar si no está activada
+      await this.databaseService.eSTACIONES.update({
+        where: { id_estacion: estacion.id_estacion },
+        data: { activa: true },
+      });
+    }
+
+    // Generar token JWT para la estación (válido por 24 horas)
+    const payload = {
+      sub: estacion.id_estacion,
+      type: 'estacion',
+      frigorificoId: estacion.id_frigorifico,
+      frigorificoNombre: estacion.frigorifico.nombre_frigorifico,
+    };
+
+    const token = this.jwtService.sign(payload, { expiresIn: '24h' });
+
+    // Nota: La tabla ESTACIONES no tiene campo ultima_conexion en el esquema actual
+    // Si se necesita tracking de conexiones, habría que agregarlo al esquema
+
+    return {
+      access_token: token,
+      token_type: 'bearer',
+      estacion: {
+        id_estacion: estacion.id_estacion,
+        frigorifico: estacion.frigorifico,
+        ultima_conexion: new Date(),
+      },
+    };
   }
 }

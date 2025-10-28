@@ -80,4 +80,5 @@ export class FrigorificoController {
   deleteEstacion(@Param('estacionId') estacionId: string, @Req() req: RequestWithUser) {
     return this.frigorificoService.deleteEstacion(estacionId, req.user.id_usuario);
   }
+
 }

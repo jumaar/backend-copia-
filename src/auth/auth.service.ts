@@ -179,7 +179,7 @@ export class AuthService {
   async refreshToken(refreshToken: string) {
     this.logger.debug(`--- Iniciando proceso de Refresh Token ---`);
     if (!refreshToken) {
-      this.logger.error('Refresh fallido: No se proporcionó un refresh token en la cookie.');
+      this.logger.error('Refresh fallido: No se proporcionó un refresh token.');
       throw new UnauthorizedException('No se proporcionó un refresh token.');
     }
     this.logger.debug(`Token recibido (parcial): ${refreshToken.substring(0, 10)}...`);
