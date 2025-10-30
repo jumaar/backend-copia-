@@ -539,53 +539,87 @@ export class FrigorificoService {
     for (const lote of lotes) {
       for (const empaqueData of lote) {
         try {
-          // Generar EPC único
-          const epcId = await this.generarEPC();
-
-          // Calcular fecha de vencimiento (basado en producto)
+          
+          // 1. Obtener datos del producto
           const producto = await this.databaseService.pRODUCTOS.findUnique({
-            where: { id_producto: empaqueData.productoId }
+            where: { id_producto: empaqueData.id_producto }
           });
 
           if (!producto) {
             resultados.errores.push({
-              productoId: empaqueData.productoId,
+              id_producto: empaqueData.id_producto,
               error: 'Producto no encontrado'
             });
             continue;
           }
 
+          
+          // 2. Generar EPC único (ejemplo por ahora)
+          const epcId = `EPC-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+          // 3. Timestamp actual para fecha_empaque_1
           const fechaEmpaque = new Date();
+
+          // 4. El peso ya viene en gramos del frontend (no multiplicar por 1000)
+          const pesoGramos = empaqueData.peso_g;
+
+          
+          if (!pesoGramos || isNaN(pesoGramos)) {
+            resultados.errores.push({
+              id_producto: empaqueData.id_producto,
+              error: 'Peso inválido o faltante'
+            });
+            continue;
+          }
+
+         
+          // 5. Calcular precio_venta_total: (peso * precio_venta) / peso_nominal_g
+          const precioVenta = parseFloat(producto.precio_venta.toString());
+          const precioFrigorifico = parseFloat(producto.precio_frigorifico.toString());
+          const precioVentaTotal = (pesoGramos * precioVenta) / producto.peso_nominal_g;
+
+          // 6. Calcular fecha_vencimiento: fecha_empaque_1 + dias_vencimiento
           const fechaVencimiento = new Date(fechaEmpaque);
           fechaVencimiento.setDate(fechaEmpaque.getDate() + producto.dias_vencimiento);
 
-          // Crear empaque
+          // 7. Calcular costo_frigorifico: precio_venta_total * (precio_frigorifico / 100)
+          const costoFrigorifico = precioVentaTotal * (precioFrigorifico / 100);
+
+          // 8. Crear empaque con todos los campos calculados
           const empaque = await this.databaseService.eMPAQUES.create({
             data: {
               EPC_id: epcId,
               fecha_empaque_1: fechaEmpaque,
-              id_estacion: estacionId,
-              id_producto: empaqueData.productoId,
-              peso_exacto_g: empaqueData.peso,
-              precio_venta_total: empaqueData.precioCalculado,
+              id_estacion: estacionId, // Del WebSocket (ej: "39008")
+              id_producto: empaqueData.id_producto,
+              peso_exacto_g: pesoGramos.toString(), // Decimal como string
+              precio_venta_total: precioVentaTotal.toString(), // Mantener como string para Decimal
               fecha_vencimiento: fechaVencimiento,
-              costo_frigorifico: empaqueData.precioCalculado * (producto.precio_frigorifico.toNumber() / 100),
+              costo_frigorifico: costoFrigorifico.toString(), // Mantener como string para Decimal
               id_estado_empaque: 1, // En stock
             }
           });
 
+          // Formatear fecha de vencimiento en español
+          const opcionesFecha: Intl.DateTimeFormatOptions = {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+          };
+          const fechaVencimientoFormateada = fechaVencimiento.toLocaleDateString('es-ES', opcionesFecha);
+
           resultados.creados.push({
-            id_empaque: empaque.id_empaque,
-            EPC_id: epcId,
-            producto: producto.nombre_producto,
-            peso: empaqueData.peso,
-            precio: empaqueData.precioCalculado
+            epc: epcId,
+            precio_venta_total: precioVentaTotal,
+            fecha_vencimiento: fechaVencimientoFormateada
           });
 
         } catch (error) {
+          console.error(`❌ Error creando empaque para producto ${empaqueData.id_producto}:`, error);
           resultados.errores.push({
-            productoId: empaqueData.productoId,
-            error: error.message
+            id_producto: empaqueData.id_producto,
+            error: error.message,
+            stack: error.stack
           });
         }
       }
