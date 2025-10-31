@@ -195,7 +195,7 @@ export class AuthService {
         this.logger.error(`Refresh fallido: El token no fue encontrado en la base de datos.`);
         throw new UnauthorizedException('Refresh Token inválido o expirado.');
       }
-      
+
       if (tokenData.expira_en < new Date()) {
         this.logger.error(`Refresh fallido: El token encontrado ha expirado. Expiró en: ${tokenData.expira_en}`);
         // Medida de seguridad: si se intenta usar un token expirado, invalidamos todos los de ese usuario.
@@ -245,8 +245,10 @@ export class AuthService {
       },
     });
 
-    // 5. Devolver ambos tokens (el refresh token se enviará en la cookie desde el controlador)
+    // 5. Devolver la información del usuario junto con los tokens
+    const { contraseña, ...userData } = usuario;
     return {
+      ...userData,
       accessToken: newAccessToken,
       refreshToken: newRefreshToken, // El controlador se encargará de la cookie
     };

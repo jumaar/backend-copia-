@@ -73,8 +73,9 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
     });
 
-    // No devolver tokens en la respuesta JSON
-    return { message: 'Tokens refreshed successfully' };
+    // Devolver la información del usuario (igual que en login)
+    const { accessToken, refreshToken, ...userData } = result;
+    return userData;
   }
 
   @UseGuards(JwtAuthGuard)

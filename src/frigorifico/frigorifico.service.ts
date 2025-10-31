@@ -163,7 +163,6 @@ export class FrigorificoService {
         return {
           id_producto: item.id_producto,
           nombre_producto: producto?.nombre_producto || '',
-          peso_nominal_g: producto?.peso_nominal_g || 0,
           cantidad: item._count.id_empaque,
           ultima_fecha: item._max.fecha_empaque_1,
           epc_id_ultimo: ultimoEmpaque?.EPC_id || '',
