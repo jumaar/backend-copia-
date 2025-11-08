@@ -12,8 +12,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       jwtFromRequest: ExtractJwt.fromExtractors([
         ExtractJwt.fromAuthHeaderAsBearerToken(),
         (request: any) => {
-          // Extraer token de cookies HttpOnly
-          return request?.cookies?.accessToken;
+          // Extraer token de cookies HttpOnly (para usuarios normales y estaciones)
+          return request?.cookies?.accessToken || request?.cookies?.estacionToken;
         },
       ]),
       ignoreExpiration: false,
@@ -30,6 +30,19 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: any) {
     this.logger.debug(`Validando payload de JWT (versión final simple): ${JSON.stringify(payload)}`);
 
+    // Para tokens de estaciones (type: 'estacion')
+    if (payload.type === 'estacion') {
+      if (!payload.sub || !payload.frigorificoId) {
+        throw new UnauthorizedException('Token de estación con payload inválido o incompleto.');
+      }
+      return {
+        sub: payload.sub,
+        type: payload.type,
+        frigorificoId: payload.frigorificoId,
+      };
+    }
+
+    // Para tokens de usuarios normales
     if (!payload || !payload.sub || payload.roleId === undefined) {
       throw new UnauthorizedException('Token con payload inválido o incompleto.');
     }

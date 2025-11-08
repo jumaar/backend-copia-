@@ -31,8 +31,8 @@ export class EstacionController {
     // Establecer Access Token en cookie HttpOnly para estaciones
     response.cookie('estacionToken', result.access_token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: true, // HTTPS requerido para sameSite: 'none'
+      sameSite: 'none', // Permite cross-origin
       maxAge: 24 * 60 * 60 * 1000, // 24 horas
     });
 

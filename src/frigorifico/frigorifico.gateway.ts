@@ -15,12 +15,13 @@ interface EmpaqueData {
   productoId: number;
   peso: number;
   precioCalculado: number;
+  epc: string;
 }
 
 @WebSocketGateway({
   namespace: '/api/frigorifico/estacion',
   cors: {
-    origin: '*',
+    origin: 'https://localhost:5000',
     methods: ['GET', 'POST'],
     credentials: true,
   },

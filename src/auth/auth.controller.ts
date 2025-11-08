@@ -29,16 +29,16 @@ export class AuthController {
     // Establecer Access Token en cookie HttpOnly
     response.cookie('accessToken', result.accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: true, // HTTPS requerido para sameSite: 'none'
+      sameSite: 'none', // Permite cross-origin
       maxAge: 15 * 60 * 1000, // 15 minutos
     });
 
     // Establecer Refresh Token en cookie HttpOnly
     response.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: true, // HTTPS requerido para sameSite: 'none'
+      sameSite: 'none', // Permite cross-origin
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
     });
 
@@ -60,16 +60,16 @@ export class AuthController {
     // Establecer el NUEVO Access Token en cookie HttpOnly
     response.cookie('accessToken', result.accessToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: true, // HTTPS requerido para sameSite: 'none'
+      sameSite: 'none', // Permite cross-origin
       maxAge: 15 * 60 * 1000, // 15 minutos
     });
 
     // Establecer el NUEVO Refresh Token en la cookie
     response.cookie('refreshToken', result.refreshToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: true, // HTTPS requerido para sameSite: 'none'
+      sameSite: 'none', // Permite cross-origin
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
     });
 

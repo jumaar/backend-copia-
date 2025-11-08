@@ -29,7 +29,12 @@ async function bootstrap() {
 
   // Habilitar CORS para permitir solicitudes desde el frontend
   app.enableCors({
-    origin: ['http://localhost:5173', 'http://localhost:5000'], // URLs del frontend (Vite y dev server)
+    origin: [
+      'http://localhost:5173', // Frontend de desarrollo (Vite, por ejemplo)
+      'https://localhost:5000', // servicio de basculas
+      'https://www.api.vorak.app', // URL de tu frontend en producción
+      // 'https://api.vorak.app' no es necesario aquí, ya que es el destino, no el origen.
+    ],
     credentials: true,
   });
 

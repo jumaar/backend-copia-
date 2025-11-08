@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, Logger } from '@nestjs/common';
 import { Request } from 'express';
 import { User } from '../auth/entities/user.entity';
 
@@ -6,8 +6,17 @@ interface RequestWithUser extends Request {
   user: {
     id_usuario: number;
     roleId: number;
+ };
+}
+
+interface RequestWithEstacion extends Request {
+  user: {
+    sub: string;
+    type: string;
+    frigorificoId: number;
   };
 }
+
 import { FrigorificoService } from './frigorifico.service';
 import { CreateFrigorificoDto } from './dto/create-frigorifico.dto';
 import { UpdateFrigorificoDto } from './dto/update-frigorifico.dto';
@@ -18,6 +27,8 @@ import { Roles } from '../auth/decorators/roles.decorator';
 @Controller('api/frigorifico')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class FrigorificoController {
+  private readonly logger = new Logger(FrigorificoController.name);
+
   constructor(private readonly frigorificoService: FrigorificoService) {}
 
   @Get()
@@ -80,5 +91,57 @@ export class FrigorificoController {
   deleteEstacion(@Param('estacionId') estacionId: string, @Req() req: RequestWithUser) {
     return this.frigorificoService.deleteEstacion(estacionId, req.user.id_usuario);
   }
+
+ @Get('estacion/:estacionId')
+ @UseGuards(JwtAuthGuard)
+ getHistorialEstacion(@Param('estacionId') estacionId: string, @Req() req: RequestWithEstacion) {
+   // Verificar que el token es de tipo estación
+   if (req.user.type !== 'estacion') {
+     throw new Error('Acceso denegado: Token no es de tipo estación');
+   }
+
+   // Verificar que el id de la estación en el parámetro coincide con el del token
+   if (req.user.sub !== estacionId) {
+     throw new Error('Acceso denegado: La estación no coincide con el token');
+   }
+
+   return this.frigorificoService.getHistorialEstacion(estacionId);
+ }
+
+ @Delete('estacion/:estacionId/empaque/:epc')
+ @UseGuards(JwtAuthGuard)
+ deleteEmpaqueByEpc(
+   @Param('estacionId') estacionId: string,
+   @Param('epc') epc: string,
+   @Req() req: RequestWithUser | RequestWithEstacion
+ ) {
+   this.logger.debug(`🗑️ Eliminando empaque ${epc} de estación ${estacionId}`);
+
+   // Verificar permisos según el tipo de token
+   if ('type' in req.user && req.user.type === 'estacion') {
+     // Token de estación: verificar que coincide con la estación del parámetro
+     if (req.user.sub !== estacionId) {
+       throw new Error('Acceso denegado: La estación no coincide con el token');
+     }
+   } else if ('roleId' in req.user) {
+     // Token de usuario: verificar que tiene rol 3 y que la estación pertenece a sus frigoríficos
+     if (req.user.roleId !== 3) {
+       throw new Error('Acceso denegado: Se requiere rol de frigorífico');
+     }
+
+     // Verificar que la estación pertenece a un frigorífico del usuario
+     // Esta verificación se hará en el servicio
+   } else {
+     throw new Error('Acceso denegado: Token inválido');
+   }
+
+   return this.frigorificoService.deleteEmpaqueByEpc(estacionId, epc, 'roleId' in req.user ? req.user.id_usuario : undefined);
+ }
+
+ @Get('gestion')
+ @Roles(3)
+ getGestionFrigorifico(@Req() req: RequestWithUser) {
+   return this.frigorificoService.getGestionFrigorifico(req.user.id_usuario);
+ }
 
 }
