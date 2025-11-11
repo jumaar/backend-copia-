@@ -253,3 +253,322 @@ const usuarioActual = await this.databaseService.uSUARIOS.findUnique({
   "inventario_por_producto": [...]
 }
 ```
+
+## API Endpoints - Documentación Completa
+
+### Autenticación y Autorización
+Todos los endpoints requieren autenticación JWT. Los roles se verifican automáticamente.
+
+### 1. GET /api/frigorifico
+**Descripción**: Dashboard principal del frigorífico con estadísticas generales
+**Roles permitidos**: 1, 2, 3
+**Parámetros**: Ninguno (usa usuario autenticado)
+
+**Respuesta (200)**:
+```json
+{
+  "usuario_actual": {
+    "id": 3,
+    "nombre_completo": "admin arcila",
+    "celular": "2222222222",
+    "rol": "Admin",
+    "activo": true
+  },
+  "frigorificos": [
+    {
+      "id_frigorifico": 1,
+      "nombre_frigorifico": "Frigorífico Central",
+      "direccion": "Calle 123 #45-67",
+      "ciudad": {
+        "id_ciudad": 1,
+        "nombre_ciudad": "Bogotá",
+        "departamento": {
+          "id__departamento": 1,
+          "nombre_departamento": "Cundinamarca"
+        }
+      },
+      "estaciones": [
+        {
+          "id_estacion": "1008",
+          "clave_vinculacion": "1008001FrigorificoCentral"
+        }
+      ]
+    }
+  ],
+  "ciudades_disponibles": [
+    {
+      "id_ciudad": 1,
+      "nombre_ciudad": "Bogotá"
+    }
+  ],
+  "lotes_en_stock": {
+    "cantidad": 150,
+    "peso_total_g": 75000
+  },
+  "lotes_despachados": {
+    "cantidad": 25,
+    "peso_total_g": 12500
+  },
+  "total_transacciones": 125000.50,
+  "inventario_por_producto": [
+    {
+      "id_producto": 1,
+      "nombre_producto": "Pollo Entero",
+      "cantidad": 45,
+      "ultima_fecha": "2025-11-08T12:25:55.000Z",
+      "epc_id_ultimo": "E28011608000021C84A1988E"
+    }
+  ]
+}
+```
+
+### 2. POST /api/frigorifico
+**Descripción**: Crear un nuevo frigorífico
+**Roles permitidos**: 3
+**Body**:
+```json
+{
+  "nombre_frigorifico": "Frigorífico Nuevo",
+  "direccion": "Dirección del frigorífico",
+  "id_ciudad": 1
+}
+```
+
+**Respuesta (201)**:
+```json
+{
+  "id_frigorifico": 2,
+  "id_usuario": 3,
+  "nombre_frigorifico": "Frigorífico Nuevo",
+  "direccion": "Dirección del frigorífico",
+  "id_ciudad": 1
+}
+```
+
+### 3. PATCH /api/frigorifico
+**Descripción**: Actualizar datos del frigorífico
+**Roles permitidos**: 3
+**Body**:
+```json
+{
+  "id_frigorifico": 1,
+  "nombre_frigorifico": "Frigorífico Actualizado",
+  "direccion": "Nueva dirección"
+}
+```
+
+**Respuesta (200)**: Similar al POST
+
+### 4. DELETE /api/frigorifico
+**Descripción**: Eliminar un frigorífico
+**Roles permitidos**: 3
+**Body**:
+```json
+{
+  "id_frigorifico": 1
+}
+```
+
+**Respuesta (200)**:
+```json
+{
+  "id_frigorifico": 1,
+  "nombre_frigorifico": "Frigorífico Eliminado"
+}
+```
+
+### 5. POST /api/frigorifico/productos
+**Descripción**: Crear un nuevo producto
+**Roles permitidos**: 1, 2
+**Body**:
+```json
+{
+  "nombre_producto": "Nuevo Producto",
+  "descripcion_producto": "Descripción del producto",
+  "peso_nominal_g": 1000,
+  "precio_venta": "50000.00",
+  "dias_vencimiento": 30,
+  "precio_frigorifico": "10.00"
+}
+```
+
+**Respuesta (201)**: Objeto del producto creado
+
+### 6. GET /api/frigorifico/productos
+**Descripción**: Obtener todos los productos
+**Roles permitidos**: 1, 2, 3, 4
+
+**Respuesta (200)**:
+```json
+[
+  {
+    "id_producto": 1,
+    "nombre_producto": "Pollo Entero",
+    "descripcion_producto": "Pollo entero fresco",
+    "peso_nominal_g": 1500,
+    "precio_venta": "45000.00",
+    "dias_vencimiento": 7,
+    "precio_frigorifico": "15.00"
+  }
+]
+```
+
+### 7. PATCH /api/frigorifico/productos/:id
+**Descripción**: Actualizar un producto
+**Roles permitidos**: 1, 2
+**Parámetros**: id (ID del producto)
+
+**Respuesta (200)**: Producto actualizado
+
+### 8. DELETE /api/frigorifico/productos/:id
+**Descripción**: Eliminar un producto
+**Roles permitidos**: 1, 2
+**Parámetros**: id (ID del producto)
+
+**Respuesta (200)**: Producto eliminado
+
+### 9. POST /api/frigorifico/estacion/:frigorificoId
+**Descripción**: Crear una nueva estación para un frigorífico
+**Roles permitidos**: 3
+**Parámetros**: frigorificoId (ID del frigorífico)
+
+**Respuesta (201)**:
+```json
+{
+  "id_estacion": "1008",
+  "clave_vinculacion": "1008001FrigorificoCentral",
+  "activa": false
+}
+```
+
+### 10. DELETE /api/frigorifico/estacion/:estacionId
+**Descripción**: Eliminar una estación
+**Roles permitidos**: 3
+**Parámetros**: estacionId (ID de la estación)
+
+**Respuesta (200)**: Estación eliminada
+
+### 11. GET /api/frigorifico/estacion/:estacionId
+**Descripción**: Obtener historial de empaques de una estación (solo para estaciones autenticadas)
+**Roles permitidos**: Ninguno (solo tokens de tipo 'estacion')
+**Parámetros**: estacionId (ID de la estación)
+
+**Respuesta (200)**:
+```json
+{
+  "productos": [
+    {
+      "id_producto": 1,
+      "nombre_producto": "Pollo Entero",
+      "peso_nominal_g": 1500,
+      "cantidad_total": 10,
+      "empaques": [
+        {
+          "epc": "E28011608000021C84A1988E",
+          "peso_g": "1450.50",
+          "precio_venta_total": 45000,
+          "fecha_empaque": "2025-11-08T12:25:55.000Z"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### 12. DELETE /api/frigorifico/estacion/:estacionId/empaque/:epc
+**Descripción**: Eliminar un empaque específico por EPC
+**Roles permitidos**:estaciones o usuarios rol 3
+**Parámetros**:
+- estacionId (ID de la estación)
+- epc (Código EPC del empaque)
+
+**Respuesta (200)**:
+```json
+{
+  "deleted": true,
+  "epc": "E28011608000021C84A1988E"
+}
+```
+
+### 13. GET /api/frigorifico/gestion
+**Descripción**: Vista de gestión completa organizada por estaciones (solo productos en stock estado 1)
+**Roles permitidos**: 3
+
+**Respuesta (200)**:
+```json
+{
+  "usuario_actual": {
+    "id": 3,
+    "nombre_completo": "admin arcila",
+    "celular": "2222222222",
+    "rol": "Frigorifico",
+    "activo": true
+  },
+  "frigorificos": [
+    {
+      "id_frigorifico": 1,
+      "nombre_frigorifico": "Frigorífico Central",
+      "direccion": "Calle 123 #45-67",
+      "ciudad": {
+        "id_ciudad": 1,
+        "nombre_ciudad": "Bogotá",
+        "departamento": {
+          "id__departamento": 1,
+          "nombre_departamento": "Cundinamarca"
+        }
+      },
+      "lotes_en_stock": {
+        "cantidad": 150,
+        "peso_total_g": 75000
+      },
+      "lotes_despachados": {
+        "cantidad": 25,
+        "peso_total_g": 12500
+      },
+      "total_transacciones": 5000000,
+      "estaciones": [
+        {
+          "id_estacion": "1008",
+          "clave_vinculacion": "1008001FrigorificoCentral",
+          "activa": true,
+          "total_empaques": 45,
+          "peso_total_g": 22500,
+          "productos": [
+            {
+              "id_producto": 1,
+              "nombre_producto": "Pollo Entero",
+              "peso_nominal_g": 1500,
+              "cantidad_total": 15,
+              "peso_total_g": 22500,
+              "empaques": [
+                {
+                  "epc": "E28011608000021C84A1988E",
+                  "peso_g": "1450.50",
+                  "precio_venta_total": 45000,
+                  "fecha_empaque": "2025-11-08T12:25:55.000Z"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "ciudades_disponibles": [
+    {
+      "id_ciudad": 1,
+      "nombre_ciudad": "Bogotá"
+    }
+  ]
+}
+```
+
+## Estados de Empaque
+- **1**: En stock (en frigorífico)
+- **2**: Despachado/logistica
+
+## Códigos de Error Comunes
+- `FRIGORIFICO_NOT_FOUND`: Frigorífico no encontrado
+- `EMPAQUE_NOT_FOUND`: Empaque no encontrado
+- `ESTACION_NO_AUTORIZADA`: Estación no pertenece al usuario
+- `CLAVE_INVALIDA`: Clave de vinculación inválida

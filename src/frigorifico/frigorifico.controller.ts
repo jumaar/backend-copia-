@@ -32,7 +32,7 @@ export class FrigorificoController {
   constructor(private readonly frigorificoService: FrigorificoService) {}
 
   @Get()
-  @Roles(1, 2, 3, 4)
+  @Roles(1, 2, 3)
   findAll(@Req() req: RequestWithUser) {
     const user = req.user;
     return this.frigorificoService.findAll(user.id_usuario);
@@ -115,7 +115,6 @@ export class FrigorificoController {
    @Param('epc') epc: string,
    @Req() req: RequestWithUser | RequestWithEstacion
  ) {
-   this.logger.debug(`🗑️ Eliminando empaque ${epc} de estación ${estacionId}`);
 
    // Verificar permisos según el tipo de token
    if ('type' in req.user && req.user.type === 'estacion') {
