@@ -11,22 +11,45 @@ export class GestionUsuariosService {
 
   private formatUser(user) {
     if (!user) return null;
-    return {
+    
+    // Formatear usuario base
+    const formattedUser: any = {
       id: user.id_usuario,
       nombre_completo: `${user.nombre_usuario || ''} ${user.apellido_usuario || ''}`.trim(),
       celular: user.celular,
       rol: user.rol?.nombre_rol,
       activo: user.activo,
     };
+    
+    // Si es un usuario de logística, incluir sus datos de empresa y vehículo
+    if (user.rol?.nombre_rol === 'Logistica') {
+      if (user.logisticas && user.logisticas.length > 0) {
+        formattedUser.logistica = {
+          nombre_empresa: user.logisticas[0].nombre_empresa,
+          placa_vehiculo: user.logisticas[0].placa_vehiculo
+        };
+      } else {
+        // Siempre incluir logistica como array vacío cuando no hay datos
+        formattedUser.logistica = [];
+      }
+    }
+    
+    return formattedUser;
   }
 
   async findAll(user: { id_usuario: number; roleId: number }) {
     const userRole = user.roleId;
     this.logger.debug(`Iniciando findAll para el usuario ID: ${user.id_usuario} con Rol ID: ${userRole}`);
 
+    // Incluir logisticas para el usuario actual si es rol 4
+    const includeRelations = { rol: true };
+    if (userRole === 4) {
+      includeRelations['logisticas'] = true;
+    }
+
     const currentUser = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario: user.id_usuario },
-      include: { rol: true },
+      include: includeRelations,
     });
 
     // Vista simple para roles no jerárquicos
@@ -50,6 +73,11 @@ export class GestionUsuariosService {
 
     // Función recursiva para construir el árbol de descendientes
     const getDescendants = async (creatorId: number) => {
+      const includeDescRelations = { rol: true };
+      if (userRole === 4) {
+        includeDescRelations['logisticas'] = true;
+      }
+
       const createdTokens = await this.databaseService.tOKEN_REGISTRO.findMany({
         where: {
           id_usuario_creador: creatorId,
@@ -57,7 +85,7 @@ export class GestionUsuariosService {
           id_usuario_nuevo: { not: null },
           nuevo_usuario: { email: { not: { endsWith: '@borrado.com' } } },
         },
-        include: { nuevo_usuario: { include: { rol: true } } },
+        include: { nuevo_usuario: { include: includeDescRelations } },
       });
 
       if (createdTokens.length === 0) {
@@ -101,17 +129,25 @@ export class GestionUsuariosService {
       throw new ForbiddenException('Los usuarios de tipo Frigorífico y Tienda solo pueden ver sus propios datos.');
     }
 
+    // Incluir relaciones según el rol del solicitante
+    const includeRelations: any = {
+      rol: true,
+      // Incluir relaciones para roles administrativos
+      ...(canViewAll ? {
+        tiendas: true,
+        frigorificos: true,
+        logisticas: true,
+      } : {}),
+    };
+
+    // Asegurarnos de incluir logisticas siempre para usuarios con rol 4
+    if (requester.roleId === 4) {
+      includeRelations.logisticas = true;
+    }
+
     const usuario = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario: id },
-      include: {
-        rol: true,
-        // Incluir relaciones solo para roles administrativos
-        ...(canViewAll ? {
-          tiendas: true,
-          frigorificos: true,
-          logisticas: true,
-        } : {}),
-      },
+      include: includeRelations,
     });
 
     if (!usuario) {
@@ -136,6 +172,39 @@ export class GestionUsuariosService {
       throw new ForbiddenException('Los usuarios de tipo Frigorífico y Tienda solo pueden modificar sus propios datos.');
     }
 
+    // Verificar permisos específicos para datos de logística
+    if (requester.roleId === 4 && !isOwner) {
+      throw new ForbiddenException('Los usuarios de Logística solo pueden modificar sus propios datos.');
+    }
+
+    // Verificar usuario objetivo
+    const userToUpdate = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario: id },
+      include: { rol: true, logisticas: true }
+    });
+
+    if (!userToUpdate) {
+      throw new NotFoundException(`Usuario con ID ${id} no encontrado.`);
+    }
+
+    // Verificar si el usuario que se está actualizando es de rol 4 (Logística)
+    const isLogisticaUser = userToUpdate.id_rol === 4;
+
+    // Extraer campos de logística si el usuario es de logística
+    let logisticaData: any = {};
+    if (isLogisticaUser && (updateGestionUsuarioDto.nombre_empresa || updateGestionUsuarioDto.placa_vehiculo)) {
+      if (updateGestionUsuarioDto.nombre_empresa) {
+        logisticaData.nombre_empresa = updateGestionUsuarioDto.nombre_empresa;
+      }
+      if (updateGestionUsuarioDto.placa_vehiculo) {
+        logisticaData.placa_vehiculo = updateGestionUsuarioDto.placa_vehiculo;
+      }
+      
+      // Eliminar los campos de logística del DTO para no intentar actualizarlos en la tabla USUARIOS
+      const { nombre_empresa, placa_vehiculo, ...usuarioData } = updateGestionUsuarioDto;
+      updateGestionUsuarioDto = usuarioData as any;
+    }
+
     const { email, identificacion_usuario, celular } = updateGestionUsuarioDto;
     if (email) {
       const existingUser = await this.databaseService.uSUARIOS.findFirst({ where: { email, NOT: { id_usuario: id } } });
@@ -150,13 +219,45 @@ export class GestionUsuariosService {
       if (existingUser) throw new ConflictException(`El celular '${celular}' ya está en uso.`);
     }
 
+    // Actualizar los datos del usuario
     const updatedUser = await this.databaseService.uSUARIOS.update({
       where: { id_usuario: id },
       data: updateGestionUsuarioDto,
     });
 
-    const { contraseña, ...result } = updatedUser;
-    return result;
+    // Manejar datos de logística si existen
+    let logisticaResult: any = null;
+    if (isLogisticaUser && Object.keys(logisticaData).length > 0) {
+      // Verificar si el usuario ya tiene un registro de logística
+      if (userToUpdate.logisticas && userToUpdate.logisticas.length > 0) {
+        // Actualizar el registro existente
+        logisticaResult = await this.databaseService.lOGISTICA.update({
+          where: { id_logistica: userToUpdate.logisticas[0].id_logistica },
+          data: logisticaData,
+        });
+      } else {
+        // Crear un nuevo registro de logística
+        logisticaResult = await this.databaseService.lOGISTICA.create({
+          data: {
+            id_usuario: id,
+            ...logisticaData as any
+          },
+        });
+      }
+    }
+
+    // Preparar la respuesta combinando datos del usuario y logística si existe
+    const userResult: any = { ...updatedUser, contraseña: undefined };
+    
+    if (logisticaResult) {
+      userResult.logisticas = [logisticaResult];
+    } else if (userToUpdate.logisticas && userToUpdate.logisticas.length > 0) {
+      userResult.logisticas = userToUpdate.logisticas;
+    } else {
+      userResult.logisticas = [];
+    }
+
+    return userResult;
   }
 
   async remove(id: number, remover: { id: number; roleId: number }) {

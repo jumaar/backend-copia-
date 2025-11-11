@@ -40,6 +40,15 @@ export class BaseGestionUsuarioDto {
   @IsInt()
   @IsOptional()
   id_rol?: number;
+
+  // Campos adicionales para usuarios con rol 4 (Logística)
+  @IsString()
+  @IsOptional()
+  nombre_empresa?: string;
+
+  @IsString()
+  @IsOptional()
+  placa_vehiculo?: string;
 }
 
 // Usamos PartialType para hacer todos los campos opcionales para la actualización

@@ -138,9 +138,41 @@ export class FrigorificoController {
  }
 
  @Get('gestion')
- @Roles(3)
+ @Roles(2, 3, 4)
  getGestionFrigorifico(@Req() req: RequestWithUser) {
-   return this.frigorificoService.getGestionFrigorifico(req.user.id_usuario);
+   const { id_usuario } = req.query; // Parámetro opcional para roles 2 y 4
+   const requesterId = req.user.id_usuario;
+   const requesterRole = req.user.roleId;
+   
+   // Si es rol 3, devuelve su propia información
+   if (requesterRole === 3) {
+     return this.frigorificoService.getGestionFrigorifico(requesterId);
+   }
+   
+   // Si es rol 2 o 4, puede solicitar información de un rol 3 específico
+   if (requesterRole === 2 || requesterRole === 4) {
+     if (!id_usuario) {
+       throw new Error('Se requiere el parámetro id_usuario para usuarios con rol 2 o 4');
+     }
+     return this.frigorificoService.getGestionFrigorificoPorUsuario(+id_usuario, requesterId, requesterRole);
+   }
+   
+   throw new Error('Rol no autorizado para esta operación');
  }
 
+ @Get('hermanos')
+ @Roles(2, 4)
+ getHermanosFrigorifico(@Req() req: RequestWithUser) {
+   const requesterId = req.user.id_usuario;
+   const requesterRole = req.user.roleId;
+   
+   return this.frigorificoService.getHermanosFrigorifico(requesterId, requesterRole);
+ }
+
+ @Post('empaques/cambiar-estado')
+ @Roles(4)
+ async cambiarEstadoEmpaques(@Req() req: RequestWithUser, @Body() body: { id_estacion: string, id_producto: number, id_logistica: number }) {
+   const { id_estacion, id_producto, id_logistica } = body;
+   return this.frigorificoService.cambiarEstadoEmpaques(id_estacion, id_producto, id_logistica, req.user.id_usuario);
+ }
 }
