@@ -63,7 +63,7 @@ export class FrigorificoService {
       },
     });
 
-    // Lotes despachados: suma de empaques con id_estado_empaque = 2, fecha de hoy, y suma de peso_exacto_g
+    // Lotes despachados: suma de empaques con hora_en_logistica_2 dentro del día actual
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
     const manana = new Date(hoy);
@@ -76,8 +76,10 @@ export class FrigorificoService {
             id_frigorifico: { in: frigorificoIds },
           },
         },
-        id_estado_empaque: 2,
-        fecha_empaque_1: {
+        id_estado_empaque: {
+          in: [2, 3, 4] // Estados: enviado, en tránsito, entregado
+        },
+        hora_en_logistica_2: {
           gte: hoy,
           lt: manana,
         },
@@ -131,46 +133,68 @@ export class FrigorificoService {
       },
     });
 
-    // Obtener detalles adicionales para cada producto (nombre, peso, EPC del último)
-    const inventarioDetallado = await Promise.all(
-      inventarioPorProducto.map(async (item) => {
-        const producto = await this.databaseService.pRODUCTOS.findUnique({
-          where: { id_producto: item.id_producto },
-          select: {
-            nombre_producto: true,
-            peso_nominal_g: true,
-          },
-        });
+    // Obtener detalles adicionales para cada producto (OPTIMIZADO - sin N+1 query problem)
+    const productosIds = inventarioPorProducto.map(item => item.id_producto);
+    
+    // 1. Obtener todos los productos únicos en UNA consulta
+    const productos = await this.databaseService.pRODUCTOS.findMany({
+      where: {
+        id_producto: { in: productosIds }
+      },
+      select: {
+        id_producto: true,
+        nombre_producto: true,
+        peso_nominal_g: true,
+      },
+    });
 
-        // Obtener el EPC del último empaque (por fecha) - de cualquier frigorífico del usuario
-        const ultimoEmpaque = item._max?.fecha_empaque_1 ? await this.databaseService.eMPAQUES.findFirst({
-          where: {
-            estacion: {
-              frigorifico: {
-                id_frigorifico: { in: frigorificoIds },
-              },
-            },
-            id_estado_empaque: 1,
-            id_producto: item.id_producto,
-            fecha_empaque_1: item._max.fecha_empaque_1,
-          },
-          select: {
-            EPC_id: true,
-          },
-          orderBy: {
-            fecha_empaque_1: 'desc',
-          },
-        }) : null;
+    // 2. Obtener todos los últimos EPC en UNA consulta optimizada
+    const fechasMaximas = inventarioPorProducto
+      .filter(item => item._max?.fecha_empaque_1 !== null && item._max?.fecha_empaque_1 !== undefined)
+      .map(item => item._max.fecha_empaque_1 as Date);
 
-        return {
-          id_producto: item.id_producto,
-          nombre_producto: producto?.nombre_producto || '',
-          cantidad: item._count.id_empaque,
-          ultima_fecha: item._max.fecha_empaque_1,
-          epc_id_ultimo: ultimoEmpaque?.EPC_id || '',
-        };
-      })
-    );
+    const ultimosEPCs = await this.databaseService.eMPAQUES.findMany({
+      where: {
+        estacion: {
+          frigorifico: {
+            id_frigorifico: { in: frigorificoIds },
+          },
+        },
+        id_estado_empaque: 1,
+        id_producto: { in: productosIds },
+        fecha_empaque_1: { in: fechasMaximas }
+      },
+      select: {
+        id_producto: true,
+        EPC_id: true,
+        fecha_empaque_1: true,
+      }
+    });
+
+    // 3. Crear mapas para optimización O(1)
+    const productoMap = new Map(productos.map(p => [p.id_producto, p]));
+    const epcMap = new Map();
+    ultimosEPCs.forEach(epc => {
+      const key = `${epc.id_producto}-${epc.fecha_empaque_1.toISOString()}`;
+      epcMap.set(key, epc.EPC_id);
+    });
+
+    // 4. Mapear resultados sin consultas adicionales
+    const inventarioDetallado = inventarioPorProducto.map(item => {
+      const producto = productoMap.get(item.id_producto);
+      const fechaKey = item._max?.fecha_empaque_1 ?
+        `${item.id_producto}-${item._max.fecha_empaque_1.toISOString()}` : null;
+      const epc_id = fechaKey ? epcMap.get(fechaKey) || '' : '';
+
+      return {
+        id_producto: item.id_producto,
+        nombre_producto: producto?.nombre_producto || '',
+        peso_nominal_g: producto?.peso_nominal_g || 0,
+        cantidad: item._count.id_empaque,
+        ultima_fecha: item._max.fecha_empaque_1,
+        epc_id_ultimo: epc_id,
+      };
+    });
 
     // Obtener información del usuario actual
     const usuarioActual = await this.databaseService.uSUARIOS.findUnique({
@@ -478,9 +502,65 @@ export class FrigorificoService {
       throw new Error('Estación no encontrada o no autorizada');
     }
 
-    return this.databaseService.eSTACIONES.delete({
-      where: { id_estacion: idEstacion },
+    // Verificar si la estación tiene empaques activos en stock (estado 1)
+    const empaquesEnStock = await this.databaseService.eMPAQUES.count({
+      where: {
+        id_estacion: idEstacion,
+        id_estado_empaque: 1, // Solo empaques en stock (activos)
+      },
     });
+
+    // Si tiene empaques en stock, NO se puede eliminar
+    if (empaquesEnStock > 0) {
+      throw new HttpException(
+        {
+          status: HttpStatus.FORBIDDEN,
+          error: 'Eliminación bloqueada',
+          message: `No puedes eliminar esta estación porque tiene ${empaquesEnStock} empaque(s) en stock. Primero despacha todos los empaques.`,
+          code: 'ESTACION_HAS_EMPAQUES_STOCK',
+          empaquesCount: empaquesEnStock
+        },
+        HttpStatus.FORBIDDEN
+      );
+    }
+
+    // Verificar si la estación tiene empaques en otros estados (despachados)
+    const empaquesDespachados = await this.databaseService.eMPAQUES.count({
+      where: {
+        id_estacion: idEstacion,
+        id_estado_empaque: {
+          in: [2, 3, 4] // Estados: enviado, en tránsito, entregado
+        },
+      },
+    });
+
+    // Si no hay empaques en stock, SÍ se puede eliminar (aunque tenga empaques despachados)
+    if (empaquesEnStock === 0) {
+      // La estación está "limpia" - todos sus empaques ya fueron despachados
+      // Es seguro eliminarla
+    }
+
+    try {
+      return await this.databaseService.eSTACIONES.delete({
+        where: { id_estacion: idEstacion },
+      });
+    } catch (error) {
+      // Manejar errores de Prisma (como violaciones de clave foránea)
+      if (error.code === 'P2003') {
+        throw new HttpException(
+          {
+            status: HttpStatus.FORBIDDEN,
+            error: 'Eliminación bloqueada',
+            message: 'No puedes eliminar esta estación porque tiene datos relacionados (empaques, transacciones, etc.).',
+            code: 'ESTACION_HAS_RELATIONS',
+            constraint: error.meta?.constraint
+          },
+          HttpStatus.FORBIDDEN
+        );
+      }
+      // Re-lanzar otros errores
+      throw error;
+    }
   }
 
   private generarClaveVinculacionCompleta(
@@ -865,7 +945,7 @@ export class FrigorificoService {
           },
         });
 
-        // Lotes despachados del día
+        // Lotes despachados del día (usando hora_en_logistica_2)
         const hoy = new Date();
         hoy.setHours(0, 0, 0, 0);
         const manana = new Date(hoy);
@@ -878,8 +958,10 @@ export class FrigorificoService {
                 id_frigorifico: { in: frigorificoIds },
               },
             },
-            id_estado_empaque: 2,
-            fecha_empaque_1: {
+            id_estado_empaque: {
+              in: [2, 3, 4] // Estados: enviado, en tránsito, entregado
+            },
+            hora_en_logistica_2: {
               gte: hoy,
               lt: manana,
             },
@@ -1185,6 +1267,9 @@ export class FrigorificoService {
       );
     }
     
+    // Extraer id_usuario del id_estacion (formato: XXXX00XXX)
+    const idUsuarioExtraido = this.extraerIdUsuarioDeEstacion(id_estacion);
+    
     // Cambiar el estado de los empaques del producto en la estación
     const fechaActual = new Date();
     
@@ -1202,12 +1287,70 @@ export class FrigorificoService {
       },
     });
     
+    // Obtener los IDs de los empaques actualizados para crear las transacciones
+    const empaquesActualizados = await this.databaseService.eMPAQUES.findMany({
+      where: {
+        id_estacion: id_estacion,
+        id_producto: id_producto,
+        id_estado_empaque: 2, // Los que acabamos de cambiar a estado 2
+      },
+      select: {
+        id_empaque: true,
+        costo_frigorifico: true,
+      },
+    });
+    
+    // Crear transacciones para cada empaque actualizado
+    const transaccionesCreadas: any[] = [];
+    
+    for (const empaque of empaquesActualizados) {
+      try {
+        const transaccion = await this.databaseService.tRANSACCIONES.create({
+          data: {
+            id_empaque: empaque.id_empaque,
+            id_usuario: idUsuarioExtraido,
+            monto: parseFloat(empaque.costo_frigorifico.toString()),
+            hora_transaccion: fechaActual, // Usar fechaActual directamente
+            id_tipo_transaccion: 2, // Costo frigorifico
+            estado_transaccion: 1, // Pendiente de pago
+            nota_opcional: `Transacción creada para Producto ${id_producto}`,
+          },
+        });
+        
+        transaccionesCreadas.push(transaccion);
+      } catch (error) {
+        this.logger.error(`Error creando transacción para empaque ${empaque.id_empaque}:`, error);
+        // Continuar con los demás empaques aunque falle uno
+      }
+    }
+    
     return {
       actualizados: result.count,
       fecha_cambio: fechaActual,
       id_logistica: id_logistica,
+      transacciones_creadas: transaccionesCreadas.length,
+      detalles_transacciones: transaccionesCreadas,
     };
   }
+
+  // Función auxiliar para extraer el ID de usuario del ID de estación
+  private extraerIdUsuarioDeEstacion(id_estacion: string): number {
+    const indexSeparador = id_estacion.lastIndexOf('00');
+    
+    if (indexSeparador === -1 || indexSeparador === id_estacion.length - 2) {
+      throw new Error(`Formato de ID de estación inválido: ${id_estacion}. Debe tener el formato XXXX00XXX`);
+    }
+    
+    const idUsuario = parseInt(id_estacion.substring(indexSeparador + 2));
+    
+    if (isNaN(idUsuario)) {
+      throw new Error(`No se pudo extraer ID de usuario del ID de estación: ${id_estacion}`);
+    }
+    
+    return idUsuario;
+  }
+
+  
 
   // Función auxiliar para obtener el ID del admin de un usuario
   private async obtenerAdminId(userId: number): Promise<number | null> {

@@ -216,9 +216,9 @@ async function main() {
   // 17. TIPO_TRANSACCION
   console.log('💰 Creando tipos de transacción...');
   const tiposTransaccion = [
-    { id_tipo: 1, nombre_codigo: 'venta', descripcion_amigable: 'Venta de empaque a tienda' },
+    { id_tipo: 1, nombre_codigo: 'venta', descripcion_amigable: 'Venta de empaque en la tienda' },
     { id_tipo: 2, nombre_codigo: 'costo_frigorifico', descripcion_amigable: 'Deuda de logística con frigorífico' },
-    { id_tipo: 3, nombre_codigo: 'ticket_consolidado', descripcion_amigable: 'Ticket de cobro a tienda' },
+    { id_tipo: 3, nombre_codigo: 'ticket_consolidado', descripcion_amigable: 'Ticket que agrupa varias transacciones' },
     { id_tipo: 4, nombre_codigo: 'pago_recibido', descripcion_amigable: 'Dinero recibido de un deudor' },
     { id_tipo: 5, nombre_codigo: 'pago_realizado', descripcion_amigable: 'Dinero entregado a un acreedor' },
     { id_tipo: 6, nombre_codigo: 'devolucion', descripcion_amigable: 'Anulación de una venta' },

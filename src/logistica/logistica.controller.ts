@@ -1,34 +1,29 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, Req } from '@nestjs/common';
 import { LogisticaService } from './logistica.service';
 import { CreateLogisticaDto } from './dto/create-logistica.dto';
 import { UpdateLogisticaDto } from './dto/update-logistica.dto';
+import { CuentasDto } from './dto/cuentas.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 
-@Controller('logistica')
+@Controller('api/logistica')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class LogisticaController {
   constructor(private readonly logisticaService: LogisticaService) {}
 
-  @Post()
-  create(@Body() createLogisticaDto: CreateLogisticaDto) {
-    return this.logisticaService.create(createLogisticaDto);
-  }
-
   @Get()
-  findAll() {
-    return this.logisticaService.findAll();
+  @Roles(1, 2, 4)
+  getProductosPorLogistica(@Req() req: any) {
+    const id_usuario = req.user.id_usuario; // Obtener id_usuario del JWT
+    return this.logisticaService.getProductosPorLogistica(id_usuario);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.logisticaService.findOne(+id);
+  @Get('cuentas')
+  @Roles(1, 2, 3, 4)
+  getCuentasTransacciones(@Query() cuentasDto: CuentasDto) {
+    return this.logisticaService.getCuentasTransacciones(cuentasDto);
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateLogisticaDto: UpdateLogisticaDto) {
-    return this.logisticaService.update(+id, updateLogisticaDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.logisticaService.remove(+id);
-  }
+  
 }
