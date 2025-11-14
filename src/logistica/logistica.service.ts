@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { CreateLogisticaDto } from './dto/create-logistica.dto';
 import { UpdateLogisticaDto } from './dto/update-logistica.dto';
 import { CuentasDto } from './dto/cuentas.dto';
+import { ConsolidacionCuentasDto } from './dto/consolidacion-cuentas.dto';
 
 @Injectable()
 export class LogisticaService {
@@ -17,7 +18,7 @@ export class LogisticaService {
   }
 
   findOne(id: number) {
-    return `This action returns a #${id} logistica`;
+    return `This action returns a #${id}`;
   }
 
   async getProductosPorLogistica(id_usuario: number) {
@@ -146,7 +147,15 @@ export class LogisticaService {
         },
         transaccionRel: {
           select: {
-            id_transaccion: true
+            id_transaccion: true,
+            nota_opcional: true,
+            usuario: {
+              select: {
+                id_usuario: true,
+                nombre_usuario: true,
+                apellido_usuario: true
+              }
+            }
           }
         }
       },
@@ -156,16 +165,27 @@ export class LogisticaService {
     });
 
     // Formatear las transacciones para la respuesta (solo campos esenciales)
-    const transaccionesFormateadas = transacciones.map(transaccion => ({
-      id_transaccion: transaccion.id_transaccion,
-      id_empaque: transaccion.id_empaque, // null para tickets consolidados
-      id_transaccion_rel: transaccion.id_transaccion_rel, // null = normal, number = consolidada
-      monto: parseFloat(transaccion.monto.toString()),
-      hora_transaccion: transaccion.hora_transaccion,
-      nombre_tipo_transaccion: transaccion.tipoTransaccion.nombre_codigo,
-      nombre_estado_transaccion: transaccion.estadoTransaccion.nombre_estado,
-      nota_opcional: transaccion.nota_opcional
-    }));
+    const transaccionesFormateadas = transacciones.map(transaccion => {
+      // Solo agregar info_pago en transacciones consolidadas (id_empaque = null)
+      const infoPago = (transaccion.id_empaque === null && transaccion.transaccionRel) ? {
+        id_usuario_pago: transaccion.transaccionRel.usuario.id_usuario,
+        nombre_usuario_pago: `${transaccion.transaccionRel.usuario.nombre_usuario} ${transaccion.transaccionRel.usuario.apellido_usuario}`,
+        nota_opcional_pago: transaccion.transaccionRel.nota_opcional
+      } : null;
+
+      return {
+        id_transaccion: transaccion.id_transaccion,
+        id_empaque: transaccion.id_empaque, // null para tickets consolidados
+        id_transaccion_rel: transaccion.id_transaccion_rel, // null = normal, number = consolidada
+        monto: parseFloat(transaccion.monto.toString()),
+        hora_transaccion: transaccion.hora_transaccion,
+        nombre_tipo_transaccion: transaccion.tipoTransaccion.nombre_codigo,
+        nombre_estado_transaccion: transaccion.estadoTransaccion.nombre_estado,
+        nota_opcional: transaccion.nota_opcional,
+        // Solo para transacciones consolidadas
+        ...(infoPago && { info_pago: infoPago })
+      };
+    });
 
     return {
       transacciones: transaccionesFormateadas,
@@ -186,11 +206,174 @@ export class LogisticaService {
     };
   }
 
-  update(id: number, updateLogisticaDto: UpdateLogisticaDto) {
-    return `This action updates a #${id} logistica`;
-  }
 
-  remove(id: number) {
-    return `This action removes a #${id} logistica`;
+  async consolidarCuentas(
+    id_usuario_consolidar: number,
+    id_usuario_credenciales: number,
+    consolidacionDto: ConsolidacionCuentasDto
+  ) {
+    const { monto, nota_opcional } = consolidacionDto;
+
+    // Validar que el usuario a consolidar tenga rol 3
+    const usuarioAConsolidar = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario: id_usuario_consolidar },
+      select: { id_rol: true, nombre_usuario: true, apellido_usuario: true }
+    });
+
+    if (!usuarioAConsolidar) {
+      throw new BadRequestException('Usuario a consolidar no encontrado');
+    }
+
+    if (usuarioAConsolidar.id_rol !== 3) {
+      throw new BadRequestException('El usuario debe tener rol 3 (cliente frigorífico) para ser consolidado');
+    }
+
+    // Obtener transacciones pendientes: empaques reales + saldos de consolidación anterior
+    const transaccionesPendientes = await this.databaseService.tRANSACCIONES.findMany({
+      where: {
+        id_usuario: id_usuario_consolidar,
+        estado_transaccion: 1 // estado pendiente
+      },
+      select: {
+        id_transaccion: true,
+        monto: true,
+        id_empaque: true,
+        nota_opcional: true
+      }
+    });
+    const idsTransaccionesPendientes = transaccionesPendientes.map(
+      (transaccion) => transaccion.id_transaccion
+    );
+
+    // Separar empaques reales de saldos de consolidación anterior
+    const empaquesReales = transaccionesPendientes.filter(t => 
+      t.id_empaque !== null || 
+      (t.id_empaque === null && !t.nota_opcional?.includes('Saldo pendiente consolidación'))
+    );
+
+    const saldosAnteriores = transaccionesPendientes.filter(t => 
+      t.id_empaque === null && 
+      t.nota_opcional?.includes('Saldo pendiente consolidación')
+    );
+
+    if (transaccionesPendientes.length === 0) {
+      throw new BadRequestException('No hay transacciones pendientes para consolidar');
+    }
+
+    // Calcular suma total de transacciones pendientes y redondear a entero
+    const montoConsolidadoRaw = transaccionesPendientes.reduce(
+      (sum, transaccion) => sum + parseFloat(transaccion.monto.toString()),
+      0
+    );
+    
+    // Redondear a entero usando Math.round (0.5 redondea hacia arriba, <0.5 hacia abajo)
+    const montoConsolidado = Math.round(montoConsolidadoRaw);
+
+    // Validar que el monto solicitado tenga relación con el consolidado
+    // Ahora permitimos abonos mayores para manejar casos donde el frigorífico nos debe
+
+    // Analizar tipo de abono
+    const esAbonoCompleto = monto === montoConsolidado;
+    const esAbonoParcial = monto < montoConsolidado;
+    const esAbonoMayor = monto > montoConsolidado;
+
+    let saldoPendiente = 0;
+
+    if (esAbonoParcial) {
+      // Usuario paga menos: debe saldo positivo
+      saldoPendiente = montoConsolidado - monto; // Positivo: el usuario nos debe
+    } else if (esAbonoMayor) {
+      // Usuario paga más: tiene saldo a favor (negativo)
+      saldoPendiente = montoConsolidado - monto; // Negativo: nosotros le debemos
+    }
+
+    // Crear IDs de empaques reales para la nota
+    const idsEmpaques = empaquesReales
+      .filter(t => t.id_empaque !== null)
+      .map(t => t.id_empaque)
+      .join(',');
+
+    try {
+      // Iniciar transacción de base de datos
+      await this.databaseService.$transaction(async (prisma) => {
+        // PASO 1: Crear transacción del acreedor (pago recibido)
+        const notaConMonto = nota_opcional
+          ? `${nota_opcional} - Monto abonado: ${monto}`
+          : `Monto abonado: ${monto}`;
+
+        const transaccionAcreedor = await prisma.tRANSACCIONES.create({
+          data: {
+            id_empaque: null,
+            id_usuario: id_usuario_credenciales,
+            id_transaccion_rel: null, // NULO en la transacción del pago
+            monto: -monto, // NEGATIVO (pago realizado)
+            hora_transaccion: new Date(),
+            id_tipo_transaccion: 5, // dinero entregado a acreedor
+            nota_opcional: notaConMonto,
+            estado_transaccion: 2 // pagado
+          }
+        });
+
+        // PASO 2: Crear transacción consolidada (todo lo que debe el usuario)
+        const transaccionConsolidada = await prisma.tRANSACCIONES.create({
+          data: {
+            id_empaque: null,
+            id_usuario: id_usuario_consolidar,
+            id_transaccion_rel: transaccionAcreedor.id_transaccion, // PUNTA A LA TRANSACCIÓN DEL PAGO
+            monto: -montoConsolidado, // NEGATIVO (todo lo que debe)
+            hora_transaccion: new Date(),
+            id_tipo_transaccion: 3, // ticket_consolidado
+            nota_opcional: idsEmpaques || null,
+            estado_transaccion: 4 // consolidado
+          }
+        });
+
+        // PASO 3: Actualizar todas las transacciones pendientes incluidas en la consolidación
+        await prisma.tRANSACCIONES.updateMany({
+          where: {
+            id_usuario: id_usuario_consolidar,
+            estado_transaccion: 1, // pendiente
+            id_transaccion: { in: idsTransaccionesPendientes }
+          },
+          data: {
+            estado_transaccion: 2, // pagado
+            id_transaccion_rel: transaccionConsolidada.id_transaccion
+          }
+        });
+
+        // PASO 4: Crear transacción pendiente para saldo (abonos parciales y mayores)
+        if (esAbonoParcial || esAbonoMayor) {
+          // Para abonos parciales: el usuario debe saldo (positivo)
+          // Para abonos mayores: el usuario tiene saldo a favor (negativo)
+          const saldoNegativo = esAbonoMayor; // true si nosotros debemos al usuario
+
+          await prisma.tRANSACCIONES.create({
+            data: {
+              id_empaque: null,
+              id_usuario: id_usuario_consolidar, // Siempre va al usuario consolidado
+              id_transaccion_rel: transaccionConsolidada.id_transaccion, // Referencia al consolidado
+              monto: saldoPendiente, // Positivo para deuda, negativo para saldo a favor
+              hora_transaccion: new Date(),
+              id_tipo_transaccion: 2, // costo_frigorifico (como los empaques)
+              nota_opcional: `Saldo ${saldoNegativo ?  'adelantado pendiente':'a favor del usuario'} consolidación ${transaccionConsolidada.id_transaccion}`,
+              estado_transaccion: 1 // pendiente
+            }
+          });
+        }
+      });
+
+      return {
+        message: 'Consolidación realizada exitosamente',
+        resumen: {
+          usuario_consolidado: id_usuario_consolidar,
+          usuario_acreedor: id_usuario_credenciales,
+          monto_consolidado: montoConsolidado,
+          monto_abonado: monto,
+        }
+      };
+
+    } catch (error) {
+      throw new BadRequestException(`Error al consolidar cuentas: ${error.message}`);
+    }
   }
 }

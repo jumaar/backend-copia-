@@ -1205,9 +1205,53 @@ export class FrigorificoService {
     return this.getGestionFrigorifico(id_usuario);
   }
 
-  // Método para cambiar el estado de los empaques
+  // ========================================================================
+  // MÉTODOS AUXILIARES PARA PREVENCIÓN DE BUGS
+  // ========================================================================
+
+  // Método para generar checksum de empaques y prevenir race conditions
+  private async generarChecksumEmpaques(
+    id_estacion: string, 
+    id_producto: number, 
+    id_estado_empaque: number,
+    tx?: any
+  ): Promise<string> {
+    const database = tx || this.databaseService;
+    
+    // Buscar empaques con el estado específico
+    const empaques = await database.eMPAQUES.findMany({
+      where: {
+        id_estacion: id_estacion,
+        id_producto: id_producto,
+        id_estado_empaque: id_estado_empaque,
+      },
+      select: {
+        id_empaque: true,
+        costo_frigorifico: true,
+        hora_en_logistica_2: true,
+      },
+      orderBy: { id_empaque: 'asc' }
+    });
+
+    // Generar checksum basado en IDs y montos
+    const checksumData = empaques.map(e => `${e.id_empaque}-${parseFloat(e.costo_frigorifico.toString())}`).join('|');
+    return `${id_estacion}-${id_producto}-${id_estado_empaque}-${checksumData.length}-${empaques.length}`;
+  }
+
+  // Método para cambiar el estado de los empaques - VERSIÓN ULTRA-ROBUSTA ANTI-BUGS
   async cambiarEstadoEmpaques(id_estacion: string, id_producto: number, id_logistica: number, id_usuario: number) {
+    const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    this.logger.log(`🔄 INICIO [${requestId}] - cambiarEstadoEmpaques`);
+    this.logger.log(`📋 Parámetros recibidos:`);
+    this.logger.log(`   - id_estacion: ${id_estacion}`);
+    this.logger.log(`   - id_producto: ${id_producto}`);
+    this.logger.log(`   - id_logistica: ${id_logistica}`);
+    this.logger.log(`   - id_usuario: ${id_usuario}`);
+    this.logger.log(`🆔 Request ID: ${requestId}`);
+    this.logger.log(`🕐 Timestamp: ${new Date().toISOString()}`);
+
     // Verificar que el usuario tiene permisos (solo rol 4)
+    this.logger.log(`👤 Verificando permisos del usuario ${id_usuario}...`);
     const usuario = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario },
       include: {
@@ -1216,6 +1260,7 @@ export class FrigorificoService {
     });
     
     if (!usuario || usuario.id_rol !== 4) {
+      this.logger.error(`❌ PERMISO DENEGADO - Usuario ${id_usuario} no tiene rol 4. Rol actual: ${usuario?.id_rol || 'no encontrado'}`);
       throw new HttpException(
         {
           status: HttpStatus.FORBIDDEN,
@@ -1226,12 +1271,14 @@ export class FrigorificoService {
         HttpStatus.FORBIDDEN
       );
     }
+    this.logger.log(`✅ PERMISOS OK - Usuario ${id_usuario} tiene rol ${usuario.id_rol}`);
     
-    // Verificar que la estación existe y está asociada a un frigorífico del mismo admin
-    // Solo usuarios rol 4 pueden utilizar este endpoint
+    // Verificar jerarquía del admin
+    this.logger.log(`🔍 Verificando jerarquía del admin...`);
     const adminId = await this.obtenerAdminId(usuario.id_usuario);
     
     if (!adminId) {
+      this.logger.error(`❌ JERARQUÍA ERROR - No se pudo determinar el admin para usuario ${id_usuario}`);
       throw new HttpException(
         {
           status: HttpStatus.FORBIDDEN,
@@ -1242,8 +1289,10 @@ export class FrigorificoService {
         HttpStatus.FORBIDDEN
       );
     }
+    this.logger.log(`✅ JERARQUÍA OK - Admin ID: ${adminId}`);
     
     // Verificar que la estación pertenece a un frigorífico del mismo admin
+    this.logger.log(`🏢 Verificando estación ${id_estacion}...`);
     const estacion = await this.databaseService.eSTACIONES.findFirst({
       where: {
         id_estacion: id_estacion,
@@ -1256,6 +1305,7 @@ export class FrigorificoService {
     });
     
     if (!estacion) {
+      this.logger.error(`❌ ESTACIÓN NO ENCONTRADA - Estación ${id_estacion} no pertenece a admin ${adminId}`);
       throw new HttpException(
         {
           status: HttpStatus.NOT_FOUND,
@@ -1266,70 +1316,172 @@ export class FrigorificoService {
         HttpStatus.NOT_FOUND
       );
     }
+    this.logger.log(`✅ ESTACIÓN OK - Frigorífico ID: ${estacion.id_frigorifico}`);
     
     // Extraer id_usuario del id_estacion (formato: XXXX00XXX)
-    const idUsuarioExtraido = this.extraerIdUsuarioDeEstacion(id_estacion);
-    
-    // Cambiar el estado de los empaques del producto en la estación
-    const fechaActual = new Date();
-    
-    // Actualizar los empaques con estado 1 a estado 2
-    const result = await this.databaseService.eMPAQUES.updateMany({
-      where: {
-        id_estacion: id_estacion,
-        id_producto: id_producto,
-        id_estado_empaque: 1, // Solo cambiar los que están en estado 1
-      },
-      data: {
-        id_estado_empaque: 2, // Cambiar a estado 2
-        hora_en_logistica_2: fechaActual,
-        id_logistica: id_logistica, // Agregar el id_logistica
-      },
-    });
-    
-    // Obtener los IDs de los empaques actualizados para crear las transacciones
-    const empaquesActualizados = await this.databaseService.eMPAQUES.findMany({
-      where: {
-        id_estacion: id_estacion,
-        id_producto: id_producto,
-        id_estado_empaque: 2, // Los que acabamos de cambiar a estado 2
-      },
-      select: {
-        id_empaque: true,
-        costo_frigorifico: true,
-      },
-    });
-    
-    // Crear transacciones para cada empaque actualizado
-    const transaccionesCreadas: any[] = [];
-    
-    for (const empaque of empaquesActualizados) {
-      try {
-        const transaccion = await this.databaseService.tRANSACCIONES.create({
-          data: {
-            id_empaque: empaque.id_empaque,
-            id_usuario: idUsuarioExtraido,
-            monto: parseFloat(empaque.costo_frigorifico.toString()),
-            hora_transaccion: fechaActual, // Usar fechaActual directamente
-            id_tipo_transaccion: 2, // Costo frigorifico
-            estado_transaccion: 1, // Pendiente de pago
-            nota_opcional: `Transacción creada para Producto ${id_producto}`,
-          },
-        });
-        
-        transaccionesCreadas.push(transaccion);
-      } catch (error) {
-        this.logger.error(`Error creando transacción para empaque ${empaque.id_empaque}:`, error);
-        // Continuar con los demás empaques aunque falle uno
-      }
+    this.logger.log(`🔢 Extrayendo ID de usuario del ID de estación...`);
+    let idUsuarioExtraido: number;
+    try {
+      idUsuarioExtraido = this.extraerIdUsuarioDeEstacion(id_estacion);
+      this.logger.log(`✅ ID USUARIO EXTRAÍDO: ${idUsuarioExtraido}`);
+    } catch (error) {
+      this.logger.error(`❌ ERROR extrayendo ID usuario: ${error.message}`);
+      throw error;
     }
     
+    // ========================================================================
+    // PROTECCIÓN ANTI-BUGS: IMPLEMENTACIÓN ROBUSTA CON TRANSACCIONES
+    // ========================================================================
+    
+    // 1. GENERAR CHECKSUM INICIAL PARA VALIDACIÓN POSTERIOR
+    const checksumInicial = await this.generarChecksumEmpaques(id_estacion, id_producto, 1);
+    this.logger.log(`🔐 CHECKSUM INICIAL [${requestId}]: ${checksumInicial}`);
+    
+    // 2. INICIAR TRANSACCIÓN ATÓMICA DE BASE DE DATOS
+    const prismaTransaction = await this.databaseService.$transaction(async (tx) => {
+      this.logger.log(`🔒 INICIANDO TRANSACCIÓN [${requestId}]...`);
+      
+      // Buscar empaques ANTES de actualizar - SOLO los que están en estado 1
+      const empaquesAntes = await tx.eMPAQUES.findMany({
+        where: {
+          id_estacion: id_estacion,
+          id_producto: id_producto,
+          id_estado_empaque: 1, // SOLO estado 1 (en stock)
+        },
+        select: {
+          id_empaque: true,
+          EPC_id: true,
+          costo_frigorifico: true,
+          id_estado_empaque: true,
+        },
+        
+      });
+      
+      this.logger.log(`📦 EMPAQUES ENCONTRADOS (FILTRADOS POR ESTADO 1): ${empaquesAntes.length} [${requestId}]`);
+      
+      if (empaquesAntes.length === 0) {
+        this.logger.warn(`⚠️ NO HAY EMPAQUES EN ESTADO 1 [${requestId}]`);
+        return {
+          actualizados: 0,
+          empaquesEncontrados: 0,
+          transaccionesCreadas: 0,
+          checksumFinal: checksumInicial
+        };
+      }
+      
+      // 3. VERIFICACIÓN DE CONSISTENCIA ANTES DEL UPDATE
+      const checksumAntes = await this.generarChecksumEmpaques(id_estacion, id_producto, 1, tx);
+      if (checksumAntes !== checksumInicial) {
+        throw new Error(`INCONSISTENCIA DETECTADA [${requestId}]: Checksum cambió durante la operación`);
+      }
+      
+      // 4. CREAR TRANSACCIONES PRIMERO (ANTES DE CAMBIAR EL ESTADO)
+      // Usar los IDs específicos encontrados en el paso anterior
+      const fechaActual = new Date();
+      const transaccionesCreadas: any[] = [];
+      let transaccionesExitosas = 0;
+      
+      for (const empaque of empaquesAntes) {
+        try {
+          const transaccion = await tx.tRANSACCIONES.create({
+            data: {
+              id_empaque: empaque.id_empaque,
+              id_usuario: idUsuarioExtraido,
+              monto: parseFloat(empaque.costo_frigorifico.toString()),
+              hora_transaccion: fechaActual,
+              id_tipo_transaccion: 2,
+              estado_transaccion: 1,
+              nota_opcional: `Transacción Producto ID : ${id_producto}`,
+            },
+          });
+          transaccionesCreadas.push(transaccion);
+          transaccionesExitosas++;
+        } catch (error) {
+          this.logger.error(`❌ ERROR creando transacción para empaque ${empaque.id_empaque} [${requestId}]:`, error.message);
+          // En transacción, esto causará rollback automático
+          throw error;
+        }
+      }
+      
+      this.logger.log(`💰 TRANSACCIONES CREADAS [${requestId}]: ${transaccionesExitosas}`);
+
+      // 6. CAMBIAR EL ESTADO DE LOS EMPAQUES DESPUÉS DE CREAR LAS TRANSACCIONES
+      this.logger.log(`🔄 ACTUALIZANDO ESTADOS [${requestId}]...`);
+      // Ahora sí actualizamos el estado, pero sin filtros temporales inciertos
+      const updateResult = await tx.eMPAQUES.updateMany({
+        where: {
+          id_estacion: id_estacion,
+          id_producto: id_producto,
+          id_estado_empaque: 1, // CRÍTICO: Solo los que aún están en estado 1
+        },
+        data: {
+          id_estado_empaque: 2,
+          hora_en_logistica_2: fechaActual,
+          id_logistica: id_logistica,
+        },
+      });
+      
+      this.logger.log(`✅ EMPAQUES ACTUALIZADOS [${requestId}]: ${updateResult.count}`);
+      
+      // 7. VALIDACIÓN CRÍTICA: Confirma que actualizamos la cantidad correcta
+      if (updateResult.count !== empaquesAntes.length) {
+        const errorMsg = `DISCREPANCIA EN ACTUALIZACIÓN [${requestId}]: Esperados ${empaquesAntes.length}, actualizados ${updateResult.count}`;
+        this.logger.error(`🚨 ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+      
+      // 8. CHECKSUM FINAL PARA VALIDACIÓN
+      const checksumFinal = await this.generarChecksumEmpaques(id_estacion, id_producto, 2, tx);
+      
+      return {
+        actualizados: updateResult.count,
+        empaquesEncontrados: empaquesAntes.length,
+        transaccionesCreadas: transaccionesExitosas,
+        checksumFinal,
+        fechaActual,
+        requestId
+      };
+    }); // FIN DE TRANSACTION - SI HAY ERROR, SE HACE ROLLBACK AUTOMÁTICAMENTE
+    
+    this.logger.log(`✅ TRANSACCIÓN COMPLETADA EXITOSAMENTE [${requestId}]`);
+    this.logger.log(`🔍 CHECKSUM FINAL: ${prismaTransaction.checksumFinal}`);
+    
+    // 9. VERIFICACIÓN POST-TRANSACCIÓN
+    const empaquesConEstado2 = await this.databaseService.eMPAQUES.count({
+      where: {
+        id_estacion: id_estacion,
+        id_producto: id_producto,
+        id_estado_empaque: 2,
+      },
+    });
+    
+    this.logger.log(`🔍 VERIFICACIÓN POST-TRANSACCIÓN [${requestId}]: Empaques en estado 2: ${empaquesConEstado2}`);
+    
+    // 10. RESUMEN FINAL DETALLADO
+    this.logger.log(`📊 RESUMEN FINAL [${requestId}]:`);
+    this.logger.log(`   - Empaques encontrados: ${prismaTransaction.empaquesEncontrados}`);
+    this.logger.log(`   - Empaques actualizados: ${prismaTransaction.actualizados}`);
+    this.logger.log(`   - Transacciones creadas: ${prismaTransaction.transaccionesCreadas}`);
+    this.logger.log(`   - Usuario objetivo: ${idUsuarioExtraido}`);
+    this.logger.log(`   - Logistica ID: ${id_logistica}`);
+    this.logger.log(`   - Checksum: ${prismaTransaction.checksumFinal}`);
+    this.logger.log(`✅ FIN [${requestId}] - cambiarEstadoEmpaques completado`);
+    
     return {
-      actualizados: result.count,
-      fecha_cambio: fechaActual,
+      actualizados: prismaTransaction.actualizados,
+      fecha_cambio: prismaTransaction.fechaActual,
       id_logistica: id_logistica,
-      transacciones_creadas: transaccionesCreadas.length,
-      detalles_transacciones: transaccionesCreadas,
+      transacciones_creadas: prismaTransaction.transaccionesCreadas,
+      transacciones_fallidas: 0,
+      request_id: requestId,
+      checksum_final: prismaTransaction.checksumFinal,
+      resumen: {
+        empaques_encontrados: prismaTransaction.empaquesEncontrados,
+        empaques_actualizados: prismaTransaction.actualizados,
+        usuario_objetivo: idUsuarioExtraido,
+        estacion_id: id_estacion,
+        producto_id: id_producto
+      }
     };
   }
 
@@ -1349,8 +1501,6 @@ export class FrigorificoService {
     
     return idUsuario;
   }
-
-  
 
   // Función auxiliar para obtener el ID del admin de un usuario
   private async obtenerAdminId(userId: number): Promise<number | null> {
