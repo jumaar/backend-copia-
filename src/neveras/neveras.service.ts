@@ -36,7 +36,30 @@ export class NeverasService {
     return `This action updates a #${id} nevera`;
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} nevera`;
+  async remove(id: number) {
+    // Verificar si la nevera tiene empaques asociados
+    const empaques = await this.databaseService.eMPAQUES.findMany({
+      where: {
+        id_nevera: id
+      }
+    });
+
+    if (empaques.length > 0) {
+      throw new Error('No se puede eliminar la nevera porque tiene empaques asociados');
+    }
+
+    // Si no tiene empaques, proceder con la eliminación
+    const neveraEliminada = await this.databaseService.nEVERAS.delete({
+      where: {
+        id_nevera: id
+      }
+    });
+
+    return {
+      message: 'Nevera eliminada exitosamente',
+      nevera: {
+        id_nevera: neveraEliminada.id_nevera
+      }
+    };
   }
 }

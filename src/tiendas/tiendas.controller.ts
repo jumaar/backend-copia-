@@ -1,34 +1,58 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Req, UseGuards } from '@nestjs/common';
 import { TiendasService } from './tiendas.service';
 import { CreateTiendaDto } from './dto/create-tienda.dto';
 import { UpdateTiendaDto } from './dto/update-tienda.dto';
+import { CreateNeveraDto } from './dto/create-nevera.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
-@Controller('tiendas')
+@Controller('api/tiendas')
 export class TiendasController {
   constructor(private readonly tiendasService: TiendasService) {}
 
   @Post()
-  create(@Body() createTiendaDto: CreateTiendaDto) {
-    return this.tiendasService.create(createTiendaDto);
+  @UseGuards(JwtAuthGuard)
+  create(@Body() createTiendaDto: CreateTiendaDto, @Req() req) {
+    const id_usuario = req.user.id_usuario;
+    return this.tiendasService.create(createTiendaDto, id_usuario);
   }
 
-  @Get()
-  findAll() {
-    return this.tiendasService.findAll();
-  }
-
+  
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.tiendasService.findOne(+id);
+  @UseGuards(JwtAuthGuard)
+  findOne(@Param('id') id: string, @Req() req) {
+    const id_usuario = req.user.id_usuario;
+    return this.tiendasService.getTiendasByUsuario(id_usuario);
   }
-
+  
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateTiendaDto: UpdateTiendaDto) {
-    return this.tiendasService.update(+id, updateTiendaDto);
+  @UseGuards(JwtAuthGuard)
+  update(@Param('id') id: string, @Body() updateTiendaDto: UpdateTiendaDto, @Req() req) {
+    const id_usuario = req.user.id_usuario;
+    return this.tiendasService.update(+id, updateTiendaDto, id_usuario);
+  }
+  
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  remove(@Param('id') id: string, @Req() req) {
+    const id_usuario = req.user.id_usuario;
+    return this.tiendasService.remove(+id, id_usuario);
+  }
+  @Get('inventario/:id')
+  @UseGuards(JwtAuthGuard)
+  getInventario(@Param('id') id: string, @Req() req) {
+    const id_usuario = req.user.id_usuario;
+    return this.tiendasService.findOne(+id, id_usuario);
+  }
+  @Post('neveras')
+  @UseGuards(JwtAuthGuard)
+  createNevera(@Body() createNeveraDto: CreateNeveraDto, @Req() req) {
+    const id_usuario = req.user.id_usuario;
+    return this.tiendasService.createNevera(createNeveraDto, id_usuario);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.tiendasService.remove(+id);
+  @Delete('neveras/:id')
+  @UseGuards(JwtAuthGuard)
+  removeNevera(@Param('id') id: string) {
+    return this.tiendasService.removeNevera(+id);
   }
 }

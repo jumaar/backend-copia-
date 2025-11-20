@@ -49,6 +49,7 @@ export class LogisticaService {
           select: {
             id_producto: true,
             nombre_producto: true,
+            peso_nominal_g: true,
           },
         },
       },
@@ -62,6 +63,7 @@ export class LogisticaService {
         acc[productoId] = {
           id_producto: productoId,
           nombre_producto: empaque.producto.nombre_producto,
+          peso_nominal: empaque.producto.peso_nominal_g,
           empaques: []
         };
       }

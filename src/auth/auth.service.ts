@@ -42,6 +42,11 @@ export class AuthService {
     });
 
     if (user && (await bcrypt.compare(password, user.contraseña))) {
+      // Verificar si el usuario está activo
+      if (!user.activo) {
+        throw new UnauthorizedException('Usuario inactivo. Comuníquese con un administrador.');
+      }
+      
       const { contraseña, ...result } = user;
       const payload = { email: user.email, sub: user.id_usuario, roleId: user.id_rol };
 

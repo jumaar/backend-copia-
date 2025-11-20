@@ -61,7 +61,82 @@ export class GestionUsuariosService {
       };
     }
 
-    // Vista jerárquica para Super Admin, Admin, Logistica
+    // Vista especial para usuarios de logística (rol 4)
+    if (userRole === 4) {
+      // Obtener usuarios tienda creados por este usuario logística
+      const tiendaUsers = await this.databaseService.tOKEN_REGISTRO.findMany({
+        where: {
+          id_usuario_creador: user.id_usuario,
+          es_usado: true,
+          id_usuario_nuevo: { not: null },
+          id_rol_nuevo_usuario: 5, // Rol tienda
+          nuevo_usuario: { email: { not: { endsWith: '@borrado.com' } } },
+        },
+        include: {
+          nuevo_usuario: {
+            include: {
+              rol: true,
+              tiendas: {
+                include: {
+                  ciudad: {
+                    include: {
+                      departamento: true
+                    }
+                  },
+                  neveras: {
+                    select: {
+                      id_nevera: true,
+                      id_estado_nevera: true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+      });
+
+      // Formatear las tiendas creadas
+      const tiendasCreadas = tiendaUsers
+        .map(token => token.nuevo_usuario)
+        .filter(user => user !== null)
+        .map(tiendaUser => ({
+          id_usuario: tiendaUser.id_usuario,
+          nombre_completo: `${tiendaUser.nombre_usuario || ''} ${tiendaUser.apellido_usuario || ''}`.trim(),
+          celular: tiendaUser.celular,
+          rol: tiendaUser.rol?.nombre_rol,
+          activo: tiendaUser.activo,
+          tiendas_creadas: tiendaUser.tiendas.map(tienda => ({
+            id_tienda: tienda.id_tienda,
+            nombre_tienda: tienda.nombre_tienda,
+            direccion: tienda.direccion,
+            ciudad: tienda.ciudad.nombre_ciudad,
+            departamento: tienda.ciudad.departamento.nombre_departamento,
+            neveras: tienda.neveras.map(nevera => ({
+              id_nevera: nevera.id_nevera,
+              estado: nevera.id_estado_nevera
+            }))
+          }))
+        }));
+
+      // Obtener tokens disponibles
+      const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
+        where: { id_usuario_creador: user.id_usuario, es_usado: false, expira_en: { gte: new Date() } },
+        select: {
+          token: true,
+          expira_en: true,
+          rol_nuevo_usuario: { select: { nombre_rol: true } },
+        },
+      });
+
+      return {
+        usuario_actual: this.formatUser(currentUser),
+        tiendas_creadas: tiendasCreadas,
+        tokens,
+      };
+    }
+
+    // Vista jerárquica para Super Admin, Admin
     const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
       where: { id_usuario_creador: user.id_usuario, es_usado: false, expira_en: { gte: new Date() } },
       select: {
@@ -172,10 +247,6 @@ export class GestionUsuariosService {
       throw new ForbiddenException('Los usuarios de tipo Frigorífico y Tienda solo pueden modificar sus propios datos.');
     }
 
-    // Verificar permisos específicos para datos de logística
-    if (requester.roleId === 4 && !isOwner) {
-      throw new ForbiddenException('Los usuarios de Logística solo pueden modificar sus propios datos.');
-    }
 
     // Verificar usuario objetivo
     const userToUpdate = await this.databaseService.uSUARIOS.findUnique({
@@ -265,6 +336,7 @@ export class GestionUsuariosService {
       throw new ForbiddenException('No puedes eliminar tu propia cuenta.');
     }
 
+    // Verificar permisos de eliminación
     if (remover.roleId === 2) {
       const tokenLink = await this.databaseService.tOKEN_REGISTRO.findFirst({
         where: { id_usuario_nuevo: id, id_usuario_creador: remover.id },
@@ -272,6 +344,52 @@ export class GestionUsuariosService {
       if (!tokenLink) {
         throw new ForbiddenException('No tienes permiso para eliminar a este usuario.');
       }
+    } else if (remover.roleId === 4) {
+      // Verificar si el usuario a eliminar es de rol 5 (tienda)
+      const usuarioAEliminar = await this.databaseService.uSUARIOS.findUnique({
+        where: { id_usuario: id },
+      });
+      
+      if (!usuarioAEliminar) {
+        throw new NotFoundException(`Usuario con ID ${id} no encontrado.`);
+      }
+      
+      if (usuarioAEliminar.id_rol !== 5) {
+        throw new ForbiddenException('No tienes permiso para eliminar este tipo de usuario.');
+      }
+      
+      // Verificar si el usuario rol 5 tiene tiendas con neveras activas que tienen empaques
+      const tiendas = await this.databaseService.tIENDAS.findMany({
+        where: { id_usuario: id }
+      });
+      
+      if (tiendas.length > 0) {
+        for (const tienda of tiendas) {
+          // Buscar neveras activas en la tienda (asumiendo que id_estado_nevera = 2 es activo basado en otros archivos)
+          const neverasActivas = await this.databaseService.nEVERAS.findMany({
+            where: {
+              id_tienda: tienda.id_tienda,
+              id_estado_nevera: 2 // Estado activa
+            }
+          });
+          
+          for (const nevera of neverasActivas) {
+            // Verificar si alguna nevera activa tiene empaques asociados
+            const empaques = await this.databaseService.eMPAQUES.findMany({
+              where: {
+                id_nevera: nevera.id_nevera
+              }
+            });
+            
+            if (empaques.length > 0) {
+              throw new ForbiddenException('No se puede eliminar el usuario porque tiene tiendas con neveras activas que contienen empaques.');
+            }
+          }
+        }
+      }
+    } else if (remover.roleId !== 1 && remover.roleId !== 2) {
+      // Solo Super Admin (1), Admin (2) y Logística (4) pueden eliminar usuarios
+      throw new ForbiddenException('No tienes permiso para eliminar usuarios.');
     }
 
     const childrenTokens = await this.databaseService.tOKEN_REGISTRO.findMany({
@@ -299,8 +417,9 @@ export class GestionUsuariosService {
     const timestamp = Date.now();
     const deletedEmail = `borrado_${timestamp}_${id}@borrado.com`;
     const hashedPassword = await bcrypt.hash(timestamp.toString(), 10);
-
-    await this.databaseService.uSUARIOS.update({
+  
+    // Actualizar el usuario para desactivarlo y cambiar sus datos sensibles
+   await this.databaseService.uSUARIOS.update({
       where: { id_usuario: id },
       data: {
         activo: false,
@@ -310,7 +429,12 @@ export class GestionUsuariosService {
         celular: null,
       },
     });
-
+  
+    // Eliminar todos los refresh tokens asociados al usuario para invalidar todas sus sesiones
+    await this.databaseService.rEFRESH_TOKENS.deleteMany({
+      where: { id_usuario: id }
+    });
+  
     return { message: `Usuario con ID ${id} ha sido borrado lógicamente.` };
   }
 
@@ -332,6 +456,13 @@ export class GestionUsuariosService {
       where: { id_usuario: id },
       data: { activo: newStatus },
     });
+
+    // Si el usuario se está desactivando, eliminar todos sus tokens de refresco
+    if (!newStatus) {
+      await this.databaseService.rEFRESH_TOKENS.deleteMany({
+        where: { id_usuario: id }
+      });
+    }
 
     const { contraseña, ...result } = updatedUser;
     return result;

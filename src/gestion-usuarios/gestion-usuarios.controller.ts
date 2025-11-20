@@ -33,7 +33,7 @@ export class GestionUsuariosController {
 
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(1, 2) // Super Admin y Admin pueden eliminar
+  @Roles(1, 2, 4) // Super Admin, Admin y Logística pueden eliminar
   remove(@Param('id', ParseIntPipe) id: number, @Req() req) {
     const remover = req.user; // Obtenemos el usuario completo (id y roleId)
     return this.gestionUsuariosService.remove(id, remover);
@@ -41,7 +41,7 @@ export class GestionUsuariosController {
 
   @Patch(':id/toggle-status')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(1, 2) // Admins y Super Admins pueden cambiar el estado
+  @Roles(1, 2, 4) // Admin y logistica pueden cambiar el estado
   toggleUserStatus(@Param('id', ParseIntPipe) id: number, @Req() req) {
     const requesterId = req.user.id_usuario;
     return this.gestionUsuariosService.toggleStatus(id, requesterId);

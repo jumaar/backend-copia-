@@ -116,10 +116,10 @@ async function main() {
   // 9. ESTADO_NEVERA
   console.log('🏠 Creando estados de nevera...');
   const estadosNevera = [
-    { id_estado_nevera: 1, estado_nevera: 'En Bodega' },
+    { id_estado_nevera: 1, estado_nevera: 'Inactiva' },
     { id_estado_nevera: 2, estado_nevera: 'Activa' },
     { id_estado_nevera: 3, estado_nevera: 'Retirada' },
-    { id_estado_nevera: 4, estado_nevera: 'En Inventario' },
+    { id_estado_nevera: 4, estado_nevera: 'En Bodega' },
   ];
 
   for (const estado of estadosNevera) {
