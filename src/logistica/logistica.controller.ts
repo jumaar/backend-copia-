@@ -20,6 +20,13 @@ export class LogisticaController {
     return this.logisticaService.getProductosPorLogistica(id_usuario);
   }
 
+  @Get('surtir')
+  @Roles(2, 4)
+  getNeverasActivas(@Req() req: any) {
+    const id_usuario = req.user.id_usuario; // Obtener id_usuario del JWT
+    return this.logisticaService.getNeverasActivas(id_usuario);
+  }
+
   @Get('cuentas')
   @Roles(1, 2, 3, 4)
   getCuentasTransacciones(@Query() cuentasDto: CuentasDto) {

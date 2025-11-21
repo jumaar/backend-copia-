@@ -30,28 +30,4 @@ export class NeverasController {
     return this.neverasService.countActiveNeveras();
   }
 
-  @Post()
-  create(@Body() createNeveraDto: CreateNeveraDto) {
-    return this.neverasService.create(createNeveraDto);
-  }
-
-  @Get()
-  findAll() {
-    return this.neverasService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.neverasService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateNeveraDto: UpdateNeveraDto) {
-    return this.neverasService.update(+id, updateNeveraDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.neverasService.remove(+id);
-  }
 }

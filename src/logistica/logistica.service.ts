@@ -207,6 +207,104 @@ export class LogisticaService {
       }
     };
   }
+  async getNeverasActivas(id_usuario: number) {
+    // Obtener el rol del usuario
+    const usuario = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario: id_usuario },
+      select: { id_rol: true }
+    });
+
+    if (!usuario) {
+      return {
+        error: 'Usuario no encontrado',
+        neveras_activas: []
+      };
+    }
+
+    // Función recursiva para obtener todos los descendientes
+    const obtenerDescendientes = async (id_creador: number): Promise<number[]> => {
+      const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
+        where: { id_usuario_creador: id_creador },
+        select: { id_usuario_nuevo: true }
+      });
+
+      const descendientesDirectos = tokens
+        .filter(token => token.id_usuario_nuevo !== null)
+        .map(token => token.id_usuario_nuevo!);
+
+      let todosDescendientes = [...descendientesDirectos];
+
+      for (const descendiente of descendientesDirectos) {
+        const subDescendientes = await obtenerDescendientes(descendiente);
+        todosDescendientes.push(...subDescendientes);
+      }
+
+      return todosDescendientes;
+    };
+
+    let usuariosPermitidos: number[] = [id_usuario]; // Incluir al propio usuario
+
+    if (usuario.id_rol === 2) {
+      // Rol 2: obtener todos sus descendientes
+      const descendientes = await obtenerDescendientes(id_usuario);
+      usuariosPermitidos.push(...descendientes);
+    } else if (usuario.id_rol === 4) {
+      // Rol 4: obtener todos sus descendientes (si tiene)
+      const descendientes = await obtenerDescendientes(id_usuario);
+      usuariosPermitidos.push(...descendientes);
+    } else {
+      // Otros roles no tienen acceso
+      return {
+        error: 'Rol no autorizado para esta operación',
+        neveras_activas: []
+      };
+    }
+
+    // Obtener tiendas de los usuarios permitidos
+    const tiendas = await this.databaseService.tIENDAS.findMany({
+      where: { id_usuario: { in: usuariosPermitidos } },
+      select: { id_tienda: true }
+    });
+
+    const tiendasIds = tiendas.map(t => t.id_tienda);
+
+    if (tiendasIds.length === 0) {
+      return {
+        neveras_activas: [],
+        total_neveras: 0
+      };
+    }
+
+    // Obtener neveras activas (estado 2) de las tiendas filtradas
+    const neveras = await this.databaseService.nEVERAS.findMany({
+      where: {
+        id_tienda: { in: tiendasIds },
+        id_estado_nevera: 2 // Activa
+      },
+      include: {
+        tienda: {
+          include: {
+            ciudad: true
+          }
+        }
+      }
+    });
+
+    // Formatear la respuesta
+    const neverasFormateadas = neveras.map(nevera => ({
+      id_nevera: nevera.id_nevera,
+      nombre_tienda: nevera.tienda.nombre_tienda,
+      direccion: nevera.tienda.direccion,
+      ciudad: nevera.tienda.ciudad.nombre_ciudad
+    }));
+
+    return {
+      neveras_activas: neverasFormateadas,
+      total_neveras: neverasFormateadas.length
+    };
+  }
+
+
 
 
   async consolidarCuentas(
