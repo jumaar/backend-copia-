@@ -1,14 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-  UseGuards,
-  Logger,
-} from '@nestjs/common';
+import { Controller, Get,Post, Body, Patch, Param, Delete, UseGuards, Logger,} from '@nestjs/common';
 import { NeverasService } from './neveras.service';
 import { CreateNeveraDto } from './dto/create-nevera.dto';
 import { UpdateNeveraDto } from './dto/update-nevera.dto';
@@ -22,9 +12,9 @@ export class NeverasController {
 
   constructor(private readonly neverasService: NeverasService) {}
 
-  @Get('count/active')
+  @Get('surtir')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(1, 2) // 1: Super_Admin, 2: admin (ajustar si es necesario)
+  @Roles(1, 2, 4) 
   countActiveNeveras() {
     this.logger.debug('Endpoint countActiveNeveras llamado');
     return this.neverasService.countActiveNeveras();

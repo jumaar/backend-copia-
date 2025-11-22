@@ -17,7 +17,6 @@ export class TiendasController {
     const id_usuario = req.user.id_usuario;
     return this.tiendasService.create(createTiendaDto, id_usuario);
   }
-
   
   @Get(':id')
   @UseGuards(JwtAuthGuard)
@@ -46,13 +45,7 @@ export class TiendasController {
     const id_usuario = req.user.id_usuario;
     return this.tiendasService.createNevera(createNeveraDto, id_usuario);
   }
-
-  @Delete('neveras/:id')
-  @UseGuards(JwtAuthGuard)
-  removeNevera(@Param('id') id: string) {
-    return this.tiendasService.removeNevera(+id);
-  }
-
+  
   @Get('neveras/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1, 2, 4, 5)
@@ -60,7 +53,7 @@ export class TiendasController {
     const id_usuario = req.user.id_usuario;
     return this.tiendasService.getProductosByNevera(+id, id_usuario);
   }
-
+  
   @Patch('neveras/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1, 2, 4, 5)
@@ -68,6 +61,11 @@ export class TiendasController {
     const id_usuario = req.user.id_usuario;
     return this.tiendasService.updateStocksByNevera(+id, stockUpdates, id_usuario);
   }
-
+  
+  @Delete('neveras/:id')
+  @UseGuards(JwtAuthGuard)
+  removeNevera(@Param('id') id: string) {
+    return this.tiendasService.removeNevera(+id);
+  }
 
 }
