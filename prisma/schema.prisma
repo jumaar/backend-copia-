@@ -129,7 +129,7 @@ model NEVERAS {
   lista_reproduccion    LISTA_DE_REPRODUCCION?   @relation(fields: [id_lista_reproduccion], references: [id_lista_reproduccion])
   empaques              EMPAQUES[]
   reportes_estado       REPORTE_ESTADO_NEVERAS[]
-  stockProductos        STOCK_NEVERA_PRODUCTO[]
+  stockProductos        STOCK_NEVERA[]
 }
 
 model PRODUCTOS {
@@ -140,8 +140,11 @@ model PRODUCTOS {
   precio_venta         Decimal
   dias_vencimiento     Int
   precio_frigorifico   Decimal // Porcentaje
+  baja                 Float?
+  media                Float?
+  alta                 Float?
   empaques             EMPAQUES[]
-  stockNeveras         STOCK_NEVERA_PRODUCTO[]
+  stockNeveras         STOCK_NEVERA[]
 }
 
 model ESTADO_EMPAQUE {
@@ -236,7 +239,7 @@ model TRANSACCIONES {
   tipoTransaccion     TIPO_TRANSACCION   @relation(fields: [id_tipo_transaccion], references: [id_tipo])
 }
 
-model STOCK_NEVERA_PRODUCTO {
+model STOCK_NEVERA {
   id                   Int       @id @default(autoincrement())
   id_nevera            Int
   id_producto          Int
@@ -245,8 +248,10 @@ model STOCK_NEVERA_PRODUCTO {
   venta_semanal        Int       @default(0)
   stock_ideal_final    Int
   calificacion_sutido  String
+  hora_calificacion    DateTime?
   mensaje_sistema      String?
   stock_en_tiempo_real Int
+  activo               Boolean   @default(true)
   nevera               NEVERAS   @relation(fields: [id_nevera], references: [id_nevera])
   producto             PRODUCTOS @relation(fields: [id_producto], references: [id_producto])
 }

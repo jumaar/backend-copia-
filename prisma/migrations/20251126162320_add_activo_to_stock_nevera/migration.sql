@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "STOCK_NEVERA" ADD COLUMN     "activo" BOOLEAN NOT NULL DEFAULT true;

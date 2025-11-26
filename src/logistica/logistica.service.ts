@@ -295,7 +295,8 @@ export class LogisticaService {
       id_nevera: nevera.id_nevera,
       nombre_tienda: nevera.tienda.nombre_tienda,
       direccion: nevera.tienda.direccion,
-      ciudad: nevera.tienda.ciudad.nombre_ciudad
+      ciudad: nevera.tienda.ciudad.nombre_ciudad,
+      id_ciudad: nevera.tienda.ciudad.id_ciudad
     }));
 
     return {

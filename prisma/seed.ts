@@ -99,8 +99,8 @@ async function main() {
   console.log('🏙️ Creando ciudades...');
   const ciudades = [
     { id_ciudad: 1, nombre_ciudad: 'Santa Rosa De Cabal', id__departamento: 1 },
-    { id_ciudad: 2, nombre_ciudad: 'Dosquebradas', id__departamento: 2 },
-    { id_ciudad: 3, nombre_ciudad: 'Pereira', id__departamento: 3 },
+    { id_ciudad: 2, nombre_ciudad: 'Dosquebradas', id__departamento: 1 },
+    { id_ciudad: 3, nombre_ciudad: 'Pereira', id__departamento: 1 },
     { id_ciudad: 4, nombre_ciudad: 'Chinchina', id__departamento: 4 },
   ];
 

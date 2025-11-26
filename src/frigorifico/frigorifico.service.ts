@@ -346,6 +346,9 @@ export class FrigorificoService {
       precio_venta: data.precio_venta.toString(), // Mantener como string para Decimal
       dias_vencimiento: parseInt(data.dias_vencimiento),
       precio_frigorifico: data.precio_frigorifico.toString(), // Mantener como string para Decimal
+      media: data.media ? parseFloat(data.media) : null,
+      baja: data.baja ? parseFloat(data.baja) : null,
+      alta: data.alta ? parseFloat(data.alta) : null,
     };
 
     return this.databaseService.pRODUCTOS.create({
@@ -364,6 +367,9 @@ export class FrigorificoService {
         precio_venta: true,
         dias_vencimiento: true,
         precio_frigorifico: true,
+        baja: true,
+        media: true,
+        alta: true,
       },
     });
   }
@@ -371,6 +377,17 @@ export class FrigorificoService {
   async updateProducto(id: number, updateProductoDto: any, idUsuario: number) {
     // Verificar que el usuario tiene permisos para actualizar productos (roles 1, 2)
     // Los productos son globales
+    // Si viene media, asegurarnos de que sea float
+    if (updateProductoDto.media !== undefined) {
+      updateProductoDto.media = updateProductoDto.media ? parseFloat(updateProductoDto.media) : null;
+    }
+    if (updateProductoDto.baja !== undefined) {
+      updateProductoDto.baja = updateProductoDto.baja ? parseFloat(updateProductoDto.baja) : null;
+    }
+    if (updateProductoDto.alta !== undefined) {
+      updateProductoDto.alta = updateProductoDto.alta ? parseFloat(updateProductoDto.alta) : null;
+    }
+
     return this.databaseService.pRODUCTOS.update({
       where: { id_producto: id },
       data: updateProductoDto,

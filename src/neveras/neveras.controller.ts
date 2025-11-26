@@ -14,7 +14,7 @@ export class NeverasController {
 
   @Get('surtir')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(1, 2, 4) 
+  @Roles(4) 
   countActiveNeveras() {
     this.logger.debug('Endpoint countActiveNeveras llamado');
     return this.neverasService.countActiveNeveras();

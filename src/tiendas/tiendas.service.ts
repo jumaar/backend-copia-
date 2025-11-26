@@ -375,7 +375,8 @@ export class TiendasService {
           stock_maximo: stock.stock_maximo,
           venta_semanal: stock.venta_semanal,
           stock_ideal_final: stock.stock_ideal_final,
-          stock_en_tiempo_real: stock.stock_en_tiempo_real
+          stock_en_tiempo_real: stock.stock_en_tiempo_real,
+          activo: stock.activo
         }))
       }))
     }));
@@ -637,7 +638,7 @@ export class TiendasService {
     });
 
     // Obtener stock de productos de la nevera específica
-    const stockNevera = await this.databaseService.sTOCK_NEVERA_PRODUCTO.findMany({
+    const stockNevera = await this.databaseService.sTOCK_NEVERA.findMany({
       where: {
         id_nevera: id_nevera
       },
@@ -651,6 +652,7 @@ export class TiendasService {
         calificacion_sutido: true,
         mensaje_sistema: true,
         stock_en_tiempo_real: true,
+        activo: true,
         producto: {
           select: {
             id_producto: true,
@@ -686,7 +688,7 @@ export class TiendasService {
           descripcion_producto: producto.descripcion_producto,
           peso_nominal_g: producto.peso_nominal_g,
           // Información del stock existente
-          tiene_stock: true,
+          tiene_stock: stockInfo.stock_en_tiempo_real > 0,
           id_stock: stockInfo.id,
           stock_minimo: stockInfo.stock_minimo,
           stock_maximo: stockInfo.stock_maximo,
@@ -694,7 +696,8 @@ export class TiendasService {
           stock_ideal_final: stockInfo.stock_ideal_final,
           calificacion_sutido: stockInfo.calificacion_sutido,
           mensaje_sistema: stockInfo.mensaje_sistema,
-          stock_en_tiempo_real: stockInfo.stock_en_tiempo_real
+          stock_en_tiempo_real: stockInfo.stock_en_tiempo_real,
+          activo: stockInfo.activo
         };
       } else {
         // Si no existe stock para este producto, mostrar valores en cero
@@ -713,14 +716,16 @@ export class TiendasService {
           stock_ideal_final: 0,
           calificacion_sutido: 'Sin configurar',
           mensaje_sistema: 'Producto no disponible en esta nevera',
-          stock_en_tiempo_real: 0
+          stock_en_tiempo_real: 0,
+          activo: true
         };
       }
     });
 
     // Calcular estadísticas
     const totalProductos = todosLosProductos.length;
-    const productosConStockInfo = stockNevera.length;
+    // Contar productos que realmente tienen stock > 0
+    const productosConStockInfo = stockNevera.filter(s => s.stock_en_tiempo_real > 0).length;
     const productosSinStock = totalProductos - productosConStockInfo;
 
     return {
@@ -812,27 +817,29 @@ export class TiendasService {
     // Procesar cada actualización
     for (const update of stockUpdates) {
       try {
-        const { id_stock, id_producto, stock_minimo, stock_maximo } = update;
+        const { id_stock, id_producto, stock_minimo, stock_maximo, activo } = update;
 
         if (id_stock) {
           // ACTUALIZAR: Registro existente
           // Primero obtener el registro actual para verificar la calificación
-          const currentStock = await this.databaseService.sTOCK_NEVERA_PRODUCTO.findUnique({
+          const currentStock = await this.databaseService.sTOCK_NEVERA.findUnique({
             where: { id: id_stock }
           });
 
           // Preparar los datos de actualización
-          const updateData: any = {
-            stock_minimo: stock_minimo,
-            stock_maximo: stock_maximo
-          };
+          const updateData: any = {};
+          
+          // Solo actualizar campos que fueron enviados
+          if (stock_minimo !== undefined) updateData.stock_minimo = stock_minimo;
+          if (stock_maximo !== undefined) updateData.stock_maximo = stock_maximo;
+          if (activo !== undefined) updateData.activo = activo;
 
           // Si la calificación actual es "Sin configurar", actualizarla a "BAJA"
           if (currentStock && currentStock.calificacion_sutido === 'Sin configurar') {
             updateData.calificacion_sutido = 'BAJA';
           }
 
-          const updatedStock = await this.databaseService.sTOCK_NEVERA_PRODUCTO.update({
+          const updatedStock = await this.databaseService.sTOCK_NEVERA.update({
             where: { id: id_stock },
             data: updateData,
             include: {
@@ -851,13 +858,14 @@ export class TiendasService {
             id_producto: id_producto,
             nombre_producto: updatedStock.producto.nombre_producto,
             stock_minimo: updatedStock.stock_minimo,
-            stock_maximo: updatedStock.stock_maximo
+            stock_maximo: updatedStock.stock_maximo,
+            activo: updatedStock.activo
           });
 
         } else {
           // CREAR: Registro nuevo
           // Verificar que no exista ya un registro con este id_producto en la nevera
-          const existingStock = await this.databaseService.sTOCK_NEVERA_PRODUCTO.findFirst({
+          const existingStock = await this.databaseService.sTOCK_NEVERA.findFirst({
             where: {
               id_nevera: id_nevera,
               id_producto: id_producto
@@ -873,7 +881,7 @@ export class TiendasService {
             continue;
           }
 
-          const newStock = await this.databaseService.sTOCK_NEVERA_PRODUCTO.create({
+          const newStock = await this.databaseService.sTOCK_NEVERA.create({
             data: {
               id_nevera: id_nevera,
               id_producto: id_producto,
@@ -883,7 +891,8 @@ export class TiendasService {
               stock_ideal_final: 0,
               calificacion_sutido: 'BAJA',
               mensaje_sistema: 'producto pendiente de surtir en nevera',
-              stock_en_tiempo_real: 0
+              stock_en_tiempo_real: 0,
+              activo: activo !== undefined ? activo : true
             },
             include: {
               producto: {
@@ -901,7 +910,8 @@ export class TiendasService {
             id_producto: id_producto,
             nombre_producto: newStock.producto.nombre_producto,
             stock_minimo: newStock.stock_minimo,
-            stock_maximo: newStock.stock_maximo
+            stock_maximo: newStock.stock_maximo,
+            activo: newStock.activo
           });
         }
 
