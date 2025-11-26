@@ -247,7 +247,7 @@ model STOCK_NEVERA {
   stock_maximo         Int       @default(5)
   venta_semanal        Int       @default(0)
   stock_ideal_final    Int
-  calificacion_sutido  String
+  calificacion_surtido String
   hora_calificacion    DateTime?
   mensaje_sistema      String?
   stock_en_tiempo_real Int

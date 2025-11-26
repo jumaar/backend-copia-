@@ -649,7 +649,7 @@ export class TiendasService {
         stock_maximo: true,
         venta_semanal: true,
         stock_ideal_final: true,
-        calificacion_sutido: true,
+        calificacion_surtido: true,
         mensaje_sistema: true,
         stock_en_tiempo_real: true,
         activo: true,
@@ -694,7 +694,7 @@ export class TiendasService {
           stock_maximo: stockInfo.stock_maximo,
           venta_semanal: stockInfo.venta_semanal,
           stock_ideal_final: stockInfo.stock_ideal_final,
-          calificacion_sutido: stockInfo.calificacion_sutido,
+          calificacion_surtido: stockInfo.calificacion_surtido,
           mensaje_sistema: stockInfo.mensaje_sistema,
           stock_en_tiempo_real: stockInfo.stock_en_tiempo_real,
           activo: stockInfo.activo
@@ -714,7 +714,7 @@ export class TiendasService {
           stock_maximo: 0,
           venta_semanal: 0,
           stock_ideal_final: 0,
-          calificacion_sutido: 'Sin configurar',
+          calificacion_surtido: 'Sin configurar',
           mensaje_sistema: 'Producto no disponible en esta nevera',
           stock_en_tiempo_real: 0,
           activo: true
@@ -835,8 +835,8 @@ export class TiendasService {
           if (activo !== undefined) updateData.activo = activo;
 
           // Si la calificación actual es "Sin configurar", actualizarla a "BAJA"
-          if (currentStock && currentStock.calificacion_sutido === 'Sin configurar') {
-            updateData.calificacion_sutido = 'BAJA';
+          if (currentStock && currentStock.calificacion_surtido === 'Sin configurar') {
+            updateData.calificacion_surtido = 'BAJA';
           }
 
           const updatedStock = await this.databaseService.sTOCK_NEVERA.update({
@@ -889,7 +889,7 @@ export class TiendasService {
               stock_maximo: stock_maximo,
               venta_semanal: 0,
               stock_ideal_final: 0,
-              calificacion_sutido: 'BAJA',
+              calificacion_surtido: 'BAJA',
               mensaje_sistema: 'producto pendiente de surtir en nevera',
               stock_en_tiempo_real: 0,
               activo: activo !== undefined ? activo : true
