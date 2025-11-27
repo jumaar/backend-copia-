@@ -29,8 +29,8 @@ export class CreateUserDto {
 
   @IsString()
   @MinLength(10, { message: 'La contraseña debe tener al menos 10 caracteres' })
-  @Matches(/((?=.*\d)|(?=.*\W+))(?![.\n])(?=.*[a-z]).*$/, {
-    message: 'La contraseña debe contener al menos una minúscula, un número y un símbolo.',
+  @Matches(/(?=.*[A-Z])(?=.*\d)(?=.*\W+).*/, {
+    message: 'La contraseña debe contener al menos una mayúscula, un número y un símbolo.',
   })
   @IsNotEmpty({ message: 'La contraseña no puede estar vacía' })
   password: string;

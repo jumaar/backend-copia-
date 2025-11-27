@@ -36,7 +36,6 @@ export class FrigorificoGateway implements OnGatewayConnection, OnGatewayDisconn
 
   async handleConnection(client: Socket) {
     const clientIp = client.handshake.address;
-    this.logger.log(`🔌 WS: Nueva conexión desde ${clientIp}`);
 
     try {
       // Intentar leer token de handshake.auth primero (compatibilidad)
@@ -80,9 +79,9 @@ export class FrigorificoGateway implements OnGatewayConnection, OnGatewayDisconn
     const estacionId = client.data.user?.sub;
     const clientIp = client.handshake.address;
     if (estacionId) {
-      this.logger.log(`🔌 WS: Estación ${estacionId} desconectada (${clientIp})`);
+      this.logger.debug(`🔌 WS: Estación ${estacionId} desconectada (${clientIp})`);
     } else {
-      this.logger.log(`🔌 WS: Cliente sin autenticar desconectado (${clientIp})`);
+      this.logger.debug(`🔌 WS: Cliente sin autenticar desconectado (${clientIp})`);
     }
   }
 
@@ -107,8 +106,7 @@ export class FrigorificoGateway implements OnGatewayConnection, OnGatewayDisconn
       frigorificoId: user.frigorificoId
     });
 
-    this.logger.log(`📡 WS: Estación ${data.estacionId} unida a room (Frigorífico: ${user.frigorificoId}) (${clientIp})`);
-  }
+ }
 
   @SubscribeMessage('crear-empaques')
   async handleCrearEmpaques(
@@ -125,8 +123,7 @@ export class FrigorificoGateway implements OnGatewayConnection, OnGatewayDisconn
     }
 
     const numEmpaques = data.empaques?.length || 0;
-    this.logger.log(`📦 WS: Creando ${numEmpaques} empaques - Estación ${user.sub} (${clientIp})`);
-
+    
     try {
       const resultados = await this.frigorificoService.crearEmpaquesBatch(
         data.empaques,
@@ -137,8 +134,7 @@ export class FrigorificoGateway implements OnGatewayConnection, OnGatewayDisconn
       const creados = resultados.creados.length;
       const errores = resultados.errores.length;
 
-      this.logger.log(`✅ WS: Empaques creados: ${creados}, Errores: ${errores} - Estación ${user.sub}`);
-
+     
       client.emit('empaques-creados', {
         creados: creados,
         errores: resultados.errores,
@@ -184,8 +180,7 @@ export class FrigorificoGateway implements OnGatewayConnection, OnGatewayDisconn
       return;
     }
 
-    this.logger.log(`📋 WS: Solicitud de catálogo - Estación ${user.sub} (${clientIp})`);
-
+   
     try {
       // Obtener productos con campos mínimos para la báscula
       const productos = await this.frigorificoService.findAllProductos(user.sub);
@@ -197,7 +192,6 @@ export class FrigorificoGateway implements OnGatewayConnection, OnGatewayDisconn
         peso: producto.peso_nominal_g,
       }));
 
-      this.logger.log(`✅ WS: Catálogo enviado (${catalogoDepurado.length} productos) - Estación ${user.sub}`);
       client.emit('catalogo', catalogoDepurado);
     } catch (error) {
       this.logger.error(`❌ WS: Error obteniendo catálogo - Estación ${user.sub}:`, error.message);

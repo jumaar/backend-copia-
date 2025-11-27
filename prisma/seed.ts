@@ -77,6 +77,9 @@ async function main() {
   }
   console.log('✅ Usuarios creados');
 
+  // Reset sequence for USUARIOS
+  await prisma.$executeRaw`SELECT setval('"USUARIOS_id_usuario_seq"', (SELECT COALESCE(MAX(id_usuario), 0) FROM "USUARIOS"))`;
+
   // 4. DEPARTAMENTO
   console.log('🏔️ Creando departamentos...');
   const departamentos = [
