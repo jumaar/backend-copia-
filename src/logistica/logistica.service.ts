@@ -79,11 +79,31 @@ export class LogisticaService {
     // Convertir objeto a array para la respuesta
     const resultado = Object.values(productosAgrupados);
 
+    // Obtener la última hora de calificación de surtido
+    const productosIds = Object.keys(productosAgrupados).map(id => parseInt(id));
+    let ultimaHoraCalificacion: string | null = null;
+
+    if (productosIds.length > 0) {
+      const ultimaCalificacion = await this.databaseService.sTOCK_NEVERA.findFirst({
+        where: {
+          id_producto: { in: productosIds },
+          hora_calificacion: { not: null }
+        },
+        select: { hora_calificacion: true },
+        orderBy: { hora_calificacion: 'desc' }
+      });
+
+      if (ultimaCalificacion && ultimaCalificacion.hora_calificacion) {
+        ultimaHoraCalificacion = ultimaCalificacion.hora_calificacion.toISOString();
+      }
+    }
+
     return {
       productos_por_logistica: resultado,
       total_productos_diferentes: resultado.length,
       total_empaques: empaques.length,
-      id_logistica_usuario: usuarioLogistica.id_logistica
+      id_logistica_usuario: usuarioLogistica.id_logistica,
+      ultima_hora_calificacion: ultimaHoraCalificacion
     };
   }
 

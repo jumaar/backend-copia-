@@ -683,6 +683,10 @@ export class FrigorificoService {
           // 7. Calcular costo_frigorifico: precio_venta_total * (precio_frigorifico / 100)
           const costoFrigorifico = precioVentaTotal * (precioFrigorifico / 100);
 
+          // 8. Redondear a números enteros
+          const precioVentaTotalRedondeado = Math.round(precioVentaTotal);
+          const costoFrigorificoRedondeado = Math.round(costoFrigorifico);
+
           // 8. Crear empaque con todos los campos calculados
           const empaque = await this.databaseService.eMPAQUES.create({
             data: {
@@ -691,9 +695,9 @@ export class FrigorificoService {
               id_estacion: estacionId, // Del WebSocket (ej: "39008")
               id_producto: empaqueData.id_producto,
               peso_exacto_g: pesoGramos.toString(), // Decimal como string
-              precio_venta_total: precioVentaTotal.toString(), // Mantener como string para Decimal
+              precio_venta_total: precioVentaTotalRedondeado.toString(), // Redondeado a entero
               fecha_vencimiento: fechaVencimiento,
-              costo_frigorifico: costoFrigorifico.toString(), // Mantener como string para Decimal
+              costo_frigorifico: costoFrigorificoRedondeado.toString(), // Redondeado a entero
               id_estado_empaque: 1, // En stock
             }
           });
@@ -707,7 +711,7 @@ export class FrigorificoService {
 
           resultados.creados.push({
             epc: epcId,
-            precio_venta_total: precioVentaTotal,
+            precio_venta_total: precioVentaTotalRedondeado,
             fecha_vencimiento: fechaVencimientoFormateada
           });
 
@@ -1222,9 +1226,6 @@ export class FrigorificoService {
     return this.getGestionFrigorifico(id_usuario);
   }
 
-  // ========================================================================
-  // MÉTODOS AUXILIARES PARA PREVENCIÓN DE BUGS
-  // ========================================================================
 
   // Método para generar checksum de empaques y prevenir race conditions
   private async generarChecksumEmpaques(
@@ -1258,17 +1259,8 @@ export class FrigorificoService {
   // Método para cambiar el estado de los empaques - VERSIÓN ULTRA-ROBUSTA ANTI-BUGS
   async cambiarEstadoEmpaques(id_estacion: string, id_producto: number, id_logistica: number, id_usuario: number) {
     const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    this.logger.log(`🔄 INICIO [${requestId}] - cambiarEstadoEmpaques`);
-    this.logger.log(`📋 Parámetros recibidos:`);
-    this.logger.log(`   - id_estacion: ${id_estacion}`);
-    this.logger.log(`   - id_producto: ${id_producto}`);
-    this.logger.log(`   - id_logistica: ${id_logistica}`);
-    this.logger.log(`   - id_usuario: ${id_usuario}`);
-    this.logger.log(`🆔 Request ID: ${requestId}`);
-    this.logger.log(`🕐 Timestamp: ${new Date().toISOString()}`);
 
     // Verificar que el usuario tiene permisos (solo rol 4)
-    this.logger.log(`👤 Verificando permisos del usuario ${id_usuario}...`);
     const usuario = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario },
       include: {
@@ -1288,10 +1280,8 @@ export class FrigorificoService {
         HttpStatus.FORBIDDEN
       );
     }
-    this.logger.log(`✅ PERMISOS OK - Usuario ${id_usuario} tiene rol ${usuario.id_rol}`);
     
     // Verificar jerarquía del admin
-    this.logger.log(`🔍 Verificando jerarquía del admin...`);
     const adminId = await this.obtenerAdminId(usuario.id_usuario);
     
     if (!adminId) {
@@ -1306,10 +1296,8 @@ export class FrigorificoService {
         HttpStatus.FORBIDDEN
       );
     }
-    this.logger.log(`✅ JERARQUÍA OK - Admin ID: ${adminId}`);
     
     // Verificar que la estación pertenece a un frigorífico del mismo admin
-    this.logger.log(`🏢 Verificando estación ${id_estacion}...`);
     const estacion = await this.databaseService.eSTACIONES.findFirst({
       where: {
         id_estacion: id_estacion,
@@ -1333,14 +1321,11 @@ export class FrigorificoService {
         HttpStatus.NOT_FOUND
       );
     }
-    this.logger.log(`✅ ESTACIÓN OK - Frigorífico ID: ${estacion.id_frigorifico}`);
     
     // Extraer id_usuario del id_estacion (formato: XXXX00XXX)
-    this.logger.log(`🔢 Extrayendo ID de usuario del ID de estación...`);
     let idUsuarioExtraido: number;
     try {
       idUsuarioExtraido = this.extraerIdUsuarioDeEstacion(id_estacion);
-      this.logger.log(`✅ ID USUARIO EXTRAÍDO: ${idUsuarioExtraido}`);
     } catch (error) {
       this.logger.error(`❌ ERROR extrayendo ID usuario: ${error.message}`);
       throw error;
@@ -1352,11 +1337,9 @@ export class FrigorificoService {
     
     // 1. GENERAR CHECKSUM INICIAL PARA VALIDACIÓN POSTERIOR
     const checksumInicial = await this.generarChecksumEmpaques(id_estacion, id_producto, 1);
-    this.logger.log(`🔐 CHECKSUM INICIAL [${requestId}]: ${checksumInicial}`);
     
     // 2. INICIAR TRANSACCIÓN ATÓMICA DE BASE DE DATOS
     const prismaTransaction = await this.databaseService.$transaction(async (tx) => {
-      this.logger.log(`🔒 INICIANDO TRANSACCIÓN [${requestId}]...`);
       
       // Buscar empaques ANTES de actualizar - SOLO los que están en estado 1
       const empaquesAntes = await tx.eMPAQUES.findMany({
@@ -1374,10 +1357,8 @@ export class FrigorificoService {
         
       });
       
-      this.logger.log(`📦 EMPAQUES ENCONTRADOS (FILTRADOS POR ESTADO 1): ${empaquesAntes.length} [${requestId}]`);
-      
+     
       if (empaquesAntes.length === 0) {
-        this.logger.warn(`⚠️ NO HAY EMPAQUES EN ESTADO 1 [${requestId}]`);
         return {
           actualizados: 0,
           empaquesEncontrados: 0,
@@ -1420,10 +1401,7 @@ export class FrigorificoService {
         }
       }
       
-      this.logger.log(`💰 TRANSACCIONES CREADAS [${requestId}]: ${transaccionesExitosas}`);
-
       // 6. CAMBIAR EL ESTADO DE LOS EMPAQUES DESPUÉS DE CREAR LAS TRANSACCIONES
-      this.logger.log(`🔄 ACTUALIZANDO ESTADOS [${requestId}]...`);
       // Ahora sí actualizamos el estado, pero sin filtros temporales inciertos
       const updateResult = await tx.eMPAQUES.updateMany({
         where: {
@@ -1438,7 +1416,6 @@ export class FrigorificoService {
         },
       });
       
-      this.logger.log(`✅ EMPAQUES ACTUALIZADOS [${requestId}]: ${updateResult.count}`);
       
       // 7. VALIDACIÓN CRÍTICA: Confirma que actualizamos la cantidad correcta
       if (updateResult.count !== empaquesAntes.length) {
@@ -1460,8 +1437,6 @@ export class FrigorificoService {
       };
     }); // FIN DE TRANSACTION - SI HAY ERROR, SE HACE ROLLBACK AUTOMÁTICAMENTE
     
-    this.logger.log(`✅ TRANSACCIÓN COMPLETADA EXITOSAMENTE [${requestId}]`);
-    this.logger.log(`🔍 CHECKSUM FINAL: ${prismaTransaction.checksumFinal}`);
     
     // 9. VERIFICACIÓN POST-TRANSACCIÓN
     const empaquesConEstado2 = await this.databaseService.eMPAQUES.count({
@@ -1472,17 +1447,6 @@ export class FrigorificoService {
       },
     });
     
-    this.logger.log(`🔍 VERIFICACIÓN POST-TRANSACCIÓN [${requestId}]: Empaques en estado 2: ${empaquesConEstado2}`);
-    
-    // 10. RESUMEN FINAL DETALLADO
-    this.logger.log(`📊 RESUMEN FINAL [${requestId}]:`);
-    this.logger.log(`   - Empaques encontrados: ${prismaTransaction.empaquesEncontrados}`);
-    this.logger.log(`   - Empaques actualizados: ${prismaTransaction.actualizados}`);
-    this.logger.log(`   - Transacciones creadas: ${prismaTransaction.transaccionesCreadas}`);
-    this.logger.log(`   - Usuario objetivo: ${idUsuarioExtraido}`);
-    this.logger.log(`   - Logistica ID: ${id_logistica}`);
-    this.logger.log(`   - Checksum: ${prismaTransaction.checksumFinal}`);
-    this.logger.log(`✅ FIN [${requestId}] - cambiarEstadoEmpaques completado`);
     
     return {
       actualizados: prismaTransaction.actualizados,

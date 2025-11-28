@@ -186,7 +186,6 @@ export class TiendasService {
         neveras: {
           select: {
             id_nevera: true,
-            contraseña: true,
             id_estado_nevera: true
           }
         }
@@ -217,7 +216,6 @@ export class TiendasService {
         departamento: tienda.ciudad.departamento.nombre_departamento,
         neveras: tienda.neveras.map(nevera => ({
           id_nevera: nevera.id_nevera,
-          contraseña: nevera.contraseña,
           id_estado_nevera: nevera.id_estado_nevera
         }))
       })),

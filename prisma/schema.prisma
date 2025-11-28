@@ -105,7 +105,7 @@ model LOGISTICA {
   id_logistica   Int        @id @default(autoincrement())
   id_usuario     Int
   nombre_empresa String
-  placa_vehiculo String     @unique
+  placa_vehiculo String
   usuario        USUARIOS   @relation(fields: [id_usuario], references: [id_usuario])
   empaques       EMPAQUES[]
 }

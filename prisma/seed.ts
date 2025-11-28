@@ -137,14 +137,14 @@ async function main() {
   // 11. PRODUCTOS
   console.log('📦 Creando productos...');
   const productos = [
-    { id_producto: 1, nombre_producto: 'lomo cerdo', descripcion_producto: 'lomo cerdo 1000g', peso_nominal_g: 1000, precio_venta: 10000, dias_vencimiento: 30, precio_frigorifico: 95.0 },
-    { id_producto: 2, nombre_producto: 'lomo cerdo', descripcion_producto: 'lomo cerdo 250g', peso_nominal_g: 250, precio_venta: 2500, dias_vencimiento: 30, precio_frigorifico: 95.0 },
-    { id_producto: 3, nombre_producto: 'costilla cerdo', descripcion_producto: 'costilla cerdo 250g', peso_nominal_g: 250, precio_venta: 2500, dias_vencimiento: 25, precio_frigorifico: 98.0 },
-    { id_producto: 4, nombre_producto: 'costilla cerdo', descripcion_producto: 'costilla cerdo 500g', peso_nominal_g: 500, precio_venta: 5000, dias_vencimiento: 25, precio_frigorifico: 98.0 },
-    { id_producto: 5, nombre_producto: 'costilla cerdo', descripcion_producto: 'costilla cerdo 1000g', peso_nominal_g: 1000, precio_venta: 10000, dias_vencimiento: 25, precio_frigorifico: 98.0 },
-    { id_producto: 6, nombre_producto: 'panceta', descripcion_producto: 'panceta 1000g', peso_nominal_g: 1000, precio_venta: 10000, dias_vencimiento: 40, precio_frigorifico: 95.0 },
-    { id_producto: 7, nombre_producto: 'chorizo', descripcion_producto: 'de cerdo *3', peso_nominal_g: 300, precio_venta: 9000, dias_vencimiento: 20, precio_frigorifico: 95.0 },
-    { id_producto: 8, nombre_producto: 'chorizo', descripcion_producto: 'de cerdo *7', peso_nominal_g: 700, precio_venta: 19000, dias_vencimiento: 20, precio_frigorifico: 95.0 },
+    { id_producto: 1, nombre_producto: 'lomo cerdo', descripcion_producto: 'lomo cerdo 1000g', peso_nominal_g: 1000, precio_venta: 10000, dias_vencimiento: 30, precio_frigorifico: 5.0 },
+    { id_producto: 2, nombre_producto: 'lomo cerdo', descripcion_producto: 'lomo cerdo 250g', peso_nominal_g: 250, precio_venta: 2500, dias_vencimiento: 30, precio_frigorifico: 3.0 },
+    { id_producto: 3, nombre_producto: 'costilla cerdo', descripcion_producto: 'costilla cerdo 250g', peso_nominal_g: 250, precio_venta: 2500, dias_vencimiento: 25, precio_frigorifico: 3.0 },
+    { id_producto: 4, nombre_producto: 'costilla cerdo', descripcion_producto: 'costilla cerdo 500g', peso_nominal_g: 500, precio_venta: 5000, dias_vencimiento: 25, precio_frigorifico: 3.0 },
+    { id_producto: 5, nombre_producto: 'costilla cerdo', descripcion_producto: 'costilla cerdo 1000g', peso_nominal_g: 1000, precio_venta: 10000, dias_vencimiento: 25, precio_frigorifico: 3.0 },
+    { id_producto: 6, nombre_producto: 'panceta', descripcion_producto: 'panceta 1000g', peso_nominal_g: 1000, precio_venta: 10000, dias_vencimiento: 40, precio_frigorifico: 3.0 },
+    { id_producto: 7, nombre_producto: 'chorizo', descripcion_producto: 'de cerdo *3', peso_nominal_g: 300, precio_venta: 9000, dias_vencimiento: 20, precio_frigorifico: 3.0 },
+    { id_producto: 8, nombre_producto: 'chorizo', descripcion_producto: 'de cerdo *7', peso_nominal_g: 700, precio_venta: 19000, dias_vencimiento: 20, precio_frigorifico: 3.0 },
   ];
 
   for (const producto of productos) {

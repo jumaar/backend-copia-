@@ -28,6 +28,14 @@ export class NeverasService {
     const horaCalificacion = new Date();
     this.logger.debug(`Iniciando surtido de neveras para ciudades: ${idCiudadesParam}`);
 
+    if (!idCiudadesParam || idCiudadesParam.trim() === '') {
+      throw new HttpException({
+        success: false,
+        error: 'El parámetro id_ciudad es requerido',
+        code: 'MISSING_CIUDAD_PARAM'
+      }, HttpStatus.BAD_REQUEST);
+    }
+
     // Parsear ciudades
     const idCiudades = idCiudadesParam.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
     
