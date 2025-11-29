@@ -28,7 +28,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    this.logger.debug(`Validando payload de JWT (versión final simple): ${JSON.stringify(payload)}`);
+    this.logger.debug(`Validando payload de JWT ${JSON.stringify(payload)}`);
 
     // Para tokens de estaciones (type: 'estacion')
     if (payload.type === 'estacion') {

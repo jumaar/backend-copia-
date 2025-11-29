@@ -187,7 +187,6 @@ export class AuthService {
       this.logger.error('Refresh fallido: No se proporcionó un refresh token.');
       throw new UnauthorizedException('No se proporcionó un refresh token.');
     }
-    this.logger.debug(`Token recibido (parcial): ${refreshToken.substring(0, 10)}...`);
 
     // 1. Buscar y eliminar el token en una transacción para evitar race conditions
     const storedToken = await this.databaseService.$transaction(async (prisma) => {
@@ -202,7 +201,6 @@ export class AuthService {
       }
 
       if (tokenData.expira_en < new Date()) {
-        this.logger.error(`Refresh fallido: El token encontrado ha expirado. Expiró en: ${tokenData.expira_en}`);
         // Medida de seguridad: si se intenta usar un token expirado, invalidamos todos los de ese usuario.
         await prisma.rEFRESH_TOKENS.deleteMany({
           where: { id_usuario: tokenData.id_usuario },
@@ -216,13 +214,11 @@ export class AuthService {
       await prisma.rEFRESH_TOKENS.deleteMany({
         where: { id_refresh_token: tokenData.id_refresh_token },
       });
-      this.logger.debug(`Token ID ${tokenData.id_refresh_token} eliminado de la DB.`);
 
       return tokenData;
     });
 
     const { usuario } = storedToken;
-    this.logger.debug(`Generando nuevos tokens para el usuario: ${usuario.email}`);
 
     // 2. Generar un nuevo Access Token
     const accessTokenExpiry = this.configService.get<number>('ACCESS_TOKEN_EXPIRY', 900);

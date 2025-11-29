@@ -79,23 +79,19 @@ export class LogisticaService {
     // Convertir objeto a array para la respuesta
     const resultado = Object.values(productosAgrupados);
 
-    // Obtener la última hora de calificación de surtido
-    const productosIds = Object.keys(productosAgrupados).map(id => parseInt(id));
+    // Obtener la última hora de calificación de surtido de toda la tabla STOCK_NEVERA
     let ultimaHoraCalificacion: string | null = null;
 
-    if (productosIds.length > 0) {
-      const ultimaCalificacion = await this.databaseService.sTOCK_NEVERA.findFirst({
-        where: {
-          id_producto: { in: productosIds },
-          hora_calificacion: { not: null }
-        },
-        select: { hora_calificacion: true },
-        orderBy: { hora_calificacion: 'desc' }
-      });
+    const ultimaCalificacion = await this.databaseService.sTOCK_NEVERA.findFirst({
+      where: {
+        hora_calificacion: { not: null }
+      },
+      select: { hora_calificacion: true },
+      orderBy: { hora_calificacion: 'desc' }
+    });
 
-      if (ultimaCalificacion && ultimaCalificacion.hora_calificacion) {
-        ultimaHoraCalificacion = ultimaCalificacion.hora_calificacion.toISOString();
-      }
+    if (ultimaCalificacion && ultimaCalificacion.hora_calificacion) {
+      ultimaHoraCalificacion = ultimaCalificacion.hora_calificacion.toISOString();
     }
 
     return {
@@ -496,5 +492,78 @@ export class LogisticaService {
     } catch (error) {
       throw new BadRequestException(`Error al consolidar cuentas: ${error.message}`);
     }
+  }
+
+  async iniciarSurtido(id_nevera: number) {
+    // Verificar que la nevera existe
+    const nevera = await this.databaseService.nEVERAS.findUnique({
+      where: { id_nevera },
+      select: { id_nevera: true, id_estado_nevera: true }
+    });
+
+    if (!nevera) {
+      throw new BadRequestException('Nevera no encontrada');
+    }
+
+    // Cambiar estado a Surtiendo (5)
+    await this.databaseService.nEVERAS.update({
+      where: { id_nevera },
+      data: { id_estado_nevera: 5 }
+    });
+
+    // Obtener stock_nevera activo para esta nevera
+    const stock = await this.databaseService.sTOCK_NEVERA.findMany({
+      where: {
+        id_nevera,
+        activo: true
+      },
+      include: {
+        producto: {
+          select: {
+            id_producto: true,
+            nombre_producto: true,
+            peso_nominal_g: true
+          }
+        }
+      }
+    });
+
+    // Formatear respuesta
+    const stockFormateado = stock.map(item => ({
+      id_nevera: item.id_nevera,
+      id_producto: item.id_producto,
+      nombre_producto: item.producto.nombre_producto,
+      peso_nominal_g: item.producto.peso_nominal_g,
+      stock_ideal_final: item.stock_ideal_final,
+      stock_en_tiempo_real: item.stock_en_tiempo_real,
+      calificacion_surtido: item.calificacion_surtido
+    }));
+
+    return {
+      message: 'Surtido iniciado, estado de nevera cambiado a Surtiendo',
+      stock_nevera: stockFormateado
+    };
+  }
+
+  async finalizarSurtido(id_nevera: number) {
+    // Verificar que la nevera existe
+    const nevera = await this.databaseService.nEVERAS.findUnique({
+      where: { id_nevera },
+      select: { id_nevera: true, id_estado_nevera: true }
+    });
+
+    if (!nevera) {
+      throw new BadRequestException('Nevera no encontrada');
+    }
+
+    // Cambiar estado a Activa (2)
+    await this.databaseService.nEVERAS.update({
+      where: { id_nevera },
+      data: { id_estado_nevera: 2 }
+    });
+
+    return {
+      message: 'Surtido finalizado, estado de nevera cambiado a Activa'
+    };
   }
 }

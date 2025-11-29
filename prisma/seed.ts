@@ -24,6 +24,9 @@ async function main() {
   }
   console.log('✅ Roles creados');
 
+  // Reset sequence for ROLES
+  await prisma.$executeRaw`SELECT setval('"ROLES_id_rol_seq"', (SELECT COALESCE(MAX(id_rol), 0) FROM "ROLES"))`;
+
   // 2. PERMISOS DE ROLES
   console.log('🔒 Creando permisos de roles...');
   const permissions = [
@@ -98,6 +101,9 @@ async function main() {
   }
   console.log('✅ Departamentos creados');
 
+  // Reset sequence for DEPARTAMENTO
+  await prisma.$executeRaw`SELECT setval('"DEPARTAMENTO_id__departamento_seq"', (SELECT COALESCE(MAX(id__departamento), 0) FROM "DEPARTAMENTO"))`;
+
   // 5. CIUDAD
   console.log('🏙️ Creando ciudades...');
   const ciudades = [
@@ -115,7 +121,10 @@ async function main() {
     });
   }
   console.log('✅ Ciudades creadas');
-  
+
+  // Reset sequence for CIUDAD
+  await prisma.$executeRaw`SELECT setval('"CIUDAD_id_ciudad_seq"', (SELECT COALESCE(MAX(id_ciudad), 0) FROM "CIUDAD"))`;
+
   // 9. ESTADO_NEVERA
   console.log('🏠 Creando estados de nevera...');
   const estadosNevera = [
@@ -123,6 +132,7 @@ async function main() {
     { id_estado_nevera: 2, estado_nevera: 'Activa' },
     { id_estado_nevera: 3, estado_nevera: 'Retirada' },
     { id_estado_nevera: 4, estado_nevera: 'En Bodega' },
+    { id_estado_nevera: 5, estado_nevera: 'Surtiendo' },
   ];
 
   for (const estado of estadosNevera) {
@@ -133,6 +143,9 @@ async function main() {
     });
   }
   console.log('✅ Estados de nevera creados');
+
+  // Reset sequence for ESTADO_NEVERA
+  await prisma.$executeRaw`SELECT setval('"ESTADO_NEVERA_id_estado_nevera_seq"', (SELECT COALESCE(MAX(id_estado_nevera), 0) FROM "ESTADO_NEVERA"))`;
 
   // 11. PRODUCTOS
   console.log('📦 Creando productos...');
@@ -155,7 +168,10 @@ async function main() {
     });
   }
   console.log('✅ Productos creados');
-  
+
+  // Reset sequence for PRODUCTOS
+  await prisma.$executeRaw`SELECT setval('"PRODUCTOS_id_producto_seq"', (SELECT COALESCE(MAX(id_producto), 0) FROM "PRODUCTOS"))`;
+
   // 12. ESTADO_EMPAQUE
   console.log('📦 Creando estados de empaque...');
   const estadosEmpaque = [
@@ -178,6 +194,9 @@ async function main() {
   }
   console.log('✅ Estados de empaque creados');
 
+  // Reset sequence for ESTADO_EMPAQUE
+  await prisma.$executeRaw`SELECT setval('"ESTADO_EMPAQUE_id_estado_empaque_seq"', (SELECT COALESCE(MAX(id_estado_empaque), 0) FROM "ESTADO_EMPAQUE"))`;
+
   // 13. PROMOCIONES
   console.log('🎉 Creando promociones...');
   const promociones = [
@@ -196,7 +215,9 @@ async function main() {
   }  
   console.log('✅ Promociones creadas');
 
-  
+  // Reset sequence for PROMOCIONES
+  await prisma.$executeRaw`SELECT setval('"PROMOCIONES_id_promocion_seq"', (SELECT COALESCE(MAX(id_promocion), 0) FROM "PROMOCIONES"))`;
+
   // 15. TEMPERATURA NEVERA
   console.log('📝 Creando estados de temperatura de nevera...');
   const estadosTemperatura = [
@@ -214,8 +235,10 @@ async function main() {
     });
   }
   console.log('✅ Estados de temperatura de nevera creados');
- 
- 
+
+  // Reset sequence for TEMPERATURA_NEVERA
+  await prisma.$executeRaw`SELECT setval('"TEMPERATURA_NEVERA_id_temperatura_nevera_seq"', (SELECT COALESCE(MAX(id_temperatura_nevera), 0) FROM "TEMPERATURA_NEVERA"))`;
+
   // 17. TIPO_TRANSACCION
   console.log('💰 Creando tipos de transacción...');
   const tiposTransaccion = [
@@ -238,6 +261,8 @@ async function main() {
   }  
   console.log('✅ Tipos de transacción creados');
 
+  // Reset sequence for TIPO_TRANSACCION
+  await prisma.$executeRaw`SELECT setval('"TIPO_TRANSACCION_id_tipo_seq"', (SELECT COALESCE(MAX(id_tipo), 0) FROM "TIPO_TRANSACCION"))`;
 
   // 18. ESTADO_TRANSACCION
   console.log('📊 Creando estados de transacción...');
@@ -256,6 +281,9 @@ async function main() {
     });  
   }  
   console.log('✅ Estados de transacción creados');
+
+  // Reset sequence for ESTADO_TRANSACCION
+  await prisma.$executeRaw`SELECT setval('"ESTADO_TRANSACCION_id_estado_transaccion_seq"', (SELECT COALESCE(MAX(id_estado_transaccion), 0) FROM "ESTADO_TRANSACCION"))`;
 
   // 19. LISTA_DE_REPRODUCCION
 console.log('📋 Creando listas de reproducción...');
@@ -293,6 +321,9 @@ for (const lista of listasReproduccion) {
 }
 console.log('✅ Listas de reproducción creadas');
 
+  // Reset sequence for LISTA_DE_REPRODUCCION
+  await prisma.$executeRaw`SELECT setval('"LISTA_DE_REPRODUCCION_id_lista_reproduccion_seq"', (SELECT COALESCE(MAX(id_lista_reproduccion), 0) FROM "LISTA_DE_REPRODUCCION"))`;
+
   // 20. BIBLIOTECA
   console.log('📚 Creando biblioteca...');
   const biblioteca = [
@@ -310,6 +341,9 @@ console.log('✅ Listas de reproducción creadas');
   }
   console.log('✅ Biblioteca creada');
 
+  // Reset sequence for BIBLIOTECA
+  await prisma.$executeRaw`SELECT setval('"BIBLIOTECA_id_seq"', (SELECT COALESCE(MAX(id), 0) FROM "BIBLIOTECA"))`;
+
   // 21. ITEMS_DE_REPRODUCCION
   console.log('🎵 Creando items de reproducción...');
   const itemsReproduccion = [
@@ -326,6 +360,9 @@ console.log('✅ Listas de reproducción creadas');
     });
   }
   console.log('✅ Items de reproducción creados');
+
+  // Reset sequence for ITEMS_DE_REPRODUCCION
+  await prisma.$executeRaw`SELECT setval('"ITEMS_DE_REPRODUCCION_id_seq"', (SELECT COALESCE(MAX(id), 0) FROM "ITEMS_DE_REPRODUCCION"))`;
 
   console.log('🎉 Seeding completado exitosamente!');
 }

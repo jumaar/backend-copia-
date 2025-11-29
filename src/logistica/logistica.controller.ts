@@ -48,5 +48,17 @@ export class LogisticaController {
     );
   }
 
-   
+  @Patch('surtir/:id_nevera')
+  @Roles(2, 4)
+  iniciarSurtido(@Param('id_nevera') id_nevera: string) {
+    return this.logisticaService.iniciarSurtido(Number(id_nevera));
+  }
+
+  @Patch('surtir/:id_nevera/finalizar')
+  @Roles(2, 4)
+  finalizarSurtido(@Param('id_nevera') id_nevera: string) {
+    return this.logisticaService.finalizarSurtido(Number(id_nevera));
+  }
+
+
 }

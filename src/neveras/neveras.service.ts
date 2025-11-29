@@ -26,7 +26,6 @@ export class NeverasService {
    */
   async surtirNeveras(idCiudadesParam: string, idUsuario: number) {
     const horaCalificacion = new Date();
-    this.logger.debug(`Iniciando surtido de neveras para ciudades: ${idCiudadesParam}`);
 
     if (!idCiudadesParam || idCiudadesParam.trim() === '') {
       throw new HttpException({
@@ -38,7 +37,7 @@ export class NeverasService {
 
     // Parsear ciudades
     const idCiudades = idCiudadesParam.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
-    
+
     if (idCiudades.length === 0) {
       throw new HttpException({
         success: false,
@@ -48,7 +47,6 @@ export class NeverasService {
     }
 
     // FASE 1: RECOLECCIÓN DE DATOS
-    this.logger.debug('FASE 1: Recolección de datos');
 
     // 1.1 Obtener neveras activas de las ciudades
     const neverasActivas = await this.databaseService.nEVERAS.findMany({
@@ -86,7 +84,6 @@ export class NeverasService {
     }
 
     const idsNeveras = neverasActivas.map(n => n.id_nevera);
-    this.logger.debug(`Neveras activas encontradas: ${idsNeveras.length}`);
 
     // 1.2 Obtener STOCK_NEVERA de esas neveras (filtrar activo=false)
     const stockExistente = await this.databaseService.sTOCK_NEVERA.findMany({
@@ -140,8 +137,6 @@ export class NeverasService {
       }, HttpStatus.BAD_REQUEST);
     }
 
-    this.logger.debug(`Productos en logística: ${productosEnLogistica.length}`);
-
     // Convertir a formato más manejable
     const productosLogistica = productosEnLogistica.map(p => ({
       id_producto: p.id_producto,
@@ -151,10 +146,8 @@ export class NeverasService {
     // LOOP: Iterar por cada producto en logística
     for (const productoLog of productosLogistica) {
       const { id_producto, cantidad: cantidadLogistica } = productoLog;
-      this.logger.debug(`Procesando producto ${id_producto} con ${cantidadLogistica} empaques`);
 
       // FASE 2: VERIFICACIÓN Y CREACIÓN DE REGISTROS
-      this.logger.debug(`FASE 2: Verificación de registros para producto ${id_producto}`);
 
       // 2.1 Para cada nevera, verificar si existe registro
       for (const nevera of neverasActivas) {
@@ -164,7 +157,7 @@ export class NeverasService {
 
         // Verificar si el registro existe y está activo
         const stockActivo = stockExistenteNevera && stockExistenteNevera.activo;
-        
+
         if (!stockExistenteNevera) {
           // NO existe → CREAR registro con calificación MEDIA
           await this.databaseService.sTOCK_NEVERA.create({
@@ -181,7 +174,14 @@ export class NeverasService {
               hora_calificacion: horaCalificacion
             }
           });
-          this.logger.debug(`Registro creado para nevera ${nevera.id_nevera}, producto ${id_producto}`);
+        } else if (stockExistenteNevera.activo) {
+          // SI existe y está activo → ACTUALIZAR hora_calificacion
+          await this.databaseService.sTOCK_NEVERA.update({
+            where: { id: stockExistenteNevera.id },
+            data: {
+              hora_calificacion: horaCalificacion
+            }
+          });
         }
       }
 
@@ -212,10 +212,7 @@ export class NeverasService {
         s => s.venta_semanal > 0 || s.stock_en_tiempo_real > 0
       );
 
-      this.logger.debug(`Neveras nuevas: ${neverasNuevas.length}, Resurtido: ${neverasResurtido.length}`);
-
       // FASE 3: CALIFICACIÓN DE NEVERAS RESURTIDO
-      this.logger.debug(`FASE 3: Calificación de neveras resurtido para producto ${id_producto}`);
 
       if (neverasResurtido.length > 0) {
         // 3.1 Ordenar por venta_semanal
@@ -228,8 +225,6 @@ export class NeverasService {
         const MEDIA_corte = ventaMaxima / 2;
         const BAJA_corte = MEDIA_corte * 0.5;
         const ALTA_corte = MEDIA_corte * 1.5;
-
-        this.logger.debug(`Cortes - BAJA: ${BAJA_corte}, MEDIA: ${MEDIA_corte}, ALTA: ${ALTA_corte}`);
 
         // 3.3 y 3.4 Asignar calificación y UPDATE
         for (const stock of neverasOrdenadas) {
@@ -266,10 +261,8 @@ export class NeverasService {
       // No se requiere acción adicional
 
       // CHECKPOINT: Calificaciones listas
-      this.logger.debug('CHECKPOINT: Calificaciones completadas');
 
       // FASE 5: DISTRIBUCIÓN DE PRODUCTOS
-      this.logger.debug(`FASE 5: Distribución de productos para producto ${id_producto}`);
 
       // Refrescar stock con calificaciones actualizadas
       const stockActualizado = await this.databaseService.sTOCK_NEVERA.findMany({
@@ -296,21 +289,14 @@ export class NeverasService {
 
       const pesoTotal = (2 * N_alta) + (1 * N_media) + (0.5 * N_baja);
 
-      this.logger.debug(`Total disponible: ${totalDisponible}, Peso total: ${pesoTotal}`);
-      this.logger.debug(`ALTA: ${N_alta}, MEDIA: ${N_media}, BAJA: ${N_baja}`);
-
       // 5.2 Calcular asignación con FLOOR
       const MEDIA_asig = Math.floor(totalDisponible / pesoTotal);
       const BAJA_asig = Math.floor(MEDIA_asig * 0.5);
       const ALTA_asig = Math.floor(MEDIA_asig * 2);
 
-      this.logger.debug(`Asignaciones - ALTA: ${ALTA_asig}, MEDIA: ${MEDIA_asig}, BAJA: ${BAJA_asig}`);
-
       // 5.3 Calcular distribución inicial y sobrante
       const totalAsignado = (ALTA_asig * N_alta) + (MEDIA_asig * N_media) + (BAJA_asig * N_baja);
       let sobrante = totalDisponible - totalAsignado;
-
-      this.logger.debug(`Total asignado: ${totalAsignado}, Sobrante: ${sobrante}`);
 
       // 5.4 Repartir sobrante a neveras MEDIA
       const neverasMedia = stockActualizado
@@ -356,12 +342,9 @@ export class NeverasService {
           }
         });
       }
-
-      this.logger.debug(`Producto ${id_producto} procesado exitosamente`);
     }
 
     // FIN LOOP
-    this.logger.debug('Surtido completado para todos los productos');
 
     return {
       success: true,

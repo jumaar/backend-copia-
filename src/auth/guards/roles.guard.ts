@@ -28,7 +28,6 @@ export class RolesGuard implements CanActivate {
     }
 
     const { user } = context.switchToHttp().getRequest();
-    this.logger.debug(`Usuario en request: ${JSON.stringify(user)}`);
 
     if (!user || !user.roleId) {
       this.logger.warn('Usuario no encontrado o sin roleId');
@@ -36,7 +35,6 @@ export class RolesGuard implements CanActivate {
     }
 
     const hasRole = requiredRoles.some((roleId) => user.roleId === roleId);
-    this.logger.debug(`Usuario tiene rol requerido: ${hasRole}, roleId del usuario: ${user.roleId}`);
 
     if (hasRole) {
       return true;

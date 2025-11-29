@@ -18,7 +18,7 @@ FILENAME="${BACKUP_DIR}/backup_${BACKUP_TYPE}_$(date +%Y%m%d_%H%M%S).sql.gz"
 
 # Ejecutar pg_dump con compresión y verificación
 echo "$(date): Ejecutando pg_dump..."
-if pg_dump -h db -U admin -d mi_base_de_datos | gzip > "$FILENAME"; then
+if pg_dump -h db -U admin -d mi_base_de_datos -w | gzip > "$FILENAME"; then
   echo "$(date): Backup creado exitosamente: ${FILENAME}"
   # Verificar que el archivo no esté vacío
   if [ -s "$FILENAME" ]; then

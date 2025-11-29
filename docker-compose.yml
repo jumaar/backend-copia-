@@ -25,4 +25,4 @@ services:
       PGPASSWORD: password123
 
 volumes:
-  postgres_data:
+ postgres_data:

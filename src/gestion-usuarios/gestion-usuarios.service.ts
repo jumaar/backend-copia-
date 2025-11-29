@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, ForbiddenException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { UpdateGestionUsuarioDto } from './dto/update-gestion-usuario.dto';
 import * as bcrypt from 'bcryptjs';
@@ -47,10 +47,19 @@ export class GestionUsuariosService {
       includeRelations['logisticas'] = true;
     }
 
-    const currentUser = await this.databaseService.uSUARIOS.findUnique({
-      where: { id_usuario: user.id_usuario },
-      include: includeRelations,
-    });
+    let currentUser;
+    try {
+      currentUser = await this.databaseService.uSUARIOS.findUnique({
+        where: { id_usuario: user.id_usuario },
+        include: includeRelations,
+      });
+    } catch (error) {
+      if (error.code === 'P1001') {
+        this.logger.error(`Database connection error: ${error.message}`);
+        throw new ServiceUnavailableException('Database server is temporarily unavailable');
+      }
+      throw error;
+    }
 
     // Vista simple para roles no jerárquicos
     if (userRole === 3 || userRole === 5) { // Frigorifico o Tienda
