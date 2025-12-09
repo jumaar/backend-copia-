@@ -16,6 +16,7 @@ services:
   backup:
     build: ./backup
     container_name: postgres_backup
+    restart: always
     depends_on:
       - db
     volumes:

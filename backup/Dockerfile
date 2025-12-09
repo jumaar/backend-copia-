@@ -14,3 +14,6 @@ RUN chmod 0644 /etc/cron.d/backup-cron && \
 
 # Crear el archivo de log para cron
 RUN touch /var/log/cron.log
+
+# Cargar el crontab automáticamente al construir la imagen
+RUN crontab /etc/cron.d/backup-cron

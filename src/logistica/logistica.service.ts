@@ -134,8 +134,8 @@ export class LogisticaService {
       };
     }
 
-    // Obtener todas las transacciones del usuario en el mes especificado
-    const transacciones = await this.databaseService.tRANSACCIONES.findMany({
+    // PASO 1: Obtener transacciones directas del mes (transacciones originales)
+    const transaccionesDirectas = await this.databaseService.tRANSACCIONES.findMany({
       where: {
         id_usuario: id_usuario,
         hora_transaccion: {
@@ -181,6 +181,98 @@ export class LogisticaService {
         hora_transaccion: 'desc'
       }
     });
+
+    // PASO 2: Obtener transacciones acreedoras que consolidaron transacciones del mes
+    // Cuando una transacción del mes tiene id_transaccion_rel, esa transacción relacionada
+    // es la transacción acreedora que debe aparecer al consultar este mes
+    
+    // Obtener transacciones del mes que tienen id_transaccion_rel (transacciones consolidadas)
+    const transaccionesConsolidadasDelMes = await this.databaseService.tRANSACCIONES.findMany({
+      where: {
+        id_usuario: id_usuario,
+        hora_transaccion: {
+          gte: fechaInicio,
+          lte: fechaFin
+        },
+        id_transaccion_rel: {
+          not: null  // Solo transacciones que fueron consolidadas
+        }
+      },
+      select: {
+        id_transaccion_rel: true
+      }
+    });
+
+    const idsTransaccionesAcreedoras = transaccionesConsolidadasDelMes
+      .map(t => t.id_transaccion_rel)
+      .filter(id => id !== null) as number[];
+
+    let transaccionesConsolidadas: any[] = [];
+
+    if (idsTransaccionesAcreedoras.length > 0) {
+      // Obtener las transacciones acreedoras que consolidaron las del mes
+      transaccionesConsolidadas = await this.databaseService.tRANSACCIONES.findMany({
+        where: {
+          id_transaccion: {
+            in: idsTransaccionesAcreedoras
+          }
+        },
+        include: {
+          estadoTransaccion: {
+            select: {
+              id_estado_transaccion: true,
+              nombre_estado: true
+            }
+          },
+          tipoTransaccion: {
+            select: {
+              id_tipo: true,
+              nombre_codigo: true,
+              descripcion_amigable: true
+            }
+          },
+          empaque: {
+            select: {
+              id_empaque: true,
+              EPC_id: true
+            }
+          },
+          transaccionRel: {
+            select: {
+              id_transaccion: true,
+              nota_opcional: true,
+              usuario: {
+                select: {
+                  id_usuario: true,
+                  nombre_usuario: true,
+                  apellido_usuario: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: {
+          hora_transaccion: 'desc'
+        }
+      });
+    }
+
+    // Combinar ambas consultas y eliminar duplicados
+    const todasLasTransacciones = [...transaccionesDirectas];
+    const idsTransaccionesDirectas = new Set(todasLasTransacciones.map(t => t.id_transaccion));
+    
+    transaccionesConsolidadas.forEach(transaccion => {
+      if (!idsTransaccionesDirectas.has(transaccion.id_transaccion)) {
+        todasLasTransacciones.push(transaccion);
+      }
+    });
+
+    // Ordenar todas las transacciones por fecha descendente
+    todasLasTransacciones.sort((a, b) =>
+      new Date(b.hora_transaccion).getTime() - new Date(a.hora_transaccion).getTime()
+    );
+
+    const transacciones = todasLasTransacciones;
 
     // Formatear las transacciones para la respuesta (solo campos esenciales)
     const transaccionesFormateadas = transacciones.map(transaccion => {
