@@ -466,10 +466,59 @@ export class LogisticaService {
     );
 
     if (transaccionesPendientes.length === 0) {
-      throw new BadRequestException('No hay transacciones pendientes para consolidar');
+      // Si no hay transacciones pendientes, crear directamente una nueva transacción pendiente
+      // para el abono/adelanto
+      try {
+        await this.databaseService.$transaction(async (prisma) => {
+          // Crear transacción del acreedor (pago recibido)
+          const notaConMonto = nota_opcional
+            ? `${nota_opcional} - Monto abonado: ${monto}`
+            : `Monto abonado: ${monto}`;
+
+          const transaccionAcreedorAdelanto = await prisma.tRANSACCIONES.create({
+            data: {
+              id_empaque: null,
+              id_usuario: id_usuario_credenciales,
+              id_transaccion_rel: null,
+              monto: -monto, // NEGATIVO (pago realizado)
+              hora_transaccion: new Date(),
+              id_tipo_transaccion: 5, // dinero entregado a acreedor
+              nota_opcional: notaConMonto,
+              estado_transaccion: 2 // pagado
+            }
+          });
+
+          // Crear transacción pendiente para el monto adelantado
+          await prisma.tRANSACCIONES.create({
+            data: {
+              id_empaque: null,
+              id_usuario: id_usuario_consolidar,
+              id_transaccion_rel: transaccionAcreedorAdelanto.id_transaccion, // CONECTAR CON TRANSACCIÓN ACREEDORA
+              monto: -monto, // NEGATIVO (ahora debe el adelanto)
+              hora_transaccion: new Date(),
+              id_tipo_transaccion: 2, // costo_frigorifico
+              nota_opcional: 'monto adelantado pendiente',
+              estado_transaccion: 1 // pendiente
+            }
+          });
+        });
+
+        return {
+          message: 'Abono adelantado registrado exitosamente',
+          resumen: {
+            usuario_consolidado: id_usuario_consolidar,
+            usuario_acreedor: id_usuario_credenciales,
+            monto_abonado: monto,
+            tipo_operacion: 'adelanto_sin_deuda'
+          }
+        };
+
+      } catch (error) {
+        throw new BadRequestException(`Error al registrar abono adelantado: ${error.message}`);
+      }
     }
 
-    // Calcular suma total de transacciones pendientes y redondear a entero
+    // Si hay transacciones pendientes, usar la lógica existente de consolidación
     const montoConsolidadoRaw = transaccionesPendientes.reduce(
       (sum, transaccion) => sum + parseFloat(transaccion.monto.toString()),
       0
@@ -477,9 +526,6 @@ export class LogisticaService {
     
     // Redondear a entero usando Math.round (0.5 redondea hacia arriba, <0.5 hacia abajo)
     const montoConsolidado = Math.round(montoConsolidadoRaw);
-
-    // Validar que el monto solicitado tenga relación con el consolidado
-    // Ahora permitimos abonos mayores para manejar casos donde el frigorífico nos debe
 
     // Analizar tipo de abono
     const esAbonoCompleto = monto === montoConsolidado;
@@ -532,7 +578,7 @@ export class LogisticaService {
             monto: -montoConsolidado, // NEGATIVO (todo lo que debe)
             hora_transaccion: new Date(),
             id_tipo_transaccion: 3, // ticket_consolidado
-            nota_opcional: idsEmpaques || null,
+            nota_opcional: idsEmpaques || `Transacción consolidada`,
             estado_transaccion: 4 // consolidado
           }
         });
@@ -586,7 +632,7 @@ export class LogisticaService {
     }
   }
 
-  async iniciarSurtido(id_nevera: number) {
+  async iniciarSurtido(id_nevera: number, id_usuario: number) {
     // Verificar que la nevera existe
     const nevera = await this.databaseService.nEVERAS.findUnique({
       where: { id_nevera },
@@ -595,6 +641,28 @@ export class LogisticaService {
 
     if (!nevera) {
       throw new BadRequestException('Nevera no encontrada');
+   }
+    // VERIFICACIÓN: Validar que hoy se haya realizado calificación de inventario para esta nevera
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0); // Inicio del día
+    const mañana = new Date(hoy);
+    mañana.setDate(mañana.getDate() + 1); // Inicio del día siguiente
+
+    // Buscar registro de stock_nevera con hora_calificacion de hoy para esta nevera específica
+    const stockHoy = await this.databaseService.sTOCK_NEVERA.findFirst({
+      where: {
+        id_nevera: id_nevera,
+        hora_calificacion: {
+          gte: hoy,
+          lt: mañana
+        }
+      },
+      select: { hora_calificacion: true }
+    });
+
+    // Si no hay calificación de hoy, devolver error
+    if (!stockHoy) {
+      throw new BadRequestException('Primero debe distribuir el inventario antes de surtir');
     }
 
     // Cambiar estado a Surtiendo (5)

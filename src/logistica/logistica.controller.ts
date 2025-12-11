@@ -50,8 +50,9 @@ export class LogisticaController {
 
   @Patch('surtir/:id_nevera')
   @Roles(2, 4)
-  iniciarSurtido(@Param('id_nevera') id_nevera: string) {
-    return this.logisticaService.iniciarSurtido(Number(id_nevera));
+  iniciarSurtido(@Param('id_nevera') id_nevera: string, @Req() req: any) {
+    const id_usuario = req.user.id_usuario; // Obtener id_usuario del JWT
+    return this.logisticaService.iniciarSurtido(Number(id_nevera), id_usuario);
   }
 
   @Patch('surtir/:id_nevera/finalizar')
