@@ -33,7 +33,8 @@ async function bootstrap() {
       'http://localhost:5173', // Frontend de desarrollo (Vite, por ejemplo)
       'https://localhost:5000', // servicio de basculas
       'https://www.api.vorak.app', // URL de tu frontend en producción
-      // 'https://api.vorak.app' no es necesario aquí, ya que es el destino, no el origen.
+      'https://vorak.app', // Frontend de producción
+      'https://www.vorak.app', // Frontend de producción con www
     ],
     credentials: true,
   });
