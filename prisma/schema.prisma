@@ -118,7 +118,7 @@ model ESTADO_NEVERA {
 
 model NEVERAS {
   id_nevera             Int                      @id @default(autoincrement())
-  contraseña           String
+  contraseña           String                   @unique
   id_estado_nevera      Int
   id_tienda             Int
   version_software      Decimal
