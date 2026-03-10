@@ -2,12 +2,16 @@ import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { CreateNeveraDto } from './dto/create-nevera.dto';
 import { UpdateNeveraDto } from './dto/update-nevera.dto';
 import { DatabaseService } from '../database/database.service';
+import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class NeverasService {
   private readonly logger = new Logger(NeverasService.name);
 
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(
+    private readonly databaseService: DatabaseService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   async countActiveNeveras(): Promise<{ count: number }> {
     this.logger.debug('Iniciando conteo de neveras activas');
@@ -18,6 +22,74 @@ export class NeverasService {
     });
     this.logger.debug(`Conteo resultante: ${count}`);
     return { count };
+  }
+
+  async activarNevera(contrasena: string) {
+    // Buscar nevera con la contraseña proporcionada
+    const nevera = await this.databaseService.nEVERAS.findUnique({
+      where: {
+        contraseña: contrasena
+      },
+      include: {
+        tienda: true
+      }
+    });
+
+    if (!nevera) {
+      throw new HttpException({
+        success: false,
+        error: 'Contraseña incorrecta',
+        code: 'CONTRASENA_INCORRECTA'
+      }, HttpStatus.UNAUTHORIZED);
+    }
+
+    // Verificar que la nevera esté en estado 1 (inactiva)
+    if (nevera.id_estado_nevera !== 1) {
+      throw new HttpException({
+        success: false,
+        error: 'La nevera no está en estado inactivo',
+        code: 'ESTADO_NO_PERMITIDO'
+      }, HttpStatus.BAD_REQUEST);
+    }
+
+    // Actualizar el estado de la nevera de 1 a 2 (de inactiva a activa)
+    await this.databaseService.nEVERAS.update({
+      where: {
+        id_nevera: nevera.id_nevera
+      },
+      data: {
+        id_estado_nevera: 2
+      }
+    });
+
+    // Obtener todos los productos con su nombre, descripción, peso nominal e id_producto
+    const productos = await this.databaseService.pRODUCTOS.findMany({
+      select: {
+        id_producto: true,
+        nombre_producto: true,
+        descripcion_producto: true,
+        peso_nominal_g: true
+      }
+    });
+
+    // Generar un JWT con duración infinita (sin expiración)
+    const payload = {
+      sub: nevera.id_nevera,
+      tipo: 'nevera_activacion',
+      contrasena: contrasena
+    };
+    
+    // Generar token con una expiración muy larga (aproximadamente 100 años) para simular "infinito"
+    const token = this.jwtService.sign(payload, { expiresIn: '876000h' }); // 100 años aproximadamente
+
+    return {
+      success: true,
+      message: 'Nevera activada exitosamente',
+      token: token,
+      id_nevera: nevera.id_nevera,
+      nombre_tienda: nevera.tienda?.nombre_tienda,
+      productos: productos
+    };
   }
 
   /**
@@ -398,6 +470,57 @@ export class NeverasService {
       nevera: {
         id_nevera: neveraEliminada.id_nevera
       }
+    };
+  }
+
+  async actualizarNeveras() {
+    // Obtener todas las neveras activas (estado 2) con sus tiendas
+    const neverasActivas = await this.databaseService.nEVERAS.findMany({
+      where: {
+        id_estado_nevera: 2 // Solo neveras activas
+      },
+      include: {
+        tienda: {
+          select: {
+            nombre_tienda: true
+          }
+        }
+      }
+    });
+
+    // Procesar cada nevera para generar su token y preparar la información
+    const neverasProcesadas = await Promise.all(neverasActivas.map(async (nevera) => {
+      // Generar token para esta nevera
+      const payload = {
+        sub: nevera.id_nevera,
+        tipo: 'nevera_actualizacion',
+        contrasena: nevera.contraseña
+      };
+      
+      const token = this.jwtService.sign(payload, { expiresIn: '876000h' }); // 100 años aproximadamente
+
+      return {
+        id_nevera: nevera.id_nevera,
+        nombre_tienda: nevera.tienda?.nombre_tienda,
+        token: token
+      };
+    }));
+
+    // Obtener todos los productos únicos (tabla global)
+    const productos = await this.databaseService.pRODUCTOS.findMany({
+      select: {
+        id_producto: true,
+        nombre_producto: true,
+        descripcion_producto: true,
+        peso_nominal_g: true
+      }
+    });
+
+    return {
+      success: true,
+      message: 'Información de neveras activas obtenida exitosamente',
+      neveras: neverasProcesadas,
+      productos: productos
     };
   }
 }

@@ -69,6 +69,7 @@ export class LogisticaService {
       }
 
       acc[productoId].empaques.push({
+        id_empaque: empaque.id_empaque,
         peso_exacto_g: empaque.peso_exacto_g,
         EPC_id: empaque.EPC_id
       });
