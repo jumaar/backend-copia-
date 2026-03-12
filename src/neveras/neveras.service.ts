@@ -3,6 +3,8 @@ import { CreateNeveraDto } from './dto/create-nevera.dto';
 import { UpdateNeveraDto } from './dto/update-nevera.dto';
 import { DatabaseService } from '../database/database.service';
 import { JwtService } from '@nestjs/jwt';
+import { ValidacionDosaTresDto } from './dto/validacion-dosatres.dto';
+import { EmpaqueValidado } from './interfaces/empaque.interface';
 
 @Injectable()
 export class NeverasService {
@@ -523,4 +525,146 @@ export class NeverasService {
       productos: productos
     };
   }
+
+  /**
+    * Endpoint para validar empaques que entran a una nevera
+    * POST /api/neveras/validacionDosaTres
+    */
+   async validacionDosaTres(dto: ValidacionDosaTresDto) {
+     const { fridge_id, timestamp, pending_packages } = dto;
+     this.logger.log(`Validando empaques para nevera ${fridge_id}`);
+
+     // Convertir timestamp a fecha
+     const fechaTimestamp = new Date(timestamp * 1000);
+
+     // Obtener la fecha actual para la última conexión
+     const fechaConexion = new Date();
+
+     // Procesar empaques: validar y separar válidos de inválidos
+     const empaquesValidos: any[] = [];
+     const empaquesInvalidos: any[] = [];
+
+     // Paso 1: Validar todos los empaques
+     for (const packageData of pending_packages) {
+       const { epc, id_empaque } = packageData;
+
+       // Buscar el empaque por EPC o ID
+       let empaque;
+       if (epc) {
+         empaque = await this.databaseService.eMPAQUES.findUnique({
+           where: { EPC_id: epc },
+           include: {
+             producto: {
+               select: {
+                 id_producto: true,
+                 nombre_producto: true
+               }
+             }
+           }
+         });
+       } else if (id_empaque) {
+         empaque = await this.databaseService.eMPAQUES.findUnique({
+           where: { id_empaque: id_empaque },
+           include: {
+             producto: {
+               select: {
+                 id_producto: true,
+                 nombre_producto: true
+               }
+             }
+           }
+         });
+       }
+
+       // Verificar que el empaque exista y esté en estado 2 (en logística)
+       if (!empaque) {
+         empaquesInvalidos.push({
+           epc: epc || null,
+           id_empaque: id_empaque || null,
+           id_nevera: null,
+           error: `Empaque no encontrado: ${epc || id_empaque}`
+         });
+       } else if (empaque.id_estado_empaque !== 2) {
+         empaquesInvalidos.push({
+           epc: epc || null,
+           id_empaque: id_empaque || null,
+           id_nevera: empaque.id_nevera,
+           error: `Empaque no está en estado de logística (estado actual: ${empaque.id_estado_empaque}): ${epc || id_empaque}`
+         });
+       } else {
+         empaquesValidos.push({
+           empaque: empaque,
+           epc: epc || null,
+           id_empaque: id_empaque || null
+         });
+       }
+     }
+
+     // Paso 2: Si hay empaques válidos, procesarlos en una transacción
+     let empaquesActualizados: any[] = [];
+     let success = false;
+     let message = '';
+
+     if (empaquesValidos.length > 0) {
+       empaquesActualizados = await this.databaseService.$transaction(async (prisma) => {
+         // 1. Actualizar la tabla de neveras con la última conexión
+         await prisma.nEVERAS.update({
+           where: { id_nevera: fridge_id },
+           data: {
+             ultima_conexion: fechaConexion
+           }
+         });
+
+         // 2. Procesar cada empaque válido
+         const resultados: any[] = [];
+
+         for (const packageData of empaquesValidos) {
+           const { empaque, epc, id_empaque } = packageData;
+
+           // Actualizar el empaque
+           const empaqueActualizado = await prisma.eMPAQUES.update({
+             where: { id_empaque: empaque.id_empaque },
+             data: {
+               id_nevera: fridge_id,
+               id_estado_empaque: 3, // Estado 3: en nevera
+               hora_en_nevera_3: fechaTimestamp
+             },
+             include: {
+               producto: {
+                 select: {
+                   id_producto: true,
+                   nombre_producto: true
+                 }
+               }
+             }
+           });
+
+           resultados.push({
+             id_empaque: empaqueActualizado.id_empaque,
+             epc: empaqueActualizado.EPC_id,
+             peso_exacto_g: empaqueActualizado.peso_exacto_g,
+             id_producto: empaqueActualizado.producto.id_producto,
+             nombre_producto: empaqueActualizado.producto.nombre_producto
+           });
+         }
+
+         return resultados;
+       });
+
+       success = true;
+       message = empaquesInvalidos.length === 0
+         ? 'Validación de empaques completada exitosamente'
+         : `Se procesaron ${empaquesValidos.length} empaques válidos, ${empaquesInvalidos.length} no pudieron procesarse`;
+     } else {
+       success = false;
+       message = 'Ningún empaque pudo ser procesado';
+     }
+
+     return {
+       success,
+       message,
+       empaques_procesados: empaquesActualizados,
+       empaques_no_procesados: empaquesInvalidos
+     };
+   }
 }

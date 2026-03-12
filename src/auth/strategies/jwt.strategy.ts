@@ -30,6 +30,20 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: any) {
     this.logger.debug(`Validando payload de JWT ${JSON.stringify(payload)}`);
 
+    // Para tokens de neveras (tipo: 'nevera_activacion' o 'nevera_actualizacion')
+    if (payload.tipo === 'nevera_activacion' || payload.tipo === 'nevera_actualizacion') {
+      if (!payload.sub || !payload.contrasena) {
+        this.logger.error(`Token de nevera con payload inválido: ${JSON.stringify(payload)}`);
+        throw new UnauthorizedException('Token de nevera con payload inválido o incompleto.');
+      }
+      this.logger.log(`Token de nevera validado: id_nevera ${payload.sub}`);
+      return {
+        type: 'nevera',
+        id_nevera: payload.sub,
+        contrasena: payload.contrasena,
+      };
+    }
+
     // Para tokens de estaciones (type: 'estacion')
     if (payload.type === 'estacion') {
       if (!payload.sub || !payload.frigorificoId) {

@@ -9,6 +9,10 @@ export class LoggingMiddleware implements NestMiddleware {
     const { method, originalUrl } = req;
     const userAgent = req.get('user-agent') || '';
 
+    if (method === 'POST' && req.body) {
+      this.logger.log(`Request body: ${JSON.stringify(req.body)}`);
+    }
+
     res.on('finish', () => {
       const { statusCode } = res;
       const contentLength = res.get('content-length');

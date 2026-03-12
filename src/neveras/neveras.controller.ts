@@ -11,7 +11,8 @@ import {
   Query,
   Req,
   HttpException,
-  HttpStatus
+  HttpStatus,
+  HttpCode
 } from '@nestjs/common';
 import { NeverasService } from './neveras.service';
 import { CreateNeveraDto } from './dto/create-nevera.dto';
@@ -19,6 +20,7 @@ import { UpdateNeveraDto } from './dto/update-nevera.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { ValidacionDosaTresDto } from './dto/validacion-dosatres.dto';
 // Esta línea es redundante y debe ser eliminada
 // import { Post, Body } from '@nestjs/common';
 
@@ -48,10 +50,10 @@ export class NeverasController {
     this.logger.debug('Endpoint countActiveNeveras llamado');
     return this.neverasService.countActiveNeveras();
   }
-  
+
   /**
    * POST /api/neveras/activacion
-   * Endpoint para activar nevera con contraseña
+   * Endpoint para activar nevera con contraseña este end point se usa en real como en el simulador
    */
   @Post('activacion')
   async activarNevera(@Body('contrasena') contrasena: string) {
@@ -61,13 +63,25 @@ export class NeverasController {
 
   /**
    * GET /api/neveras/actualizacion
-   * Endpoint para obtener información de todas las neveras activas
+   * OJO ELIMINAR ESTE Endpoint para obtener información de todas las neveras activasetse end poin solo se utiliza para el simuador
    */
   @Get('actualizacion')
   async actualizarNeveras() {
     this.logger.debug('Endpoint actualizacion llamado');
     return this.neverasService.actualizarNeveras();
   }
+
+ /**
+  * POST /api/neveras/validacionDosaTres
+  * Endpoint para validar empaques que entran a una nevera
+  */
+ @Post('validacionDosaTres')
+ @UseGuards(JwtAuthGuard)
+ @HttpCode(200)
+ async validacionDosaTres(@Body() dto: ValidacionDosaTresDto) {
+   this.logger.debug('Endpoint validacionDosaTres llamado');
+   return this.neverasService.validacionDosaTres(dto);
+ }
 
 
 }
