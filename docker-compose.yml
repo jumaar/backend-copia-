@@ -21,7 +21,7 @@ services:
       - db
     volumes:
       - ./backups:/backups
-    command: sh -c "/usr/local/bin/backup.sh daily && cron && tail -f /var/log/cron.log"
+    command: sh -c "cron && tail -f /var/log/cron.log"
     environment:
       PGPASSWORD: password123
 
