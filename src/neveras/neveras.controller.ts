@@ -21,6 +21,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ValidacionDosaTresDto } from './dto/validacion-dosatres.dto';
+import { ParseIntPipe } from '@nestjs/common';
 // Esta línea es redundante y debe ser eliminada
 // import { Post, Body } from '@nestjs/common';
 
@@ -34,8 +35,8 @@ export class NeverasController {
   @Get('surtir')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(4)
-  async surtirNeveras( @Query('id_ciudad') idCiudad: string,@Req() req: any)
-  { const idUsuario = req.user.id_usuario;
+  async surtirNeveras(@Query('id_ciudad') idCiudad: string, @Req() req: any) {
+    const idUsuario = req.user.id_usuario;
     return this.neverasService.surtirNeveras(idCiudad, idUsuario);
   }
 
@@ -84,6 +85,19 @@ export class NeverasController {
  async validacionDosaTres(@Body() dto: ValidacionDosaTresDto) {
    this.logger.debug('Endpoint validacionDosaTres llamado');
    return this.neverasService.validacionDosaTres(dto);
+ }
+
+ /**
+  * GET /api/neveras/inventario/:id_nevera
+  * Endpoint para obtener el inventario de empaques en una nevera.
+  * Actualiza la última conexión de la nevera y devuelve todos los empaques
+  * en estado 3 (en nevera) con su información completa.
+  */
+ @Get('inventario/:id_nevera')
+ @UseGuards(JwtAuthGuard)
+ async inventarioNevera(@Param('id_nevera', ParseIntPipe) idNevera: number) {
+   this.logger.debug(`Endpoint inventarioNevera llamado para nevera ${idNevera}`);
+   return this.neverasService.inventarioNevera(idNevera);
  }
 
 
