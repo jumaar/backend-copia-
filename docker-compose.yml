@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:16
-    container_name: mi_postgres_db
+    container_name: vorak_db
     restart: always
     ports:
       - "5432:5432"
@@ -11,19 +11,25 @@ services:
       POSTGRES_DB: mi_base_de_datos
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backups:/backups
+    networks:
+      - app-network
 
   backup:
     build: ./backup
-    container_name: postgres_backup
+    container_name: vorak_backup
     restart: always
     depends_on:
       - db
     volumes:
       - ./backups:/backups
-    command: sh -c "cron && tail -f /var/log/cron.log"
     environment:
       PGPASSWORD: password123
+    networks:
+      - app-network
 
 volumes:
  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge

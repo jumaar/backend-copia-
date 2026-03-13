@@ -9,10 +9,15 @@ BACKUP_DIR="/backups"
 MAX_ATTEMPTS=5
 ATTEMPT_DELAY=60  # segundos
 
-if [ -z "$BACKUP_TYPE" ]; then
-  echo "Error: Se requiere un tipo de backup ('hourly' o 'daily')."
-  exit 1
-fi
+case "$BACKUP_TYPE" in
+  hourly|daily|inicio)
+    # Tipo de backup válido, continuar.
+    ;;
+  *)
+    echo "Error: Se requiere un tipo de backup válido ('hourly', 'daily' o 'inicio'). Uso: $0 [hourly|daily|inicio]"
+    exit 1
+    ;;
+esac
 
 echo "$(date): Iniciando backup de tipo: ${BACKUP_TYPE}"
 
@@ -68,6 +73,8 @@ done
 echo "$(date): Iniciando limpieza de backups antiguos..."
 # Limpiar backups por hora más antiguos de 48 horas
 find "${BACKUP_DIR}" -name "backup_hourly_*.sql.gz" -mmin +2880 -delete
+# Limpiar backups de inicio más antiguos de 48 horas
+find "${BACKUP_DIR}" -name "backup_inicio_*.sql.gz" -mmin +2880 -delete
 # Limpiar backups diarios más antiguos de 15 días
 find "${BACKUP_DIR}" -name "backup_daily_*.sql.gz" -mtime +15 -delete
 echo "$(date): Limpieza completada."

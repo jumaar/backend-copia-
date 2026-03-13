@@ -1,7 +1,7 @@
 # Ejecutar el backup cada hora, en el minuto 0.
-PGPASSWORD=password123 0 * * * * root /usr/local/bin/backup.sh hourly >> /var/log/cron.log 2>&1
+0 * * * * root /usr/local/bin/backup.sh hourly
 
 # Ejecutar el backup diario todos los días a medianoche (00:00).
-PGPASSWORD=password123 0 0 * * * root /usr/local/bin/backup.sh daily >> /var/log/cron.log 2>&1
+0 0 * * * root /usr/local/bin/backup.sh daily
 
 # Línea vacía final requerida por cron
