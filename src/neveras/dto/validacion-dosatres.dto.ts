@@ -16,10 +16,6 @@ class PendingPackageDto {
 export class ValidacionDosaTresDto {
   @IsNumber()
   @IsNotEmpty()
-  fridge_id: number;
-
-  @IsNumber()
-  @IsNotEmpty()
   timestamp: number;
 
   @ValidateNested({ each: true })
