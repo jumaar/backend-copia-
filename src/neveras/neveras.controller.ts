@@ -73,13 +73,13 @@ export class NeverasController {
   }
 
  /**
-  * POST /api/neveras/validacionDosaTres
-  * Endpoint para validar empaques que entran a una nevera.
+  * PATCH /api/neveras/validacionDosaTres
+  * Endpoint para validar empaques que entran a una nevera que vienen de logistica.
   * Este endpoint actualiza el estado del empaque a "EN NEVERA" (estado 3),
   * lo que dispara el trigger 'update_stock_nevera' que automáticamente incrementa
   * el campo 'stock_en_tiempo_real' en la tabla STOCK_NEVERA para el producto correspondiente.
   */
- @Post('validacionDosaTres')
+@Patch('validacionDosaTres')
  @UseGuards(JwtAuthGuard)
  @HttpCode(200)
  async validacionDosaTres(@Body() dto: ValidacionDosaTresDto) {
