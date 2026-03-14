@@ -81,7 +81,6 @@ export class NeverasController {
 @UseGuards(JwtAuthGuard)
 async validacionDosaTres(@Body() dto: ValidacionDosaTresDto, @Req() req: any) {
   const idNevera = req.user.id_nevera;
-  this.logger.debug(`Endpoint validacionDosaTres llamado para nevera ${idNevera}`);
   return this.neverasService.validacionDosaTres(idNevera, dto);
 }
 

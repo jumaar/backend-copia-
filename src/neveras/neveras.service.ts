@@ -633,14 +633,22 @@ export class NeverasService {
 
           this.logger.debug(`Estado original del empaque ${empaque.id_empaque}: ${estado_original}`);
 
+          // Preparar los datos de actualización
+          const updateData: any = {
+            id_nevera: idNevera,
+            id_estado_empaque: 3, // Estado 3: en nevera
+            hora_en_nevera_3: fechaTimestamp
+          };
+
+          // Si el empaque venía en estado 4, limpiar hora_pendiente_pago_4
+          if (estado_original === 4) {
+            updateData.hora_pendiente_pago_4 = null;
+          }
+
           // Actualizar el empaque
           const empaqueActualizado = await prisma.eMPAQUES.update({
             where: { id_empaque: empaque.id_empaque },
-            data: {
-              id_nevera: idNevera,
-              id_estado_empaque: 3, // Estado 3: en nevera
-              hora_en_nevera_3: fechaTimestamp
-            },
+            data: updateData,
             include: {
               producto: {
                 select: {
