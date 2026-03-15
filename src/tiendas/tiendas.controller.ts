@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Req, UseGuards } from '@nestjs/common';
+import { Request } from 'express';
 import { TiendasService } from './tiendas.service';
 import { CreateTiendaDto } from './dto/create-tienda.dto';
 import { UpdateTiendaDto } from './dto/update-tienda.dto';
@@ -6,6 +7,13 @@ import { CreateNeveraDto } from './dto/create-nevera.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+
+interface RequestWithUser extends Request {
+  user: {
+    id_usuario: number;
+    roleId: number;
+  };
+}
 
 @Controller('api/tiendas')
 export class TiendasController {
@@ -68,4 +76,14 @@ export class TiendasController {
     return this.tiendasService.removeNevera(+id);
   }
 
-}
+  @Get('sobrinas/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(2,4)
+  getSobrinas(@Param('id') id: string, @Req() req: RequestWithUser) {
+    const rol_usuario = req.user.roleId;
+    const id_param = parseInt(id, 10);
+      return this.tiendasService.getTiendasSobrinas(id_param, rol_usuario);
+    }
+  }
+
+
