@@ -689,20 +689,27 @@ export class NeverasService {
   }
 
   /**
-   * Función para obtener el inventario de una nevera específica
-   * GET /api/neveras/inventario/:id_nevera
-   */
-  async inventarioNevera(idNevera: number): Promise<{
-    success: boolean;
-    message: string;
-    empaques: {
-      id_empaque: number;
-      epc: string;
-      peso_exacto_g: number;
-      id_producto: number;
-    }[];
-    ultima_conexion: string;
-  }> {
+    * Función para obtener el inventario de una nevera específica
+    * GET /api/neveras/inventario/:id_nevera
+    */
+   async inventarioNevera(idNevera: number): Promise<{
+     success: boolean;
+     message: string;
+     empaques: {
+       id_empaque: number;
+       epc: string;
+       peso_exacto_g: number;
+       id_producto: number;
+     }[];
+     empaques_pendiente_pago: {
+       id_empaque: number;
+       epc: string;
+       peso_exacto_g: number;
+       id_producto: number;
+       hora_pendiente_pago_4: string | null;
+     }[];
+     ultima_conexion: string;
+   }> {
     this.logger.log(`Obteniendo inventario para nevera ${idNevera}`);
 
     // Obtener la fecha actual para la última conexión
@@ -743,7 +750,7 @@ export class NeverasService {
         peso_exacto_g: true,
         producto: {
           select: {
-            id_producto: true
+            id_producto: true,
           }
         }
       }
@@ -757,10 +764,39 @@ export class NeverasService {
       id_producto: empaque.producto.id_producto
     }));
 
+    // Obtener los empaques que estén en estado 4 (pendiente pago) y pertenezcan a esta nevera
+    const empaquesPendientePago = await this.databaseService.eMPAQUES.findMany({
+      where: {
+        id_nevera: idNevera,
+        id_estado_empaque: 4 // Estado 4: pendiente pago
+      },
+      select: {
+        id_empaque: true,
+        EPC_id: true,
+        peso_exacto_g: true,
+        producto: {
+          select: {
+            id_producto: true,
+          }
+        },
+        hora_pendiente_pago_4: true
+      }
+    });
+
+    // Formatear la respuesta de empaques pendientes de pago
+    const empaquesPendientePagoFormateados = empaquesPendientePago.map(empaque => ({
+      id_empaque: empaque.id_empaque,
+      epc: empaque.EPC_id,
+      peso_exacto_g: Number(empaque.peso_exacto_g), // Convertir Decimal a number
+      id_producto: empaque.producto.id_producto,
+      hora_pendiente_pago_4: empaque.hora_pendiente_pago_4 ? empaque.hora_pendiente_pago_4.toISOString() : null
+    }));
+
     return {
       success: true,
       message: `Inventario obtenido exitosamente para nevera ${idNevera}`,
       empaques: empaquesFormateados,
+      empaques_pendiente_pago: empaquesPendientePagoFormateados,
       ultima_conexion: fechaConexion.toISOString()
     };
   }
