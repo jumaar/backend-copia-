@@ -88,7 +88,7 @@ async validacionDosaTres(@Body() dto: ValidacionDosaTresDto, @Req() req: any) {
   * GET /api/neveras/inventario
   * Endpoint para obtener el inventario de empaques en la nevera autenticada.
   * Actualiza la última conexión de la nevera y devuelve todos los empaques
-  * en estado 3 (en nevera) con su información completa.
+  * en estado 3 (en nevera) y estado 4 (pendiente pago) con su información completa.
   */
  @Get('inventario')
  @UseGuards(JwtAuthGuard)

@@ -636,9 +636,13 @@ export class NeverasService {
           // Preparar los datos de actualización
           const updateData: any = {
             id_nevera: idNevera,
-            id_estado_empaque: 3, // Estado 3: en nevera
-            hora_en_nevera_3: fechaTimestamp
+            id_estado_empaque: 3 // Estado 3: en nevera
           };
+
+          // Solo setear hora_en_nevera_3 si no venía de estado 4 (ya estaba en nevera)
+          if (estado_original !== 4) {
+            updateData.hora_en_nevera_3 = fechaTimestamp;
+          }
 
           // Si el empaque venía en estado 4, limpiar hora_pendiente_pago_4
           if (estado_original === 4) {
