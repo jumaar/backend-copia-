@@ -335,6 +335,19 @@ export class FrigorificoService {
     // Verificar que el usuario tiene permisos para crear productos (roles 1, 2)
     // Los productos son globales, no específicos de frigorífico
 
+    // Validar que precio_tienda sea requerido
+    if (!createProductoDto.precio_tienda && createProductoDto.precio_tienda !== 0) {
+      throw new HttpException(
+        {
+          status: HttpStatus.BAD_REQUEST,
+          error: 'Campo requerido',
+          message: 'El campo precio_tienda es requerido.',
+          code: 'PRECIO_TIENDA_REQUIRED'
+        },
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
     // Asegurarse de que no se envíe id_producto
     const { id_producto, ...data } = createProductoDto;
 
@@ -346,6 +359,7 @@ export class FrigorificoService {
       precio_venta: data.precio_venta.toString(), // Mantener como string para Decimal
       dias_vencimiento: parseInt(data.dias_vencimiento),
       precio_frigorifico: data.precio_frigorifico.toString(), // Mantener como string para Decimal
+      precio_tienda: data.precio_tienda.toString(), // Porcentaje para tienda (REQUERIDO)
       media: data.media ? parseFloat(data.media) : null,
       baja: data.baja ? parseFloat(data.baja) : null,
       alta: data.alta ? parseFloat(data.alta) : null,
@@ -367,6 +381,7 @@ export class FrigorificoService {
         precio_venta: true,
         dias_vencimiento: true,
         precio_frigorifico: true,
+        precio_tienda: true,
         baja: true,
         media: true,
         alta: true,
@@ -386,6 +401,11 @@ export class FrigorificoService {
     }
     if (updateProductoDto.alta !== undefined) {
       updateProductoDto.alta = updateProductoDto.alta ? parseFloat(updateProductoDto.alta) : null;
+    }
+
+    // Procesar precio_tienda si viene como número
+    if (updateProductoDto.precio_tienda !== undefined) {
+      updateProductoDto.precio_tienda = updateProductoDto.precio_tienda.toString();
     }
 
     return this.databaseService.pRODUCTOS.update({
@@ -683,9 +703,14 @@ export class FrigorificoService {
           // 7. Calcular costo_frigorifico: precio_venta_total * (precio_frigorifico / 100)
           const costoFrigorifico = precioVentaTotal * (precioFrigorifico / 100);
 
+          // 8. Calcular costo_tienda: precio_venta_total * (precio_tienda / 100)
+          const precioTienda = parseFloat(producto.precio_tienda?.toString() || '0');
+          const costoTienda = precioVentaTotal * (precioTienda / 100);
+
           // 8. Redondear a números enteros
           const precioVentaTotalRedondeado = Math.round(precioVentaTotal);
           const costoFrigorificoRedondeado = Math.round(costoFrigorifico);
+          const costoTiendaRedondeado = Math.round(costoTienda);
 
           // 8. Crear empaque con todos los campos calculados
           const empaque = await this.databaseService.eMPAQUES.create({
@@ -698,6 +723,7 @@ export class FrigorificoService {
               precio_venta_total: precioVentaTotalRedondeado.toString(), // Redondeado a entero
               fecha_vencimiento: fechaVencimiento,
               costo_frigorifico: costoFrigorificoRedondeado.toString(), // Redondeado a entero
+              costo_tienda: costoTiendaRedondeado.toString(), // Costo para la tienda
               id_estado_empaque: 1, // En stock
             }
           });
@@ -875,6 +901,7 @@ export class FrigorificoService {
         peso_nominal_g: true,
         precio_venta: true,
         precio_frigorifico: true,
+        precio_tienda: true,
         dias_vencimiento: true,
       },
       orderBy: {
