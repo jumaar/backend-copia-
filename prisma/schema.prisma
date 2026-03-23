@@ -140,6 +140,7 @@ model PRODUCTOS {
   precio_venta         Decimal
   dias_vencimiento     Int
   precio_frigorifico   Decimal // Porcentaje
+  precio_tienda        Decimal // Porcentaje
   baja                 Float?
   media                Float?
   alta                 Float?
@@ -176,6 +177,7 @@ model EMPAQUES {
   id_nevera              Int?
   hora_en_nevera_3       DateTime?
   hora_pendiente_pago_4  DateTime?
+  costo_tienda           Decimal
   hora_para_cambio_5     DateTime?
   fridge_id_final        Int?
   hora_surtido_final_6   DateTime?
