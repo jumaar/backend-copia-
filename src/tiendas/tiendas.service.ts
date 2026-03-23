@@ -942,9 +942,9 @@ export class TiendasService {
   async getTiendasSobrinas(id_usuario: number, rol_usuario: number) {
 
     try {
-      // Validar que el rol sea 4 (logística) o 2 (admin)
-      if (rol_usuario !== 4 && rol_usuario !== 2) {
-        throw new Error('Acceso denegado: Solo usuarios con rol 2 o 4 pueden acceder a esta función');
+      // Validar que el rol sea 4 (logística), 2 (admin) o 5 (tienda)
+      if (rol_usuario !== 4 && rol_usuario !== 2 && rol_usuario !== 5) {
+        throw new Error('Acceso denegado: Solo usuarios con rol 2, 4 o 5 pueden acceder a esta función');
       }
 
 
@@ -1107,9 +1107,9 @@ export class TiendasService {
             departamento: ciudad.departamento.nombre_departamento
           }))
         };
-      }
+      } else if (rol_usuario === 4) {
 
-     const tiendaTokens = await this.databaseService.tOKEN_REGISTRO.findMany({
+      const tiendaTokens = await this.databaseService.tOKEN_REGISTRO.findMany({
         where: {
           id_usuario_creador: id_usuario, // El logístico actual (ID 6) como creador
           id_rol_nuevo_usuario: 5, // Rol de tienda
@@ -1247,6 +1247,111 @@ export class TiendasService {
           departamento: ciudad.departamento.nombre_departamento
         }))
       };
+      } else if (rol_usuario === 5) {
+        // Para rol 5 (tienda), devolver su propia información
+        const usuarioTienda = await this.databaseService.uSUARIOS.findUnique({
+          where: {
+            id_usuario: id_usuario,
+            activo: true,
+          },
+          select: {
+            id_usuario: true,
+            nombre_usuario: true,
+            apellido_usuario: true,
+            email: true,
+            celular: true,
+            tiendas: {
+              include: {
+                ciudad: {
+                  select: {
+                    id_ciudad: true,
+                    nombre_ciudad: true,
+                    departamento: {
+                      select: {
+                        nombre_departamento: true
+                      }
+                    }
+                  }
+                },
+                neveras: {
+                  select: {
+                    id_nevera: true,
+                    id_estado_nevera: true
+                  }
+                }
+              }
+            }
+          },
+        });
+
+        if (!usuarioTienda) {
+          throw new HttpException(
+            {
+              status: HttpStatus.NOT_FOUND,
+              error: 'Usuario no encontrado',
+              message: 'El usuario no existe o no está activo.',
+              code: 'USER_NOT_FOUND'
+            },
+            HttpStatus.NOT_FOUND
+          );
+        }
+
+        // Para usuarios rol 5, extraer las ciudades únicas donde tienen tiendas
+        const ciudadesTiendaUsuario = new Map();
+        usuarioTienda.tiendas.forEach(tienda => {
+          const id_ciudad = tienda.ciudad.id_ciudad;
+          if (!ciudadesTiendaUsuario.has(id_ciudad)) {
+            ciudadesTiendaUsuario.set(id_ciudad, {
+              id_ciudad: tienda.ciudad.id_ciudad,
+              nombre_ciudad: tienda.ciudad.nombre_ciudad,
+              departamento: tienda.ciudad.departamento.nombre_departamento
+            });
+          }
+        });
+
+        // Transformar los resultados y agregar información de pendientes de pago
+        const resultadoUsuarioTienda = {
+          id_usuario: usuarioTienda.id_usuario,
+          nombre_usuario: usuarioTienda.nombre_usuario,
+          apellido_usuario: usuarioTienda.apellido_usuario,
+          email: usuarioTienda.email,
+          celular: usuarioTienda.celular,
+          tiendas: await Promise.all(
+            usuarioTienda.tiendas.map(async tienda => ({
+              id_tienda: tienda.id_tienda,
+              nombre_tienda: tienda.nombre_tienda,
+              direccion: tienda.direccion,
+              ciudad: tienda.ciudad.nombre_ciudad,
+              departamento: tienda.ciudad.departamento.nombre_departamento,
+              neveras: await Promise.all(
+                tienda.neveras.map(async nevera => {
+                  // Verificar si hay empaques pendientes de pago (estado 4)
+                  const empaquesPendientes = await this.databaseService.eMPAQUES.count({
+                    where: {
+                      id_nevera: nevera.id_nevera,
+                      id_estado_empaque: 4 // Estado pendiente de pago
+                    }
+                  });
+
+                  return {
+                    id_nevera: nevera.id_nevera,
+                    id_estado_nevera: nevera.id_estado_nevera,
+                    pendientes_pago: empaquesPendientes > 0
+                  };
+                })
+              )
+            }))
+          )
+        };
+
+        // Convertir el Map a array de ciudades disponibles
+        const ciudadesDisponibles = Array.from(ciudadesTiendaUsuario.values());
+
+        return {
+          usuarios_tienda: [resultadoUsuarioTienda],
+          ciudades_disponibles: ciudadesDisponibles
+        };
+      }
     } catch (error) {
       console.error('ERROR en getTiendasSobrinas:', error);
       throw error;

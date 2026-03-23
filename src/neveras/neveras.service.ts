@@ -631,9 +631,7 @@ export class NeverasService {
         for (const packageData of empaquesValidos) {
           const { empaque, epc, id_empaque, estado_original } = packageData;
 
-          this.logger.debug(`Estado original del empaque ${empaque.id_empaque}: ${estado_original}`);
-
-          // Preparar los datos de actualización
+                    // Preparar los datos de actualización
           const updateData: any = {
             id_nevera: idNevera,
             id_estado_empaque: 3 // Estado 3: en nevera
