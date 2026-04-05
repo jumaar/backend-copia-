@@ -20,6 +20,7 @@ export class FrigorificoService {
         nombre_frigorifico: createFrigorificoDto.nombre_frigorifico,
         direccion: createFrigorificoDto.direccion,
         id_ciudad: createFrigorificoDto.id_ciudad,
+        fecha_creacion: new Date(),
       },
     });
   }
@@ -45,7 +46,7 @@ export class FrigorificoService {
 
     // Lotes en stock: suma de empaques con id_estado_empaque = 1 y suma de peso_exacto_g
     // Solo de los frigoríficos del usuario
-    const frigorificoIds = frigorificos.map(f => f.id_frigorifico);
+    const frigorificoIds = frigorificos.map((f) => f.id_frigorifico);
     const lotesEnStock = await this.databaseService.eMPAQUES.aggregate({
       where: {
         estacion: {
@@ -77,7 +78,7 @@ export class FrigorificoService {
           },
         },
         id_estado_empaque: {
-          in: [2, 3, 4] // Estados: enviado, en tránsito, entregado
+          in: [2, 3, 4], // Estados: enviado, en tránsito, entregado
         },
         hora_en_logistica_2: {
           gte: hoy,
@@ -93,14 +94,15 @@ export class FrigorificoService {
     });
 
     // Total transacciones: suma de monto en TRANSACCIONES para el id_usuario
-    const totalTransacciones = await this.databaseService.tRANSACCIONES.aggregate({
-      where: {
-        id_usuario: idUsuario,
-      },
-      _sum: {
-        monto: true,
-      },
-    });
+    const totalTransacciones =
+      await this.databaseService.tRANSACCIONES.aggregate({
+        where: {
+          id_usuario: idUsuario,
+        },
+        _sum: {
+          monto: true,
+        },
+      });
 
     // Lista de todas las ciudades disponibles (esto es global, no necesita filtrado por usuario)
     const ciudadesDisponibles = await this.databaseService.cIUDAD.findMany({
@@ -134,12 +136,12 @@ export class FrigorificoService {
     });
 
     // Obtener detalles adicionales para cada producto (OPTIMIZADO - sin N+1 query problem)
-    const productosIds = inventarioPorProducto.map(item => item.id_producto);
-    
+    const productosIds = inventarioPorProducto.map((item) => item.id_producto);
+
     // 1. Obtener todos los productos únicos en UNA consulta
     const productos = await this.databaseService.pRODUCTOS.findMany({
       where: {
-        id_producto: { in: productosIds }
+        id_producto: { in: productosIds },
       },
       select: {
         id_producto: true,
@@ -150,8 +152,12 @@ export class FrigorificoService {
 
     // 2. Obtener todos los últimos EPC en UNA consulta optimizada
     const fechasMaximas = inventarioPorProducto
-      .filter(item => item._max?.fecha_empaque_1 !== null && item._max?.fecha_empaque_1 !== undefined)
-      .map(item => item._max.fecha_empaque_1 as Date);
+      .filter(
+        (item) =>
+          item._max?.fecha_empaque_1 !== null &&
+          item._max?.fecha_empaque_1 !== undefined,
+      )
+      .map((item) => item._max.fecha_empaque_1 as Date);
 
     const ultimosEPCs = await this.databaseService.eMPAQUES.findMany({
       where: {
@@ -162,28 +168,29 @@ export class FrigorificoService {
         },
         id_estado_empaque: 1,
         id_producto: { in: productosIds },
-        fecha_empaque_1: { in: fechasMaximas }
+        fecha_empaque_1: { in: fechasMaximas },
       },
       select: {
         id_producto: true,
         EPC_id: true,
         fecha_empaque_1: true,
-      }
+      },
     });
 
     // 3. Crear mapas para optimización O(1)
-    const productoMap = new Map(productos.map(p => [p.id_producto, p]));
+    const productoMap = new Map(productos.map((p) => [p.id_producto, p]));
     const epcMap = new Map();
-    ultimosEPCs.forEach(epc => {
+    ultimosEPCs.forEach((epc) => {
       const key = `${epc.id_producto}-${epc.fecha_empaque_1.toISOString()}`;
       epcMap.set(key, epc.EPC_id);
     });
 
     // 4. Mapear resultados sin consultas adicionales
-    const inventarioDetallado = inventarioPorProducto.map(item => {
+    const inventarioDetallado = inventarioPorProducto.map((item) => {
       const producto = productoMap.get(item.id_producto);
-      const fechaKey = item._max?.fecha_empaque_1 ?
-        `${item.id_producto}-${item._max.fecha_empaque_1.toISOString()}` : null;
+      const fechaKey = item._max?.fecha_empaque_1
+        ? `${item.id_producto}-${item._max.fecha_empaque_1.toISOString()}`
+        : null;
       const epc_id = fechaKey ? epcMap.get(fechaKey) || '' : '';
 
       return {
@@ -211,21 +218,24 @@ export class FrigorificoService {
     return {
       usuario_actual: {
         id: usuarioActual?.id_usuario,
-        nombre_completo: `${usuarioActual?.nombre_usuario || ''} ${usuarioActual?.apellido_usuario || ''}`.trim(),
+        nombre_completo:
+          `${usuarioActual?.nombre_usuario || ''} ${usuarioActual?.apellido_usuario || ''}`.trim(),
         celular: usuarioActual?.celular,
         rol: usuarioActual?.rol?.nombre_rol,
         activo: usuarioActual?.activo,
       },
-      frigorificos: frigorificos.map(frigorifico => ({
+      frigorificos: frigorificos.map((frigorifico) => ({
         id_frigorifico: frigorifico.id_frigorifico,
         nombre_frigorifico: frigorifico.nombre_frigorifico,
         direccion: frigorifico.direccion,
+        fecha_creacion: frigorifico.fecha_creacion,
         ciudad: {
           id_ciudad: frigorifico.ciudad.id_ciudad,
           nombre_ciudad: frigorifico.ciudad.nombre_ciudad,
           departamento: {
             id__departamento: frigorifico.ciudad.departamento.id__departamento,
-            nombre_departamento: frigorifico.ciudad.departamento.nombre_departamento,
+            nombre_departamento:
+              frigorifico.ciudad.departamento.nombre_departamento,
           },
         },
         estaciones: frigorifico.estaciones,
@@ -283,10 +293,11 @@ export class FrigorificoService {
         {
           status: HttpStatus.NOT_FOUND,
           error: 'Frigorífico no encontrado',
-          message: 'El frigorífico no existe o no tienes permisos para eliminarlo.',
-          code: 'FRIGORIFICO_NOT_FOUND'
+          message:
+            'El frigorífico no existe o no tienes permisos para eliminarlo.',
+          code: 'FRIGORIFICO_NOT_FOUND',
         },
-        HttpStatus.NOT_FOUND
+        HttpStatus.NOT_FOUND,
       );
     }
 
@@ -302,9 +313,9 @@ export class FrigorificoService {
           error: 'Eliminación bloqueada',
           message: `No puedes eliminar este frigorífico porque tiene ${estacionesCount} estación(es) asociada(s). Elimina primero todas las estaciones.`,
           code: 'FRIGORIFICO_HAS_ESTACIONES',
-          estacionesCount: estacionesCount
+          estacionesCount: estacionesCount,
         },
-        HttpStatus.FORBIDDEN
+        HttpStatus.FORBIDDEN,
       );
     }
 
@@ -314,17 +325,21 @@ export class FrigorificoService {
       });
     } catch (error: unknown) {
       // Manejar errores de Prisma (como violaciones de clave foránea)
-      const prismaError = error as { code?: string; meta?: Record<string, unknown> };
+      const prismaError = error as {
+        code?: string;
+        meta?: Record<string, unknown>;
+      };
       if (prismaError.code === 'P2003') {
         throw new HttpException(
           {
             status: HttpStatus.FORBIDDEN,
             error: 'Eliminación bloqueada',
-            message: 'No puedes eliminar este frigorífico porque tiene datos relacionados (estaciones, empaques, etc.).',
+            message:
+              'No puedes eliminar este frigorífico porque tiene datos relacionados (estaciones, empaques, etc.).',
             code: 'FRIGORIFICO_HAS_RELATIONS',
-            constraint: prismaError.meta?.constraint
+            constraint: prismaError.meta?.constraint,
           },
-          HttpStatus.FORBIDDEN
+          HttpStatus.FORBIDDEN,
         );
       }
       // Re-lanzar otros errores
@@ -337,15 +352,18 @@ export class FrigorificoService {
     // Los productos son globales, no específicos de frigorífico
 
     // Validar que precio_tienda sea requerido
-    if (!createProductoDto.precio_tienda && createProductoDto.precio_tienda !== 0) {
+    if (
+      !createProductoDto.precio_tienda &&
+      createProductoDto.precio_tienda !== 0
+    ) {
       throw new HttpException(
         {
           status: HttpStatus.BAD_REQUEST,
           error: 'Campo requerido',
           message: 'El campo precio_tienda es requerido.',
-          code: 'PRECIO_TIENDA_REQUIRED'
+          code: 'PRECIO_TIENDA_REQUIRED',
         },
-        HttpStatus.BAD_REQUEST
+        HttpStatus.BAD_REQUEST,
       );
     }
 
@@ -395,18 +413,25 @@ export class FrigorificoService {
     // Los productos son globales
     // Si viene media, asegurarnos de que sea float
     if (updateProductoDto.media !== undefined) {
-      updateProductoDto.media = updateProductoDto.media ? parseFloat(updateProductoDto.media) : null;
+      updateProductoDto.media = updateProductoDto.media
+        ? parseFloat(updateProductoDto.media)
+        : null;
     }
     if (updateProductoDto.baja !== undefined) {
-      updateProductoDto.baja = updateProductoDto.baja ? parseFloat(updateProductoDto.baja) : null;
+      updateProductoDto.baja = updateProductoDto.baja
+        ? parseFloat(updateProductoDto.baja)
+        : null;
     }
     if (updateProductoDto.alta !== undefined) {
-      updateProductoDto.alta = updateProductoDto.alta ? parseFloat(updateProductoDto.alta) : null;
+      updateProductoDto.alta = updateProductoDto.alta
+        ? parseFloat(updateProductoDto.alta)
+        : null;
     }
 
     // Procesar precio_tienda si viene como número
     if (updateProductoDto.precio_tienda !== undefined) {
-      updateProductoDto.precio_tienda = updateProductoDto.precio_tienda.toString();
+      updateProductoDto.precio_tienda =
+        updateProductoDto.precio_tienda.toString();
     }
 
     return this.databaseService.pRODUCTOS.update({
@@ -451,9 +476,9 @@ export class FrigorificoService {
           error: 'Creación de estación bloqueada',
           message: `No puedes crear una nueva estación. Tienes ${clavesInactivas} clave(s) pendiente(s) de activación.`,
           code: 'STATION_CREATION_BLOCKED',
-          pendingStations: clavesInactivas
+          pendingStations: clavesInactivas,
         },
-        HttpStatus.FORBIDDEN
+        HttpStatus.FORBIDDEN,
       );
     }
 
@@ -490,7 +515,7 @@ export class FrigorificoService {
     const claveVinculacion = this.generarClaveVinculacionCompleta(
       nuevoNumero,
       idFrigorifico,
-      idUsuario
+      idUsuario,
     );
 
     // Crear la estación con el ID compuesto
@@ -556,9 +581,9 @@ export class FrigorificoService {
           error: 'Eliminación bloqueada',
           message: `No puedes eliminar esta estación porque tiene ${empaquesEnStock} empaque(s) en stock. Primero despacha todos los empaques.`,
           code: 'ESTACION_HAS_EMPAQUES_STOCK',
-          empaquesCount: empaquesEnStock
+          empaquesCount: empaquesEnStock,
         },
-        HttpStatus.FORBIDDEN
+        HttpStatus.FORBIDDEN,
       );
     }
 
@@ -567,7 +592,7 @@ export class FrigorificoService {
       where: {
         id_estacion: idEstacion,
         id_estado_empaque: {
-          in: [2, 3, 4] // Estados: enviado, en tránsito, entregado
+          in: [2, 3, 4], // Estados: enviado, en tránsito, entregado
         },
       },
     });
@@ -584,17 +609,21 @@ export class FrigorificoService {
       });
     } catch (error: unknown) {
       // Manejar errores de Prisma (como violaciones de clave foránea)
-      const prismaError = error as { code?: string; meta?: Record<string, unknown> };
+      const prismaError = error as {
+        code?: string;
+        meta?: Record<string, unknown>;
+      };
       if (prismaError.code === 'P2003') {
         throw new HttpException(
           {
             status: HttpStatus.FORBIDDEN,
             error: 'Eliminación bloqueada',
-            message: 'No puedes eliminar esta estación porque tiene datos relacionados (empaques, transacciones, etc.).',
+            message:
+              'No puedes eliminar esta estación porque tiene datos relacionados (empaques, transacciones, etc.).',
             code: 'ESTACION_HAS_RELATIONS',
-            constraint: prismaError.meta?.constraint
+            constraint: prismaError.meta?.constraint,
           },
-          HttpStatus.FORBIDDEN
+          HttpStatus.FORBIDDEN,
         );
       }
       // Re-lanzar otros errores
@@ -605,7 +634,7 @@ export class FrigorificoService {
   private generarClaveVinculacionCompleta(
     idEstacion: number,
     idFrigorifico: number,
-    idUsuario: number
+    idUsuario: number,
   ): string {
     // Formato: ID_ESTACION + 00 + ID_FRIGORIFICO + 00 + ID_USUARIO + TOKEN (10 caracteres)
     const tokenAleatorio = this.generarCadenaAleatoria(10);
@@ -614,7 +643,9 @@ export class FrigorificoService {
     return clave;
   }
 
-  private async generarClaveVinculacion(idFrigorifico: number): Promise<string> {
+  private async generarClaveVinculacion(
+    idFrigorifico: number,
+  ): Promise<string> {
     let clave: string;
     let existe: boolean;
 
@@ -624,9 +655,10 @@ export class FrigorificoService {
       clave = `${idFrigorifico.toString().padStart(3, '0')}001${parteAleatoria}`;
 
       // Verificar si ya existe
-      const estacionExistente = await this.databaseService.eSTACIONES.findUnique({
-        where: { clave_vinculacion: clave },
-      });
+      const estacionExistente =
+        await this.databaseService.eSTACIONES.findUnique({
+          where: { clave_vinculacion: clave },
+        });
 
       existe = !!estacionExistente;
     } while (existe);
@@ -645,13 +677,22 @@ export class FrigorificoService {
 
     // Resto pueden ser letras o números
     for (let i = 1; i < longitud; i++) {
-      resultado += todosCaracteres.charAt(Math.floor(Math.random() * todosCaracteres.length));
+      resultado += todosCaracteres.charAt(
+        Math.floor(Math.random() * todosCaracteres.length),
+      );
     }
     return resultado;
   }
 
-  async crearEmpaquesBatch(empaques: any[], estacionId: string, frigorificoId: number) {
-    const resultados: { creados: any[], errores: any[] } = { creados: [], errores: [] };
+  async crearEmpaquesBatch(
+    empaques: any[],
+    estacionId: string,
+    frigorificoId: number,
+  ) {
+    const resultados: { creados: any[]; errores: any[] } = {
+      creados: [],
+      errores: [],
+    };
 
     // Procesar en lotes de 10 para optimizar BD
     const lotes = this.chunkArray(empaques, 10);
@@ -659,21 +700,19 @@ export class FrigorificoService {
     for (const lote of lotes) {
       for (const empaqueData of lote) {
         try {
-          
           // 1. Obtener datos del producto
           const producto = await this.databaseService.pRODUCTOS.findUnique({
-            where: { id_producto: empaqueData.id_producto }
+            where: { id_producto: empaqueData.id_producto },
           });
 
           if (!producto) {
             resultados.errores.push({
               id_producto: empaqueData.id_producto,
-              error: 'Producto no encontrado'
+              error: 'Producto no encontrado',
             });
             continue;
           }
 
-          
           // 2. Usar el EPC proporcionado por el frontend
           const epcId = empaqueData.epc;
 
@@ -683,30 +722,35 @@ export class FrigorificoService {
           // 4. El peso ya viene en gramos del frontend (no multiplicar por 1000)
           const pesoGramos = empaqueData.peso_g;
 
-          
           if (!pesoGramos || isNaN(pesoGramos)) {
             resultados.errores.push({
               id_producto: empaqueData.id_producto,
-              error: 'Peso inválido o faltante'
+              error: 'Peso inválido o faltante',
             });
             continue;
           }
 
-         
           // 5. Calcular precio_venta_total: (peso * precio_venta) / peso_nominal_g
           const precioVenta = parseFloat(producto.precio_venta.toString());
-          const precioFrigorifico = parseFloat(producto.precio_frigorifico.toString());
-          const precioVentaTotal = (pesoGramos * precioVenta) / producto.peso_nominal_g;
+          const precioFrigorifico = parseFloat(
+            producto.precio_frigorifico.toString(),
+          );
+          const precioVentaTotal =
+            (pesoGramos * precioVenta) / producto.peso_nominal_g;
 
           // 6. Calcular fecha_vencimiento: fecha_empaque_1 + dias_vencimiento
           const fechaVencimiento = new Date(fechaEmpaque);
-          fechaVencimiento.setDate(fechaEmpaque.getDate() + producto.dias_vencimiento);
+          fechaVencimiento.setDate(
+            fechaEmpaque.getDate() + producto.dias_vencimiento,
+          );
 
           // 7. Calcular costo_frigorifico: precio_venta_total * (precio_frigorifico / 100)
           const costoFrigorifico = precioVentaTotal * (precioFrigorifico / 100);
 
           // 8. Calcular costo_tienda: precio_venta_total * (precio_tienda / 100)
-          const precioTienda = parseFloat(producto.precio_tienda?.toString() || '0');
+          const precioTienda = parseFloat(
+            producto.precio_tienda?.toString() || '0',
+          );
           const costoTienda = precioVentaTotal * (precioTienda / 100);
 
           // 8. Redondear a números enteros
@@ -727,39 +771,59 @@ export class FrigorificoService {
               costo_frigorifico: costoFrigorificoRedondeado.toString(), // Redondeado a entero
               costo_tienda: costoTiendaRedondeado.toString(), // Costo para la tienda
               id_estado_empaque: 1, // En stock
-            }
+            },
           });
 
           // Formatear fecha de vencimiento en español sin "de"
           const opcionesFecha: Intl.DateTimeFormatOptions = {
-            year: 'numeric', month: 'long', day: 'numeric'
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
           };
-          const fechaFormateada = fechaVencimiento.toLocaleDateString('es-ES', opcionesFecha);
-          const fechaVencimientoFormateada = fechaFormateada.replace(/ de /g, ' ');
+          const fechaFormateada = fechaVencimiento.toLocaleDateString(
+            'es-ES',
+            opcionesFecha,
+          );
+          const fechaVencimientoFormateada = fechaFormateada.replace(
+            / de /g,
+            ' ',
+          );
 
           resultados.creados.push({
             epc: epcId,
             precio_venta_total: precioVentaTotalRedondeado,
-            fecha_vencimiento: fechaVencimientoFormateada
+            fecha_vencimiento: fechaVencimientoFormateada,
           });
-
         } catch (error: unknown) {
           // Manejar error específico de EPC duplicado
-          const prismaError = error as { code?: string; meta?: { target?: string[] }; message?: string; stack?: string };
-          if (prismaError.code === 'P2002' && prismaError.meta?.target?.includes('EPC_id')) {
-            this.logger.warn(`⚠️ EPC duplicado detectado: ${empaqueData.epc} para producto ${empaqueData.id_producto}`);
+          const prismaError = error as {
+            code?: string;
+            meta?: { target?: string[] };
+            message?: string;
+            stack?: string;
+          };
+          if (
+            prismaError.code === 'P2002' &&
+            prismaError.meta?.target?.includes('EPC_id')
+          ) {
+            this.logger.warn(
+              `⚠️ EPC duplicado detectado: ${empaqueData.epc} para producto ${empaqueData.id_producto}`,
+            );
             resultados.errores.push({
               id_producto: empaqueData.id_producto,
               epc: empaqueData.epc,
               error: 'EPC ya existe en el sistema',
-              code: 'EPC_DUPLICADO'
+              code: 'EPC_DUPLICADO',
             });
           } else {
-            this.logger.error(`❌ Error creando empaque para producto ${empaqueData.id_producto}:`, prismaError.message);
+            this.logger.error(
+              `❌ Error creando empaque para producto ${empaqueData.id_producto}:`,
+              prismaError.message,
+            );
             resultados.errores.push({
               id_producto: empaqueData.id_producto,
               error: prismaError.message,
-              stack: prismaError.stack
+              stack: prismaError.stack,
             });
           }
         }
@@ -820,7 +884,11 @@ export class FrigorificoService {
     return { productos };
   }
 
-  async deleteEmpaqueByEpc(estacionId: string, epc: string, idUsuario?: number) {
+  async deleteEmpaqueByEpc(
+    estacionId: string,
+    epc: string,
+    idUsuario?: number,
+  ) {
     // Si se proporciona idUsuario, verificar que la estación pertenece a sus frigoríficos
     if (idUsuario) {
       const estacion = await this.databaseService.eSTACIONES.findFirst({
@@ -838,9 +906,9 @@ export class FrigorificoService {
             status: HttpStatus.FORBIDDEN,
             error: 'Acceso denegado',
             message: 'La estación no pertenece a tus frigoríficos.',
-            code: 'ESTACION_NO_AUTORIZADA'
+            code: 'ESTACION_NO_AUTORIZADA',
           },
-          HttpStatus.FORBIDDEN
+          HttpStatus.FORBIDDEN,
         );
       }
     }
@@ -855,15 +923,18 @@ export class FrigorificoService {
     });
 
     if (!empaqueExistente) {
-      this.logger.warn(`⚠️ Intento de eliminar empaque inexistente: ${epc} en estación ${estacionId}`);
+      this.logger.warn(
+        `⚠️ Intento de eliminar empaque inexistente: ${epc} en estación ${estacionId}`,
+      );
       throw new HttpException(
         {
           status: HttpStatus.NOT_FOUND,
           error: 'Empaque no encontrado',
-          message: 'El empaque no existe, no pertenece a esta estación o ya fue vendido.',
-          code: 'EMPAQUE_NOT_FOUND'
+          message:
+            'El empaque no existe, no pertenece a esta estación o ya fue vendido.',
+          code: 'EMPAQUE_NOT_FOUND',
         },
-        HttpStatus.NOT_FOUND
+        HttpStatus.NOT_FOUND,
       );
     }
 
@@ -882,9 +953,9 @@ export class FrigorificoService {
           status: HttpStatus.INTERNAL_SERVER_ERROR,
           error: 'Error interno',
           message: 'Error interno al eliminar el empaque.',
-          code: 'DELETE_FAILED'
+          code: 'DELETE_FAILED',
         },
-        HttpStatus.INTERNAL_SERVER_ERROR
+        HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
 
@@ -908,8 +979,8 @@ export class FrigorificoService {
         dias_vencimiento: true,
       },
       orderBy: {
-        nombre_producto: 'asc'
-      }
+        nombre_producto: 'asc',
+      },
     });
   }
 
@@ -954,9 +1025,9 @@ export class FrigorificoService {
           status: HttpStatus.NOT_FOUND,
           error: 'Frigoríficos no encontrados',
           message: 'No se encontraron frigoríficos asociados al usuario.',
-          code: 'FRIGORIFICOS_NOT_FOUND'
+          code: 'FRIGORIFICOS_NOT_FOUND',
         },
-        HttpStatus.NOT_FOUND
+        HttpStatus.NOT_FOUND,
       );
     }
 
@@ -1010,7 +1081,7 @@ export class FrigorificoService {
               },
             },
             id_estado_empaque: {
-              in: [2, 3, 4] // Estados: enviado, en tránsito, entregado
+              in: [2, 3, 4], // Estados: enviado, en tránsito, entregado
             },
             hora_en_logistica_2: {
               gte: hoy,
@@ -1026,14 +1097,15 @@ export class FrigorificoService {
         });
 
         // Total transacciones del usuario
-        const totalTransacciones = await this.databaseService.tRANSACCIONES.aggregate({
-          where: {
-            id_usuario: idUsuario,
-          },
-          _sum: {
-            monto: true,
-          },
-        });
+        const totalTransacciones =
+          await this.databaseService.tRANSACCIONES.aggregate({
+            where: {
+              id_usuario: idUsuario,
+            },
+            _sum: {
+              monto: true,
+            },
+          });
 
         // Procesar cada estación del frigorífico
         const estacionesProcesadas = await Promise.all(
@@ -1073,11 +1145,15 @@ export class FrigorificoService {
               }
 
               acc[productoId].cantidad_total++;
-              acc[productoId].peso_total_g += parseFloat(empaque.peso_exacto_g.toString());
+              acc[productoId].peso_total_g += parseFloat(
+                empaque.peso_exacto_g.toString(),
+              );
               acc[productoId].empaques.push({
                 epc: empaque.EPC_id,
                 peso_g: empaque.peso_exacto_g,
-                precio_venta_total: parseFloat(empaque.precio_venta_total.toString()),
+                precio_venta_total: parseFloat(
+                  empaque.precio_venta_total.toString(),
+                ),
                 fecha_empaque: empaque.fecha_empaque_1,
               });
 
@@ -1086,8 +1162,14 @@ export class FrigorificoService {
 
             // Convertir a array y calcular totales por estación
             const productosArray = Object.values(productosAgrupados);
-            const totalEmpaquesEstacion = productosArray.reduce((sum, prod: any) => sum + prod.cantidad_total, 0);
-            const totalPesoEstacion = productosArray.reduce((sum, prod: any) => sum + prod.peso_total_g, 0);
+            const totalEmpaquesEstacion = productosArray.reduce(
+              (sum, prod: any) => sum + prod.cantidad_total,
+              0,
+            );
+            const totalPesoEstacion = productosArray.reduce(
+              (sum, prod: any) => sum + prod.peso_total_g,
+              0,
+            );
 
             return {
               id_estacion: estacion.id_estacion,
@@ -1097,7 +1179,7 @@ export class FrigorificoService {
               peso_total_g: totalPesoEstacion,
               productos: productosArray,
             };
-          })
+          }),
         );
 
         return {
@@ -1108,8 +1190,10 @@ export class FrigorificoService {
             id_ciudad: frigorifico.ciudad.id_ciudad,
             nombre_ciudad: frigorifico.ciudad.nombre_ciudad,
             departamento: {
-              id__departamento: frigorifico.ciudad.departamento.id__departamento,
-              nombre_departamento: frigorifico.ciudad.departamento.nombre_departamento,
+              id__departamento:
+                frigorifico.ciudad.departamento.id__departamento,
+              nombre_departamento:
+                frigorifico.ciudad.departamento.nombre_departamento,
             },
           },
           lotes_en_stock: {
@@ -1123,7 +1207,7 @@ export class FrigorificoService {
           total_transacciones: totalTransacciones._sum.monto || 0,
           estaciones: estacionesProcesadas,
         };
-      })
+      }),
     );
 
     // Lista de ciudades disponibles
@@ -1140,7 +1224,8 @@ export class FrigorificoService {
     return {
       usuario_actual: {
         id: usuarioActual?.id_usuario,
-        nombre_completo: `${usuarioActual?.nombre_usuario || ''} ${usuarioActual?.apellido_usuario || ''}`.trim(),
+        nombre_completo:
+          `${usuarioActual?.nombre_usuario || ''} ${usuarioActual?.apellido_usuario || ''}`.trim(),
         celular: usuarioActual?.celular,
         rol: usuarioActual?.rol?.nombre_rol,
         activo: usuarioActual?.activo,
@@ -1150,7 +1235,11 @@ export class FrigorificoService {
     };
   }
 
-  async getGestionFrigorificoPorUsuario(id_usuario: number, requesterId: number, requesterRole: number) {
+  async getGestionFrigorificoPorUsuario(
+    id_usuario: number,
+    requesterId: number,
+    requesterRole: number,
+  ) {
     // Verificar que el usuario solicitado existe y es de rol 3
     const usuarioSolicitado = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario: id_usuario },
@@ -1169,9 +1258,9 @@ export class FrigorificoService {
           status: HttpStatus.NOT_FOUND,
           error: 'Usuario no encontrado',
           message: 'El usuario solicitado no existe.',
-          code: 'USER_NOT_FOUND'
+          code: 'USER_NOT_FOUND',
         },
-        HttpStatus.NOT_FOUND
+        HttpStatus.NOT_FOUND,
       );
     }
 
@@ -1181,9 +1270,9 @@ export class FrigorificoService {
           status: HttpStatus.FORBIDDEN,
           error: 'Acceso denegado',
           message: 'El usuario solicitado no es un frigorífico.',
-          code: 'NOT_FRIGORIFICO'
+          code: 'NOT_FRIGORIFICO',
         },
-        HttpStatus.FORBIDDEN
+        HttpStatus.FORBIDDEN,
       );
     }
 
@@ -1194,15 +1283,15 @@ export class FrigorificoService {
           status: HttpStatus.FORBIDDEN,
           error: 'Acceso denegado',
           message: 'No tienes permisos para acceder a esta información.',
-          code: 'PERMISSION_DENIED'
+          code: 'PERMISSION_DENIED',
         },
-        HttpStatus.FORBIDDEN
+        HttpStatus.FORBIDDEN,
       );
     }
 
     // Determinar el admin según el rol del solicitante
     let adminId: number;
-    
+
     if (requesterRole === 2) {
       // Si el solicitante es un admin (rol 2), él mismo es el admin
       adminId = requesterId;
@@ -1216,39 +1305,43 @@ export class FrigorificoService {
           id_usuario_creador: true,
         },
       });
-      
+
       if (!tokenCreator || !tokenCreator.id_usuario_creador) {
         throw new HttpException(
           {
             status: HttpStatus.FORBIDDEN,
             error: 'Acceso denegado',
-            message: 'No se pudo determinar el administrador que creó este usuario.',
-            code: 'HIERARCHY_ERROR'
+            message:
+              'No se pudo determinar el administrador que creó este usuario.',
+            code: 'HIERARCHY_ERROR',
           },
-          HttpStatus.FORBIDDEN
+          HttpStatus.FORBIDDEN,
         );
       }
-      
+
       adminId = tokenCreator.id_usuario_creador;
     }
 
     // Verificar que el usuario solicitado fue creado por el mismo admin
-    const tokenSolicitado = await this.databaseService.tOKEN_REGISTRO.findFirst({
-      where: {
-        id_usuario_nuevo: id_usuario,
-        id_usuario_creador: adminId,
+    const tokenSolicitado = await this.databaseService.tOKEN_REGISTRO.findFirst(
+      {
+        where: {
+          id_usuario_nuevo: id_usuario,
+          id_usuario_creador: adminId,
+        },
       },
-    });
+    );
 
     if (!tokenSolicitado) {
       throw new HttpException(
         {
           status: HttpStatus.FORBIDDEN,
           error: 'Acceso denegado',
-          message: 'No tienes permisos para ver la información de este frigorífico.',
-          code: 'PERMISSION_DENIED'
+          message:
+            'No tienes permisos para ver la información de este frigorífico.',
+          code: 'PERMISSION_DENIED',
         },
-        HttpStatus.FORBIDDEN
+        HttpStatus.FORBIDDEN,
       );
     }
 
@@ -1256,16 +1349,15 @@ export class FrigorificoService {
     return this.getGestionFrigorifico(id_usuario);
   }
 
-
   // Método para generar checksum de empaques y prevenir race conditions
   private async generarChecksumEmpaques(
-    id_estacion: string, 
-    id_producto: number, 
+    id_estacion: string,
+    id_producto: number,
     id_estado_empaque: number,
-    tx?: any
+    tx?: any,
   ): Promise<string> {
     const database = tx || this.databaseService;
-    
+
     // Buscar empaques con el estado específico
     const empaques = await database.eMPAQUES.findMany({
       where: {
@@ -1278,55 +1370,68 @@ export class FrigorificoService {
         costo_frigorifico: true,
         hora_en_logistica_2: true,
       },
-      orderBy: { id_empaque: 'asc' }
+      orderBy: { id_empaque: 'asc' },
     });
 
     // Generar checksum basado en IDs y montos
-    const checksumData = empaques.map(e => `${e.id_empaque}-${parseFloat(e.costo_frigorifico.toString())}`).join('|');
+    const checksumData = empaques
+      .map(
+        (e) => `${e.id_empaque}-${parseFloat(e.costo_frigorifico.toString())}`,
+      )
+      .join('|');
     return `${id_estacion}-${id_producto}-${id_estado_empaque}-${checksumData.length}-${empaques.length}`;
   }
 
   // Método para cambiar el estado de los empaques - VERSIÓN ULTRA-ROBUSTA ANTI-BUGS
-  async cambiarEstadoEmpaques(id_estacion: string, id_producto: number, id_logistica: number, id_usuario: number) {
+  async cambiarEstadoEmpaques(
+    id_estacion: string,
+    id_producto: number,
+    id_logistica: number,
+    id_usuario: number,
+  ) {
     const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
     // Verificar que el usuario tiene permisos (solo rol 4)
     const usuario = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario },
       include: {
-        rol: true
-      }
+        rol: true,
+      },
     });
-    
+
     if (!usuario || usuario.id_rol !== 4) {
-      this.logger.error(`❌ PERMISO DENEGADO - Usuario ${id_usuario} no tiene rol 4. Rol actual: ${usuario?.id_rol || 'no encontrado'}`);
+      this.logger.error(
+        `❌ PERMISO DENEGADO - Usuario ${id_usuario} no tiene rol 4. Rol actual: ${usuario?.id_rol || 'no encontrado'}`,
+      );
       throw new HttpException(
         {
           status: HttpStatus.FORBIDDEN,
           error: 'Acceso denegado',
           message: 'No tienes permisos para realizar esta operación.',
-          code: 'PERMISSION_DENIED'
+          code: 'PERMISSION_DENIED',
         },
-        HttpStatus.FORBIDDEN
+        HttpStatus.FORBIDDEN,
       );
     }
-    
+
     // Verificar jerarquía del admin
     const adminId = await this.obtenerAdminId(usuario.id_usuario);
-    
+
     if (!adminId) {
-      this.logger.error(`❌ JERARQUÍA ERROR - No se pudo determinar el admin para usuario ${id_usuario}`);
+      this.logger.error(
+        `❌ JERARQUÍA ERROR - No se pudo determinar el admin para usuario ${id_usuario}`,
+      );
       throw new HttpException(
         {
           status: HttpStatus.FORBIDDEN,
           error: 'Acceso denegado',
           message: 'No se pudo determinar la jerarquía del usuario.',
-          code: 'HIERARCHY_ERROR'
+          code: 'HIERARCHY_ERROR',
         },
-        HttpStatus.FORBIDDEN
+        HttpStatus.FORBIDDEN,
       );
     }
-    
+
     // Verificar que la estación pertenece a un frigorífico del mismo admin
     const estacion = await this.databaseService.eSTACIONES.findFirst({
       where: {
@@ -1338,136 +1443,157 @@ export class FrigorificoService {
         },
       },
     });
-    
+
     if (!estacion) {
-      this.logger.error(`❌ ESTACIÓN NO ENCONTRADA - Estación ${id_estacion} no pertenece a admin ${adminId}`);
+      this.logger.error(
+        `❌ ESTACIÓN NO ENCONTRADA - Estación ${id_estacion} no pertenece a admin ${adminId}`,
+      );
       throw new HttpException(
         {
           status: HttpStatus.NOT_FOUND,
           error: 'Estación no encontrada',
-          message: 'La estación no existe o no tienes permisos para acceder a ella.',
-          code: 'ESTACION_NOT_FOUND'
+          message:
+            'La estación no existe o no tienes permisos para acceder a ella.',
+          code: 'ESTACION_NOT_FOUND',
         },
-        HttpStatus.NOT_FOUND
+        HttpStatus.NOT_FOUND,
       );
     }
-    
+
     // Extraer id_usuario del id_estacion (formato: XXXX00XXX)
     let idUsuarioExtraido: number;
     try {
       idUsuarioExtraido = this.extraerIdUsuarioDeEstacion(id_estacion);
     } catch (error: unknown) {
-      this.logger.error(`❌ ERROR extrayendo ID usuario: ${(error as Error).message}`);
+      this.logger.error(
+        `❌ ERROR extrayendo ID usuario: ${(error as Error).message}`,
+      );
       throw error;
     }
-    
+
     // ========================================================================
     // PROTECCIÓN ANTI-BUGS: IMPLEMENTACIÓN ROBUSTA CON TRANSACCIONES
     // ========================================================================
-    
+
     // 1. GENERAR CHECKSUM INICIAL PARA VALIDACIÓN POSTERIOR
-    const checksumInicial = await this.generarChecksumEmpaques(id_estacion, id_producto, 1);
-    
+    const checksumInicial = await this.generarChecksumEmpaques(
+      id_estacion,
+      id_producto,
+      1,
+    );
+
     // 2. INICIAR TRANSACCIÓN ATÓMICA DE BASE DE DATOS
-    const prismaTransaction = await this.databaseService.$transaction(async (tx) => {
-      
-      // Buscar empaques ANTES de actualizar - SOLO los que están en estado 1
-      const empaquesAntes = await tx.eMPAQUES.findMany({
-        where: {
-          id_estacion: id_estacion,
-          id_producto: id_producto,
-          id_estado_empaque: 1, // SOLO estado 1 (en stock)
-        },
-        select: {
-          id_empaque: true,
-          EPC_id: true,
-          costo_frigorifico: true,
-          id_estado_empaque: true,
-        },
-        
-      });
-      
-     
-      if (empaquesAntes.length === 0) {
-        return {
-          actualizados: 0,
-          empaquesEncontrados: 0,
-          transaccionesCreadas: 0,
-          checksumFinal: checksumInicial
-        };
-      }
-      
-      // 3. VERIFICACIÓN DE CONSISTENCIA ANTES DEL UPDATE
-      const checksumAntes = await this.generarChecksumEmpaques(id_estacion, id_producto, 1, tx);
-      if (checksumAntes !== checksumInicial) {
-        throw new Error(`INCONSISTENCIA DETECTADA [${requestId}]: Checksum cambió durante la operación`);
-      }
-      
-      // 4. CREAR TRANSACCIONES PRIMERO (ANTES DE CAMBIAR EL ESTADO)
-      // Usar los IDs específicos encontrados en el paso anterior
-      const fechaActual = new Date();
-      const transaccionesCreadas: any[] = [];
-      let transaccionesExitosas = 0;
-      
-      for (const empaque of empaquesAntes) {
-        try {
-          const transaccion = await tx.tRANSACCIONES.create({
-            data: {
-              id_empaque: empaque.id_empaque,
-              id_usuario: idUsuarioExtraido,
-              monto: parseFloat(empaque.costo_frigorifico.toString()),
-              hora_transaccion: fechaActual,
-              id_tipo_transaccion: 2,
-              estado_transaccion: 1,
-              nota_opcional: `Transacción Producto ID : ${id_producto}`,
-            },
-          });
-          transaccionesCreadas.push(transaccion);
-          transaccionesExitosas++;
-        } catch (error: unknown) {
-          this.logger.error(`❌ ERROR creando transacción para empaque ${empaque.id_empaque} [${requestId}]:`, (error as Error).message);
-          // En transacción, esto causará rollback automático
-          throw error;
+    const prismaTransaction = await this.databaseService.$transaction(
+      async (tx) => {
+        // Buscar empaques ANTES de actualizar - SOLO los que están en estado 1
+        const empaquesAntes = await tx.eMPAQUES.findMany({
+          where: {
+            id_estacion: id_estacion,
+            id_producto: id_producto,
+            id_estado_empaque: 1, // SOLO estado 1 (en stock)
+          },
+          select: {
+            id_empaque: true,
+            EPC_id: true,
+            costo_frigorifico: true,
+            id_estado_empaque: true,
+          },
+        });
+
+        if (empaquesAntes.length === 0) {
+          return {
+            actualizados: 0,
+            empaquesEncontrados: 0,
+            transaccionesCreadas: 0,
+            checksumFinal: checksumInicial,
+          };
         }
-      }
-      
-      // 6. CAMBIAR EL ESTADO DE LOS EMPAQUES DESPUÉS DE CREAR LAS TRANSACCIONES
-      // Ahora sí actualizamos el estado, pero sin filtros temporales inciertos
-      const updateResult = await tx.eMPAQUES.updateMany({
-        where: {
-          id_estacion: id_estacion,
-          id_producto: id_producto,
-          id_estado_empaque: 1, // CRÍTICO: Solo los que aún están en estado 1
-        },
-        data: {
-          id_estado_empaque: 2,
-          hora_en_logistica_2: fechaActual,
-          id_logistica: id_logistica,
-        },
-      });
-      
-      
-      // 7. VALIDACIÓN CRÍTICA: Confirma que actualizamos la cantidad correcta
-      if (updateResult.count !== empaquesAntes.length) {
-        const errorMsg = `DISCREPANCIA EN ACTUALIZACIÓN [${requestId}]: Esperados ${empaquesAntes.length}, actualizados ${updateResult.count}`;
-        this.logger.error(`🚨 ${errorMsg}`);
-        throw new Error(errorMsg);
-      }
-      
-      // 8. CHECKSUM FINAL PARA VALIDACIÓN
-      const checksumFinal = await this.generarChecksumEmpaques(id_estacion, id_producto, 2, tx);
-      
-      return {
-        actualizados: updateResult.count,
-        empaquesEncontrados: empaquesAntes.length,
-        transaccionesCreadas: transaccionesExitosas,
-        checksumFinal,
-        fechaActual,
-        requestId
-      };
-    }); // FIN DE TRANSACTION - SI HAY ERROR, SE HACE ROLLBACK AUTOMÁTICAMENTE
-    
-    
+
+        // 3. VERIFICACIÓN DE CONSISTENCIA ANTES DEL UPDATE
+        const checksumAntes = await this.generarChecksumEmpaques(
+          id_estacion,
+          id_producto,
+          1,
+          tx,
+        );
+        if (checksumAntes !== checksumInicial) {
+          throw new Error(
+            `INCONSISTENCIA DETECTADA [${requestId}]: Checksum cambió durante la operación`,
+          );
+        }
+
+        // 4. CREAR TRANSACCIONES PRIMERO (ANTES DE CAMBIAR EL ESTADO)
+        // Usar los IDs específicos encontrados en el paso anterior
+        const fechaActual = new Date();
+        const transaccionesCreadas: any[] = [];
+        let transaccionesExitosas = 0;
+
+        for (const empaque of empaquesAntes) {
+          try {
+            const transaccion = await tx.tRANSACCIONES.create({
+              data: {
+                id_empaque: empaque.id_empaque,
+                id_usuario: idUsuarioExtraido,
+                monto: parseFloat(empaque.costo_frigorifico.toString()),
+                hora_transaccion: fechaActual,
+                id_tipo_transaccion: 2,
+                estado_transaccion: 1,
+                nota_opcional: `Transacción Producto ID : ${id_producto}`,
+              },
+            });
+            transaccionesCreadas.push(transaccion);
+            transaccionesExitosas++;
+          } catch (error: unknown) {
+            this.logger.error(
+              `❌ ERROR creando transacción para empaque ${empaque.id_empaque} [${requestId}]:`,
+              (error as Error).message,
+            );
+            // En transacción, esto causará rollback automático
+            throw error;
+          }
+        }
+
+        // 6. CAMBIAR EL ESTADO DE LOS EMPAQUES DESPUÉS DE CREAR LAS TRANSACCIONES
+        // Ahora sí actualizamos el estado, pero sin filtros temporales inciertos
+        const updateResult = await tx.eMPAQUES.updateMany({
+          where: {
+            id_estacion: id_estacion,
+            id_producto: id_producto,
+            id_estado_empaque: 1, // CRÍTICO: Solo los que aún están en estado 1
+          },
+          data: {
+            id_estado_empaque: 2,
+            hora_en_logistica_2: fechaActual,
+            id_logistica: id_logistica,
+          },
+        });
+
+        // 7. VALIDACIÓN CRÍTICA: Confirma que actualizamos la cantidad correcta
+        if (updateResult.count !== empaquesAntes.length) {
+          const errorMsg = `DISCREPANCIA EN ACTUALIZACIÓN [${requestId}]: Esperados ${empaquesAntes.length}, actualizados ${updateResult.count}`;
+          this.logger.error(`🚨 ${errorMsg}`);
+          throw new Error(errorMsg);
+        }
+
+        // 8. CHECKSUM FINAL PARA VALIDACIÓN
+        const checksumFinal = await this.generarChecksumEmpaques(
+          id_estacion,
+          id_producto,
+          2,
+          tx,
+        );
+
+        return {
+          actualizados: updateResult.count,
+          empaquesEncontrados: empaquesAntes.length,
+          transaccionesCreadas: transaccionesExitosas,
+          checksumFinal,
+          fechaActual,
+          requestId,
+        };
+      },
+    ); // FIN DE TRANSACTION - SI HAY ERROR, SE HACE ROLLBACK AUTOMÁTICAMENTE
+
     // 9. VERIFICACIÓN POST-TRANSACCIÓN
     const empaquesConEstado2 = await this.databaseService.eMPAQUES.count({
       where: {
@@ -1476,8 +1602,7 @@ export class FrigorificoService {
         id_estado_empaque: 2,
       },
     });
-    
-    
+
     return {
       actualizados: prismaTransaction.actualizados,
       fecha_cambio: prismaTransaction.fechaActual,
@@ -1491,25 +1616,29 @@ export class FrigorificoService {
         empaques_actualizados: prismaTransaction.actualizados,
         usuario_objetivo: idUsuarioExtraido,
         estacion_id: id_estacion,
-        producto_id: id_producto
-      }
+        producto_id: id_producto,
+      },
     };
   }
 
   // Función auxiliar para extraer el ID de usuario del ID de estación
   private extraerIdUsuarioDeEstacion(id_estacion: string): number {
     const indexSeparador = id_estacion.lastIndexOf('00');
-    
+
     if (indexSeparador === -1 || indexSeparador === id_estacion.length - 2) {
-      throw new Error(`Formato de ID de estación inválido: ${id_estacion}. Debe tener el formato XXXX00XXX`);
+      throw new Error(
+        `Formato de ID de estación inválido: ${id_estacion}. Debe tener el formato XXXX00XXX`,
+      );
     }
-    
+
     const idUsuario = parseInt(id_estacion.substring(indexSeparador + 2));
-    
+
     if (isNaN(idUsuario)) {
-      throw new Error(`No se pudo extraer ID de usuario del ID de estación: ${id_estacion}`);
+      throw new Error(
+        `No se pudo extraer ID de usuario del ID de estación: ${id_estacion}`,
+      );
     }
-    
+
     return idUsuario;
   }
 
@@ -1523,12 +1652,15 @@ export class FrigorificoService {
         id_usuario_creador: true,
       },
     });
-    
+
     return token?.id_usuario_creador || null;
   }
-  
+
   // Función auxiliar para obtener usuarios por admin y rol
-  private async obtenerUsuariosPorAdmin(adminId: number, roleId: number): Promise<number[]> {
+  private async obtenerUsuariosPorAdmin(
+    adminId: number,
+    roleId: number,
+  ): Promise<number[]> {
     const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
       where: {
         id_usuario_creador: adminId,
@@ -1538,8 +1670,10 @@ export class FrigorificoService {
         id_usuario_nuevo: true,
       },
     });
-    
-    return tokens.map(t => t.id_usuario_nuevo).filter(id => id !== null) as number[];
+
+    return tokens
+      .map((t) => t.id_usuario_nuevo)
+      .filter((id) => id !== null) as number[];
   }
 
   async getHermanosFrigorifico(requesterId: number, requesterRole: number) {
@@ -1550,9 +1684,9 @@ export class FrigorificoService {
           status: HttpStatus.FORBIDDEN,
           error: 'Acceso denegado',
           message: 'No tienes permisos para acceder a esta información.',
-          code: 'PERMISSION_DENIED'
+          code: 'PERMISSION_DENIED',
         },
-        HttpStatus.FORBIDDEN
+        HttpStatus.FORBIDDEN,
       );
     }
 
@@ -1561,8 +1695,8 @@ export class FrigorificoService {
       where: { id_usuario: requesterId },
       include: {
         rol: true,
-        logisticas: true // Incluir datos de logística si existen
-      }
+        logisticas: true, // Incluir datos de logística si existen
+      },
     });
 
     if (!usuarioSolicitante) {
@@ -1571,15 +1705,15 @@ export class FrigorificoService {
           status: HttpStatus.NOT_FOUND,
           error: 'Usuario no encontrado',
           message: 'El usuario solicitante no existe.',
-          code: 'USER_NOT_FOUND'
+          code: 'USER_NOT_FOUND',
         },
-        HttpStatus.NOT_FOUND
+        HttpStatus.NOT_FOUND,
       );
     }
 
     // Inicializar el ID del admin
     let adminId: number;
-    
+
     // Si el solicitante es un admin (rol 2), él mismo es el admin
     if (requesterRole === 2) {
       adminId = requesterId;
@@ -1595,36 +1729,40 @@ export class FrigorificoService {
           id_usuario_creador: true,
         },
       });
-      
+
       if (!tokenCreator || !tokenCreator.id_usuario_creador) {
         throw new HttpException(
           {
             status: HttpStatus.INTERNAL_SERVER_ERROR,
             error: 'Error de relación jerárquica',
-            message: 'No se pudo determinar el administrador que creó este usuario.',
-            code: 'HIERARCHY_ERROR'
+            message:
+              'No se pudo determinar el administrador que creó este usuario.',
+            code: 'HIERARCHY_ERROR',
           },
-          HttpStatus.INTERNAL_SERVER_ERROR
+          HttpStatus.INTERNAL_SERVER_ERROR,
         );
       }
-      
+
       adminId = tokenCreator.id_usuario_creador;
     }
-    
+
     // Buscar todos los usuarios con rol 3 que fueron creados por este admin
     // Esto incluirá usuarios de tipo Frigorífico
-    const tokensFrigorificos = await this.databaseService.tOKEN_REGISTRO.findMany({
-      where: {
-        id_usuario_creador: adminId,
-        id_rol_nuevo_usuario: 3, // Rol de frigorífico
-      },
-      select: {
-        id_usuario_nuevo: true,
-      },
-    });
-    
-    const hermanosIds = tokensFrigorificos.map(t => t.id_usuario_nuevo).filter(id => id !== null);
-    
+    const tokensFrigorificos =
+      await this.databaseService.tOKEN_REGISTRO.findMany({
+        where: {
+          id_usuario_creador: adminId,
+          id_rol_nuevo_usuario: 3, // Rol de frigorífico
+        },
+        select: {
+          id_usuario_nuevo: true,
+        },
+      });
+
+    const hermanosIds = tokensFrigorificos
+      .map((t) => t.id_usuario_nuevo)
+      .filter((id) => id !== null);
+
     // Obtener información detallada de cada frigorífico
     const hermanos = await this.databaseService.uSUARIOS.findMany({
       where: {
@@ -1644,11 +1782,15 @@ export class FrigorificoService {
 
     // Si es un usuario de logística, obtener los datos de logística
     let logisticaData: any = null;
-    if (requesterRole === 4 && usuarioSolicitante.logisticas && usuarioSolicitante.logisticas.length > 0) {
-      logisticaData = usuarioSolicitante.logisticas.map(log => ({
+    if (
+      requesterRole === 4 &&
+      usuarioSolicitante.logisticas &&
+      usuarioSolicitante.logisticas.length > 0
+    ) {
+      logisticaData = usuarioSolicitante.logisticas.map((log) => ({
         id_logistica: log.id_logistica,
         nombre_empresa: log.nombre_empresa,
-        placa_vehiculo: log.placa_vehiculo
+        placa_vehiculo: log.placa_vehiculo,
       }));
     }
 
@@ -1666,9 +1808,9 @@ export class FrigorificoService {
           status: HttpStatus.BAD_REQUEST,
           error: 'Clave inválida',
           message: 'La clave de vinculación debe tener al menos 5 caracteres.',
-          code: 'CLAVE_INVALIDA'
+          code: 'CLAVE_INVALIDA',
         },
-        HttpStatus.BAD_REQUEST
+        HttpStatus.BAD_REQUEST,
       );
     }
 
@@ -1690,10 +1832,11 @@ export class FrigorificoService {
         {
           status: HttpStatus.NOT_FOUND,
           error: 'Estación no encontrada',
-          message: 'La clave de vinculación no corresponde a ninguna estación registrada.',
-          code: 'ESTACION_NOT_FOUND'
+          message:
+            'La clave de vinculación no corresponde a ninguna estación registrada.',
+          code: 'ESTACION_NOT_FOUND',
         },
-        HttpStatus.NOT_FOUND
+        HttpStatus.NOT_FOUND,
       );
     }
 

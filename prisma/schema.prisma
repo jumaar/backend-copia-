@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,17 +10,17 @@ datasource db {
 model ROLES {
   id_rol            Int              @id @default(autoincrement())
   nombre_rol        String?
-  usuarios          USUARIOS[]
-  permisos_creador  PERMISOS_ROLES[] @relation("creator")
   permisos_creables PERMISOS_ROLES[] @relation("creatable")
+  permisos_creador  PERMISOS_ROLES[] @relation("creator")
   tokens_roles      TOKEN_REGISTRO[]
+  usuarios          USUARIOS[]
 }
 
 model PERMISOS_ROLES {
   id_rol_creador Int
   id_rol_creable Int
-  rol_creador    ROLES @relation("creator", fields: [id_rol_creador], references: [id_rol])
   rol_creable    ROLES @relation("creatable", fields: [id_rol_creable], references: [id_rol])
+  rol_creador    ROLES @relation("creator", fields: [id_rol_creador], references: [id_rol])
 
   @@id([id_rol_creador, id_rol_creable])
 }
@@ -37,8 +34,8 @@ model TOKEN_REGISTRO {
   id_usuario_creador   Int
   id_rol_nuevo_usuario Int
   id_usuario_nuevo     Int?      @unique
-  creador              USUARIOS  @relation("creador", fields: [id_usuario_creador], references: [id_usuario])
   rol_nuevo_usuario    ROLES     @relation(fields: [id_rol_nuevo_usuario], references: [id_rol])
+  creador              USUARIOS  @relation("creador", fields: [id_usuario_creador], references: [id_usuario])
   nuevo_usuario        USUARIOS? @relation("nuevo_usuario", fields: [id_usuario_nuevo], references: [id_usuario])
 }
 
@@ -54,14 +51,14 @@ model USUARIOS {
   fecha_creacion         DateTime         @default(now())
   fecha_ultima_modifi    DateTime         @updatedAt
   id_rol                 Int
-  rol                    ROLES            @relation(fields: [id_rol], references: [id_rol])
-  tiendas                TIENDAS[]
   frigorificos           FRIGORIFICO[]
   logisticas             LOGISTICA[]
-  transacciones          TRANSACCIONES[]
-  tokens_creados         TOKEN_REGISTRO[] @relation("creador")
-  tokens_usados          TOKEN_REGISTRO[] @relation("nuevo_usuario")
   refresh_tokens         REFRESH_TOKENS[]
+  tiendas                TIENDAS[]
+  tokens_creados         TOKEN_REGISTRO[] @relation("creador")
+  tokens_usados          TOKEN_REGISTRO?  @relation("nuevo_usuario")
+  transacciones          TRANSACCIONES[]
+  rol                    ROLES            @relation(fields: [id_rol], references: [id_rol])
 }
 
 model DEPARTAMENTO {
@@ -75,8 +72,8 @@ model CIUDAD {
   nombre_ciudad    String?
   id__departamento Int
   departamento     DEPARTAMENTO  @relation(fields: [id__departamento], references: [id__departamento])
-  tiendas          TIENDAS[]
   frigorificos     FRIGORIFICO[]
+  tiendas          TIENDAS[]
 }
 
 model TIENDAS {
@@ -85,9 +82,9 @@ model TIENDAS {
   nombre_tienda String
   direccion     String    @unique
   id_ciudad     Int
-  usuario       USUARIOS  @relation(fields: [id_usuario], references: [id_usuario])
-  ciudad        CIUDAD    @relation(fields: [id_ciudad], references: [id_ciudad])
   neveras       NEVERAS[]
+  ciudad        CIUDAD    @relation(fields: [id_ciudad], references: [id_ciudad])
+  usuario       USUARIOS  @relation(fields: [id_usuario], references: [id_usuario])
 }
 
 model FRIGORIFICO {
@@ -96,9 +93,10 @@ model FRIGORIFICO {
   nombre_frigorifico String
   direccion          String       @unique
   id_ciudad          Int
-  usuario            USUARIOS     @relation(fields: [id_usuario], references: [id_usuario])
-  ciudad             CIUDAD       @relation(fields: [id_ciudad], references: [id_ciudad])
+  fecha_creacion     DateTime     @default(now()) @db.Timestamp(6)
   estaciones         ESTACIONES[]
+  ciudad             CIUDAD       @relation(fields: [id_ciudad], references: [id_ciudad])
+  usuario            USUARIOS     @relation(fields: [id_usuario], references: [id_usuario])
 }
 
 model LOGISTICA {
@@ -106,8 +104,8 @@ model LOGISTICA {
   id_usuario     Int
   nombre_empresa String
   placa_vehiculo String
-  usuario        USUARIOS   @relation(fields: [id_usuario], references: [id_usuario])
   empaques       EMPAQUES[]
+  usuario        USUARIOS   @relation(fields: [id_usuario], references: [id_usuario])
 }
 
 model ESTADO_NEVERA {
@@ -124,26 +122,26 @@ model NEVERAS {
   version_software      Decimal
   ultima_conexion       DateTime?
   id_lista_reproduccion Int?
-  tienda                TIENDAS                  @relation(fields: [id_tienda], references: [id_tienda])
+  empaques              EMPAQUES[]
   estadoNevera          ESTADO_NEVERA            @relation(fields: [id_estado_nevera], references: [id_estado_nevera])
   lista_reproduccion    LISTA_DE_REPRODUCCION?   @relation(fields: [id_lista_reproduccion], references: [id_lista_reproduccion])
-  empaques              EMPAQUES[]
+  tienda                TIENDAS                  @relation(fields: [id_tienda], references: [id_tienda])
   reportes_estado       REPORTE_ESTADO_NEVERAS[]
   stockProductos        STOCK_NEVERA[]
 }
 
 model PRODUCTOS {
-  id_producto          Int                     @id @default(autoincrement())
+  id_producto          Int            @id @default(autoincrement())
   nombre_producto      String
   descripcion_producto String?
   peso_nominal_g       Int
   precio_venta         Decimal
   dias_vencimiento     Int
-  precio_frigorifico   Decimal // Porcentaje
-  precio_tienda        Decimal // Porcentaje
+  precio_frigorifico   Decimal
+  alta                 Float?
   baja                 Float?
   media                Float?
-  alta                 Float?
+  precio_tienda        Decimal        @default(0)
   empaques             EMPAQUES[]
   stockNeveras         STOCK_NEVERA[]
 }
@@ -166,7 +164,6 @@ model EMPAQUES {
   id_empaque             Int             @id @default(autoincrement())
   EPC_id                 String          @unique
   fecha_empaque_1        DateTime
-  id_estacion            String
   id_producto            Int
   peso_exacto_g          Decimal
   precio_venta_total     Decimal
@@ -177,18 +174,19 @@ model EMPAQUES {
   id_nevera              Int?
   hora_en_nevera_3       DateTime?
   hora_pendiente_pago_4  DateTime?
-  costo_tienda           Decimal
   hora_para_cambio_5     DateTime?
   fridge_id_final        Int?
   hora_surtido_final_6   DateTime?
   fecha_finalizacion_7_8 DateTime?
   id_estado_empaque      Int
   promocion_id           Int?
+  id_estacion            String
+  costo_tienda           Decimal         @default(0)
   estacion               ESTACIONES      @relation(fields: [id_estacion], references: [id_estacion])
-  producto               PRODUCTOS       @relation(fields: [id_producto], references: [id_producto])
+  estadoEmpaque          ESTADO_EMPAQUE  @relation(fields: [id_estado_empaque], references: [id_estado_empaque])
   logistica              LOGISTICA?      @relation(fields: [id_logistica], references: [id_logistica])
   nevera                 NEVERAS?        @relation(fields: [id_nevera], references: [id_nevera])
-  estadoEmpaque          ESTADO_EMPAQUE  @relation(fields: [id_estado_empaque], references: [id_estado_empaque])
+  producto               PRODUCTOS       @relation(fields: [id_producto], references: [id_producto])
   promocion              PROMOCIONES?    @relation(fields: [promocion_id], references: [id_promocion])
   transacciones          TRANSACCIONES[]
 }
@@ -233,12 +231,12 @@ model TRANSACCIONES {
   id_tipo_transaccion Int
   nota_opcional       String?
   estado_transaccion  Int
+  estadoTransaccion   ESTADO_TRANSACCION @relation(fields: [estado_transaccion], references: [id_estado_transaccion])
   empaque             EMPAQUES?          @relation(fields: [id_empaque], references: [id_empaque])
-  usuario             USUARIOS           @relation(fields: [id_usuario], references: [id_usuario])
+  tipoTransaccion     TIPO_TRANSACCION   @relation(fields: [id_tipo_transaccion], references: [id_tipo])
   transaccionRel      TRANSACCIONES?     @relation("TransaccionRel", fields: [id_transaccion_rel], references: [id_transaccion])
   transacciones       TRANSACCIONES[]    @relation("TransaccionRel")
-  estadoTransaccion   ESTADO_TRANSACCION @relation(fields: [estado_transaccion], references: [id_estado_transaccion])
-  tipoTransaccion     TIPO_TRANSACCION   @relation(fields: [id_tipo_transaccion], references: [id_tipo])
+  usuario             USUARIOS           @relation(fields: [id_usuario], references: [id_usuario])
 }
 
 model STOCK_NEVERA {
@@ -250,17 +248,14 @@ model STOCK_NEVERA {
   venta_semanal        Int       @default(0)
   stock_ideal_final    Int
   calificacion_surtido String
-  hora_calificacion    DateTime?
   mensaje_sistema      String?
   stock_en_tiempo_real Int
+  hora_calificacion    DateTime?
   activo               Boolean   @default(true)
   nevera               NEVERAS   @relation(fields: [id_nevera], references: [id_nevera])
   producto             PRODUCTOS @relation(fields: [id_producto], references: [id_producto])
-}
 
-enum TipoMedia {
-  IMAGEN
-  VIDEO
+  @@unique([id_nevera, id_producto], map: "stock_nevera_unique_id_nevera_id_producto")
 }
 
 model BIBLIOTECA {
@@ -285,8 +280,8 @@ model ITEMS_DE_REPRODUCCION {
   id_biblioteca         Int
   tiempo_reproduccion_s Int
   orden_reproduccion    Int
-  lista_reproduccion    LISTA_DE_REPRODUCCION @relation(fields: [id_lista_reproduccion], references: [id_lista_reproduccion])
   biblioteca            BIBLIOTECA            @relation(fields: [id_biblioteca], references: [id])
+  lista_reproduccion    LISTA_DE_REPRODUCCION @relation(fields: [id_lista_reproduccion], references: [id_lista_reproduccion])
 }
 
 model REFRESH_TOKENS {
@@ -303,6 +298,11 @@ model ESTACIONES {
   id_frigorifico    Int
   clave_vinculacion String      @unique
   activa            Boolean     @default(false)
-  frigorifico       FRIGORIFICO @relation(fields: [id_frigorifico], references: [id_frigorifico])
   empaques          EMPAQUES[]
+  frigorifico       FRIGORIFICO @relation(fields: [id_frigorifico], references: [id_frigorifico])
+}
+
+enum TipoMedia {
+  IMAGEN
+  VIDEO
 }
