@@ -257,6 +257,8 @@ model STOCK_NEVERA {
   activo               Boolean   @default(true)
   nevera               NEVERAS   @relation(fields: [id_nevera], references: [id_nevera])
   producto             PRODUCTOS @relation(fields: [id_producto], references: [id_producto])
+
+  @@unique([id_nevera, id_producto], map: "stock_nevera_unique_id_nevera_id_producto")
 }
 
 model BIBLIOTECA {
