@@ -312,16 +312,17 @@ export class FrigorificoService {
       return await this.databaseService.fRIGORIFICO.delete({
         where: { id_frigorifico: idFrigorifico },
       });
-    } catch (error) {
+    } catch (error: unknown) {
       // Manejar errores de Prisma (como violaciones de clave foránea)
-      if (error.code === 'P2003') {
+      const prismaError = error as { code?: string; meta?: Record<string, unknown> };
+      if (prismaError.code === 'P2003') {
         throw new HttpException(
           {
             status: HttpStatus.FORBIDDEN,
             error: 'Eliminación bloqueada',
             message: 'No puedes eliminar este frigorífico porque tiene datos relacionados (estaciones, empaques, etc.).',
             code: 'FRIGORIFICO_HAS_RELATIONS',
-            constraint: error.meta?.constraint
+            constraint: prismaError.meta?.constraint
           },
           HttpStatus.FORBIDDEN
         );
@@ -581,16 +582,17 @@ export class FrigorificoService {
       return await this.databaseService.eSTACIONES.delete({
         where: { id_estacion: idEstacion },
       });
-    } catch (error) {
+    } catch (error: unknown) {
       // Manejar errores de Prisma (como violaciones de clave foránea)
-      if (error.code === 'P2003') {
+      const prismaError = error as { code?: string; meta?: Record<string, unknown> };
+      if (prismaError.code === 'P2003') {
         throw new HttpException(
           {
             status: HttpStatus.FORBIDDEN,
             error: 'Eliminación bloqueada',
             message: 'No puedes eliminar esta estación porque tiene datos relacionados (empaques, transacciones, etc.).',
             code: 'ESTACION_HAS_RELATIONS',
-            constraint: error.meta?.constraint
+            constraint: prismaError.meta?.constraint
           },
           HttpStatus.FORBIDDEN
         );
@@ -741,9 +743,10 @@ export class FrigorificoService {
             fecha_vencimiento: fechaVencimientoFormateada
           });
 
-        } catch (error) {
+        } catch (error: unknown) {
           // Manejar error específico de EPC duplicado
-          if (error.code === 'P2002' && error.meta?.target?.includes('EPC_id')) {
+          const prismaError = error as { code?: string; meta?: { target?: string[] }; message?: string; stack?: string };
+          if (prismaError.code === 'P2002' && prismaError.meta?.target?.includes('EPC_id')) {
             this.logger.warn(`⚠️ EPC duplicado detectado: ${empaqueData.epc} para producto ${empaqueData.id_producto}`);
             resultados.errores.push({
               id_producto: empaqueData.id_producto,
@@ -752,11 +755,11 @@ export class FrigorificoService {
               code: 'EPC_DUPLICADO'
             });
           } else {
-            this.logger.error(`❌ Error creando empaque para producto ${empaqueData.id_producto}:`, error.message);
+            this.logger.error(`❌ Error creando empaque para producto ${empaqueData.id_producto}:`, prismaError.message);
             resultados.errores.push({
               id_producto: empaqueData.id_producto,
-              error: error.message,
-              stack: error.stack
+              error: prismaError.message,
+              stack: prismaError.stack
             });
           }
         }
@@ -1353,8 +1356,8 @@ export class FrigorificoService {
     let idUsuarioExtraido: number;
     try {
       idUsuarioExtraido = this.extraerIdUsuarioDeEstacion(id_estacion);
-    } catch (error) {
-      this.logger.error(`❌ ERROR extrayendo ID usuario: ${error.message}`);
+    } catch (error: unknown) {
+      this.logger.error(`❌ ERROR extrayendo ID usuario: ${(error as Error).message}`);
       throw error;
     }
     
@@ -1421,8 +1424,8 @@ export class FrigorificoService {
           });
           transaccionesCreadas.push(transaccion);
           transaccionesExitosas++;
-        } catch (error) {
-          this.logger.error(`❌ ERROR creando transacción para empaque ${empaque.id_empaque} [${requestId}]:`, error.message);
+        } catch (error: unknown) {
+          this.logger.error(`❌ ERROR creando transacción para empaque ${empaque.id_empaque} [${requestId}]:`, (error as Error).message);
           // En transacción, esto causará rollback automático
           throw error;
         }
