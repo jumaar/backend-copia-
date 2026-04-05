@@ -20,7 +20,7 @@ export class TiendasService {
     rolUsuario: number,
     idUsuarioActual: number,
     idUsuarioTienda: number,
-    idNevera: number
+    idNevera: number,
   ): Promise<boolean> {
     switch (rolUsuario) {
       case 1: // Super Admin - puede ver todo
@@ -28,12 +28,13 @@ export class TiendasService {
 
       case 2: // Admin - solo puede ver lo creado por sus "hijos" (rol 4) y "nietos" (rol 5)
         // Verificar si el usuario actual es creador directo del usuario de la tienda (hijo directo)
-        const esHijoDirecto = await this.databaseService.tOKEN_REGISTRO.findFirst({
-          where: {
-            id_usuario_creador: idUsuarioActual,
-            id_usuario_nuevo: idUsuarioTienda
-          }
-        });
+        const esHijoDirecto =
+          await this.databaseService.tOKEN_REGISTRO.findFirst({
+            where: {
+              id_usuario_creador: idUsuarioActual,
+              id_usuario_nuevo: idUsuarioTienda,
+            },
+          });
 
         if (esHijoDirecto) return true;
 
@@ -41,32 +42,36 @@ export class TiendasService {
         if (idUsuarioTienda) {
           const usuarioTienda = await this.databaseService.uSUARIOS.findUnique({
             where: { id_usuario: idUsuarioTienda },
-            select: { id_rol: true }
+            select: { id_rol: true },
           });
 
           if (usuarioTienda?.id_rol === 5) {
             // Encontrar quién creó este rol 5
-            const quienCreoElRol5 = await this.databaseService.tOKEN_REGISTRO.findFirst({
-              where: {
-                id_usuario_nuevo: idUsuarioTienda
-              }
-            });
+            const quienCreoElRol5 =
+              await this.databaseService.tOKEN_REGISTRO.findFirst({
+                where: {
+                  id_usuario_nuevo: idUsuarioTienda,
+                },
+              });
 
             if (quienCreoElRol5) {
               // Verificar si quien lo creó es un rol 4
-              const supervisor = await this.databaseService.uSUARIOS.findUnique({
-                where: { id_usuario: quienCreoElRol5.id_usuario_creador },
-                select: { id_rol: true }
-              });
+              const supervisor = await this.databaseService.uSUARIOS.findUnique(
+                {
+                  where: { id_usuario: quienCreoElRol5.id_usuario_creador },
+                  select: { id_rol: true },
+                },
+              );
 
               if (supervisor?.id_rol === 4) {
                 // Verificar si ese supervisor (rol 4) fue creado por el admin actual
-                const supervisorEsHijoDelAdmin = await this.databaseService.tOKEN_REGISTRO.findFirst({
-                  where: {
-                    id_usuario_creador: idUsuarioActual,
-                    id_usuario_nuevo: quienCreoElRol5.id_usuario_creador
-                  }
-                });
+                const supervisorEsHijoDelAdmin =
+                  await this.databaseService.tOKEN_REGISTRO.findFirst({
+                    where: {
+                      id_usuario_creador: idUsuarioActual,
+                      id_usuario_nuevo: quienCreoElRol5.id_usuario_creador,
+                    },
+                  });
 
                 return !!supervisorEsHijoDelAdmin;
               }
@@ -78,12 +83,13 @@ export class TiendasService {
 
       case 4: // Supervisor - puede ver tiendas de sus "hijos" (rol 5)
         // Verificar si el usuario actual es creador del usuario propietario de la tienda
-        const relacionSupervisor = await this.databaseService.tOKEN_REGISTRO.findFirst({
-          where: {
-            id_usuario_creador: idUsuarioActual,
-            id_usuario_nuevo: idUsuarioTienda
-          }
-        });
+        const relacionSupervisor =
+          await this.databaseService.tOKEN_REGISTRO.findFirst({
+            where: {
+              id_usuario_creador: idUsuarioActual,
+              id_usuario_nuevo: idUsuarioTienda,
+            },
+          });
         return !!relacionSupervisor;
 
       case 5: // Cliente final - solo sus propias tiendas/neveras
@@ -103,16 +109,20 @@ export class TiendasService {
       include: {
         neveras: {
           select: {
-            id_estado_nevera: true
-          }
-        }
-      }
+            id_estado_nevera: true,
+          },
+        },
+      },
     });
 
     // Verificar cada tienda existente
     for (const tienda of tiendasExistentes) {
-      const neverasActivas = tienda.neveras.filter(nevera => nevera.id_estado_nevera === 2).length;
-      const tieneNeverasInactivas = tienda.neveras.some(nevera => nevera.id_estado_nevera === 1);
+      const neverasActivas = tienda.neveras.filter(
+        (nevera) => nevera.id_estado_nevera === 2,
+      ).length;
+      const tieneNeverasInactivas = tienda.neveras.some(
+        (nevera) => nevera.id_estado_nevera === 1,
+      );
 
       // Si la tienda no tiene neveras activas (no tiene neveras o solo tiene inactivas)
       if (neverasActivas === 0 || tieneNeverasInactivas) {
@@ -120,16 +130,19 @@ export class TiendasService {
           {
             status: HttpStatus.FORBIDDEN,
             error: 'Creación de tienda bloqueada',
-            message: 'No puedes crear una nueva tienda. Debes activar las neveras de tu tienda existente antes de crear otra.',
+            message:
+              'No puedes crear una nueva tienda. Debes activar las neveras de tu tienda existente antes de crear otra.',
             code: 'TIENDA_CREATION_BLOCKED',
             tiendaPendiente: {
               id_tienda: tienda.id_tienda,
               nombre_tienda: tienda.nombre_tienda,
-              neveras_inactivas: tienda.neveras.filter(n => n.id_estado_nevera === 1).length,
-              total_neveras: tienda.neveras.length
-            }
+              neveras_inactivas: tienda.neveras.filter(
+                (n) => n.id_estado_nevera === 1,
+              ).length,
+              total_neveras: tienda.neveras.length,
+            },
           },
-          HttpStatus.FORBIDDEN
+          HttpStatus.FORBIDDEN,
         );
       }
     }
@@ -140,7 +153,8 @@ export class TiendasService {
         id_usuario,
         nombre_tienda,
         direccion,
-        id_ciudad
+        id_ciudad,
+        fecha_creacion: new Date(),
       },
       include: {
         ciudad: {
@@ -148,12 +162,12 @@ export class TiendasService {
             nombre_ciudad: true,
             departamento: {
               select: {
-                nombre_departamento: true
-              }
-            }
-          }
-        }
-      }
+                nombre_departamento: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     return {
@@ -163,8 +177,8 @@ export class TiendasService {
         nombre_tienda: nuevaTienda.nombre_tienda,
         direccion: nuevaTienda.direccion,
         ciudad: nuevaTienda.ciudad.nombre_ciudad,
-        departamento: nuevaTienda.ciudad.departamento.nombre_departamento
-      }
+        departamento: nuevaTienda.ciudad.departamento.nombre_departamento,
+      },
     };
   }
 
@@ -178,18 +192,20 @@ export class TiendasService {
             nombre_ciudad: true,
             departamento: {
               select: {
-                nombre_departamento: true
-              }
-            }
-          }
+                nombre_departamento: true,
+              },
+            },
+          },
         },
         neveras: {
           select: {
             id_nevera: true,
-            id_estado_nevera: true
-          }
-        }
-      }
+            id_estado_nevera: true,
+            fecha_creacion: true,
+            fecha_activacion: true,
+          },
+        },
+      },
     });
 
     // Obtener todas las ciudades disponibles
@@ -197,33 +213,36 @@ export class TiendasService {
       include: {
         departamento: {
           select: {
-            nombre_departamento: true
-          }
-        }
+            nombre_departamento: true,
+          },
+        },
       },
       orderBy: [
         { departamento: { nombre_departamento: 'asc' } },
-        { nombre_ciudad: 'asc' }
-      ]
+        { nombre_ciudad: 'asc' },
+      ],
     });
 
     return {
-      tiendas: tiendas.map(tienda => ({
+      tiendas: tiendas.map((tienda) => ({
         id_tienda: tienda.id_tienda,
         nombre_tienda: tienda.nombre_tienda,
         direccion: tienda.direccion,
+        fecha_creacion: tienda.fecha_creacion,
         ciudad: tienda.ciudad.nombre_ciudad,
         departamento: tienda.ciudad.departamento.nombre_departamento,
-        neveras: tienda.neveras.map(nevera => ({
+        neveras: tienda.neveras.map((nevera) => ({
           id_nevera: nevera.id_nevera,
-          id_estado_nevera: nevera.id_estado_nevera
-        }))
+          id_estado_nevera: nevera.id_estado_nevera,
+          fecha_creacion: nevera.fecha_creacion,
+          fecha_activacion: nevera.fecha_activacion,
+        })),
       })),
-      ciudades_disponibles: ciudades.map(ciudad => ({
+      ciudades_disponibles: ciudades.map((ciudad) => ({
         id_ciudad: ciudad.id_ciudad,
         nombre_ciudad: ciudad.nombre_ciudad,
-        departamento: ciudad.departamento.nombre_departamento
-      }))
+        departamento: ciudad.departamento.nombre_departamento,
+      })),
     };
   }
 
@@ -234,12 +253,14 @@ export class TiendasService {
     const tienda = await this.databaseService.tIENDAS.findFirst({
       where: {
         id_tienda: id_tienda,
-        id_usuario: id_usuario
-      }
+        id_usuario: id_usuario,
+      },
     });
 
     if (!tienda) {
-      throw new Error('Tienda no encontrada o no tienes permiso para agregar neveras');
+      throw new Error(
+        'Tienda no encontrada o no tienes permiso para agregar neveras',
+      );
     }
 
     // Verificar que no haya neveras inactivas pendientes
@@ -257,9 +278,9 @@ export class TiendasService {
           error: 'Creación de nevera bloqueada',
           message: `No puedes crear una nueva nevera. Tienes ${neverasInactivas} nevera(s) pendiente(s) de activación.`,
           code: 'NEVERA_CREATION_BLOCKED',
-          pendingNeveras: neverasInactivas
+          pendingNeveras: neverasInactivas,
         },
-        HttpStatus.FORBIDDEN
+        HttpStatus.FORBIDDEN,
       );
     }
 
@@ -269,7 +290,7 @@ export class TiendasService {
     while (!isUnique) {
       contraseña = this.generatePassword(12);
       const existingNevera = await this.databaseService.nEVERAS.findFirst({
-        where: { contraseña: contraseña }
+        where: { contraseña: contraseña },
       });
       if (!existingNevera) {
         isUnique = true;
@@ -282,8 +303,9 @@ export class TiendasService {
         contraseña: contraseña,
         id_estado_nevera: 1, // Estado inactiva
         id_tienda: id_tienda,
-        version_software: 0
-      }
+        version_software: 0,
+        fecha_creacion: new Date(),
+      },
     });
 
     return {
@@ -292,14 +314,14 @@ export class TiendasService {
         id_nevera: nuevaNevera.id_nevera,
         id_tienda: nuevaNevera.id_tienda,
         id_estado_nevera: nuevaNevera.id_estado_nevera,
-        contraseña: nuevaNevera.contraseña
-      }
+        contraseña: nuevaNevera.contraseña,
+      },
     };
   }
 
   private generatePassword(length: number): string {
-    const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+";
-    let password = "";
+    const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+';
+    let password = '';
     for (let i = 0; i < length; i++) {
       const randomIndex = Math.floor(Math.random() * charset.length);
       password += charset[randomIndex];
@@ -318,24 +340,24 @@ export class TiendasService {
       include: {
         ciudad: {
           select: {
-            nombre_ciudad: true
-          }
+            nombre_ciudad: true,
+          },
         },
         neveras: {
           include: {
             estadoNevera: {
               select: {
-                id_estado_nevera: true
-              }
+                id_estado_nevera: true,
+              },
             },
             reportes_estado: {
               orderBy: {
-                hora_reporte: 'desc'
+                hora_reporte: 'desc',
               },
               take: 1,
               select: {
-                temperatura_c: true
-              }
+                temperatura_c: true,
+              },
             },
             stockProductos: {
               include: {
@@ -343,29 +365,30 @@ export class TiendasService {
                   select: {
                     id_producto: true,
                     nombre_producto: true,
-                    peso_nominal_g: true
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
+                    peso_nominal_g: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     });
 
     // Formatear la respuesta
-    const tiendasFormateadas = tiendas.map(tienda => ({
+    const tiendasFormateadas = tiendas.map((tienda) => ({
       id_tienda: tienda.id_tienda,
       nombre_tienda: tienda.nombre_tienda,
       direccion: tienda.direccion,
       ciudad: tienda.ciudad.nombre_ciudad,
-      neveras: tienda.neveras.map(nevera => ({
+      neveras: tienda.neveras.map((nevera) => ({
         id_nevera: nevera.id_nevera,
         id_estado_nevera: nevera.estadoNevera.id_estado_nevera,
-        temperatura_nevera: nevera.reportes_estado.length > 0
-          ? nevera.reportes_estado[0].temperatura_c
-          : null,
-        productos: nevera.stockProductos.map(stock => ({
+        temperatura_nevera:
+          nevera.reportes_estado.length > 0
+            ? nevera.reportes_estado[0].temperatura_c
+            : null,
+        productos: nevera.stockProductos.map((stock) => ({
           id_producto: stock.producto.id_producto,
           nombre_producto: stock.producto.nombre_producto,
           peso_nominal_g: stock.producto.peso_nominal_g,
@@ -374,23 +397,27 @@ export class TiendasService {
           venta_semanal: stock.venta_semanal,
           stock_ideal_final: stock.stock_ideal_final,
           stock_en_tiempo_real: stock.stock_en_tiempo_real,
-          activo: stock.activo
-        }))
-      }))
+          activo: stock.activo,
+        })),
+      })),
     }));
 
     return {
-      tiendas: tiendasFormateadas
+      tiendas: tiendasFormateadas,
     };
   }
 
-  async update(id: number, updateTiendaDto: UpdateTiendaDto, id_usuario: number) {
+  async update(
+    id: number,
+    updateTiendaDto: UpdateTiendaDto,
+    id_usuario: number,
+  ) {
     // Verificar que la tienda pertenece al usuario
     const tienda = await this.databaseService.tIENDAS.findFirst({
       where: {
         id_tienda: id,
-        id_usuario: id_usuario
-      }
+        id_usuario: id_usuario,
+      },
     });
 
     if (!tienda) {
@@ -407,12 +434,12 @@ export class TiendasService {
             nombre_ciudad: true,
             departamento: {
               select: {
-                nombre_departamento: true
-              }
-            }
-          }
-        }
-      }
+                nombre_departamento: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     return {
@@ -422,8 +449,8 @@ export class TiendasService {
         nombre_tienda: tiendaActualizada.nombre_tienda,
         direccion: tiendaActualizada.direccion,
         ciudad: tiendaActualizada.ciudad.nombre_ciudad,
-        departamento: tiendaActualizada.ciudad.departamento.nombre_departamento
-      }
+        departamento: tiendaActualizada.ciudad.departamento.nombre_departamento,
+      },
     };
   }
 
@@ -432,15 +459,15 @@ export class TiendasService {
     const tienda = await this.databaseService.tIENDAS.findFirst({
       where: {
         id_tienda: id,
-        id_usuario: id_usuario
+        id_usuario: id_usuario,
       },
       include: {
         neveras: {
           select: {
-            id_estado_nevera: true
-          }
-        }
-      }
+            id_estado_nevera: true,
+          },
+        },
+      },
     });
 
     if (!tienda) {
@@ -449,14 +476,16 @@ export class TiendasService {
           status: HttpStatus.NOT_FOUND,
           error: 'Tienda no encontrada',
           message: 'La tienda no existe o no tienes permisos para eliminarla.',
-          code: 'TIENDA_NOT_FOUND'
+          code: 'TIENDA_NOT_FOUND',
         },
-        HttpStatus.NOT_FOUND
+        HttpStatus.NOT_FOUND,
       );
     }
 
     // Verificar que la tienda no tenga neveras activas
-    const neverasActivas = tienda.neveras.filter(nevera => nevera.id_estado_nevera === 2).length;
+    const neverasActivas = tienda.neveras.filter(
+      (nevera) => nevera.id_estado_nevera === 2,
+    ).length;
 
     if (neverasActivas > 0) {
       throw new HttpException(
@@ -465,30 +494,30 @@ export class TiendasService {
           error: 'Eliminación bloqueada',
           message: `No puedes eliminar esta tienda porque tiene ${neverasActivas} nevera(s) activa(s). Primero elimina todas las neveras activas.`,
           code: 'TIENDA_HAS_NEVERAS_ACTIVAS',
-          neverasActivas: neverasActivas
+          neverasActivas: neverasActivas,
         },
-        HttpStatus.FORBIDDEN
+        HttpStatus.FORBIDDEN,
       );
     }
 
     // Si no tiene neveras activas, proceder con la eliminación
     const tiendaEliminada = await this.databaseService.tIENDAS.delete({
-      where: { id_tienda: id }
+      where: { id_tienda: id },
     });
 
     return {
       message: 'Tienda eliminada exitosamente',
       tienda: {
         id_tienda: tiendaEliminada.id_tienda,
-        nombre_tienda: tiendaEliminada.nombre_tienda
-      }
+        nombre_tienda: tiendaEliminada.nombre_tienda,
+      },
     };
   }
 
   async removeNevera(id_nevera: number) {
     // Obtener la nevera con su estado
     const nevera = await this.databaseService.nEVERAS.findUnique({
-      where: { id_nevera: id_nevera }
+      where: { id_nevera: id_nevera },
     });
 
     if (!nevera) {
@@ -497,9 +526,9 @@ export class TiendasService {
           status: HttpStatus.NOT_FOUND,
           error: 'Nevera no encontrada',
           message: 'La nevera no existe.',
-          code: 'NEVERA_NOT_FOUND'
+          code: 'NEVERA_NOT_FOUND',
         },
-        HttpStatus.NOT_FOUND
+        HttpStatus.NOT_FOUND,
       );
     }
 
@@ -509,19 +538,20 @@ export class TiendasService {
         {
           status: HttpStatus.FORBIDDEN,
           error: 'Eliminación bloqueada',
-          message: 'No puedes eliminar una nevera que está activa. Primero desactívala.',
+          message:
+            'No puedes eliminar una nevera que está activa. Primero desactívala.',
           code: 'NEVERA_ACTIVA_NO_ELIMINABLE',
-          estado_actual: nevera.id_estado_nevera
+          estado_actual: nevera.id_estado_nevera,
         },
-        HttpStatus.FORBIDDEN
+        HttpStatus.FORBIDDEN,
       );
     }
 
     // Verificar si la nevera tiene empaques asociados
     const empaques = await this.databaseService.eMPAQUES.findMany({
       where: {
-        id_nevera: id_nevera
-      }
+        id_nevera: id_nevera,
+      },
     });
 
     if (empaques.length > 0) {
@@ -529,26 +559,27 @@ export class TiendasService {
         {
           status: HttpStatus.FORBIDDEN,
           error: 'Eliminación bloqueada',
-          message: 'No se puede eliminar la nevera porque tiene empaques asociados.',
+          message:
+            'No se puede eliminar la nevera porque tiene empaques asociados.',
           code: 'NEVERA_HAS_EMPAQUES',
-          empaquesCount: empaques.length
+          empaquesCount: empaques.length,
         },
-        HttpStatus.FORBIDDEN
+        HttpStatus.FORBIDDEN,
       );
     }
 
     // Si no tiene empaques y no está activa, proceder con la eliminación
     const neveraEliminada = await this.databaseService.nEVERAS.delete({
       where: {
-        id_nevera: id_nevera
-      }
+        id_nevera: id_nevera,
+      },
     });
 
     return {
       message: 'Nevera eliminada exitosamente',
       nevera: {
-        id_nevera: neveraEliminada.id_nevera
-      }
+        id_nevera: neveraEliminada.id_nevera,
+      },
     };
   }
 
@@ -558,8 +589,8 @@ export class TiendasService {
       where: { id_usuario: id_usuario },
       select: {
         id_usuario: true,
-        id_rol: true
-      }
+        id_rol: true,
+      },
     });
 
     if (!usuarioActual) {
@@ -568,26 +599,26 @@ export class TiendasService {
           status: HttpStatus.UNAUTHORIZED,
           error: 'Usuario no encontrado',
           message: 'El usuario no existe.',
-          code: 'USER_NOT_FOUND'
+          code: 'USER_NOT_FOUND',
         },
-        HttpStatus.UNAUTHORIZED
+        HttpStatus.UNAUTHORIZED,
       );
     }
 
     // Verificar que la nevera existe y obtener su información
     const nevera = await this.databaseService.nEVERAS.findUnique({
       where: {
-        id_nevera: id_nevera
+        id_nevera: id_nevera,
       },
       include: {
         tienda: {
           select: {
             id_tienda: true,
             nombre_tienda: true,
-            id_usuario: true
-          }
-        }
-      }
+            id_usuario: true,
+          },
+        },
+      },
     });
 
     if (!nevera) {
@@ -596,9 +627,9 @@ export class TiendasService {
           status: HttpStatus.NOT_FOUND,
           error: 'Nevera no encontrada',
           message: `La nevera con ID ${id_nevera} no existe.`,
-          code: 'NEVERA_NOT_FOUND'
+          code: 'NEVERA_NOT_FOUND',
         },
-        HttpStatus.NOT_FOUND
+        HttpStatus.NOT_FOUND,
       );
     }
 
@@ -607,7 +638,7 @@ export class TiendasService {
       usuarioActual.id_rol,
       usuarioActual.id_usuario,
       nevera.tienda.id_usuario,
-      id_nevera
+      id_nevera,
     );
 
     if (!tienePermiso) {
@@ -616,9 +647,9 @@ export class TiendasService {
           status: HttpStatus.FORBIDDEN,
           error: 'Acceso denegado',
           message: 'No tienes permisos para acceder a esta nevera.',
-          code: 'ACCESS_DENIED'
+          code: 'ACCESS_DENIED',
         },
-        HttpStatus.FORBIDDEN
+        HttpStatus.FORBIDDEN,
       );
     }
 
@@ -628,17 +659,17 @@ export class TiendasService {
         id_producto: true,
         nombre_producto: true,
         descripcion_producto: true,
-        peso_nominal_g: true
+        peso_nominal_g: true,
       },
       orderBy: {
-        nombre_producto: 'asc'
-      }
+        nombre_producto: 'asc',
+      },
     });
 
     // Obtener stock de productos de la nevera específica
     const stockNevera = await this.databaseService.sTOCK_NEVERA.findMany({
       where: {
-        id_nevera: id_nevera
+        id_nevera: id_nevera,
       },
       select: {
         id: true,
@@ -656,27 +687,27 @@ export class TiendasService {
             id_producto: true,
             nombre_producto: true,
             descripcion_producto: true,
-            peso_nominal_g: true
-          }
-        }
+            peso_nominal_g: true,
+          },
+        },
       },
       orderBy: {
         producto: {
-          nombre_producto: 'asc'
-        }
-      }
+          nombre_producto: 'asc',
+        },
+      },
     });
 
     // Crear un mapa de stock por id_producto para facilitar el acceso
     const stockMap = new Map();
-    stockNevera.forEach(stock => {
+    stockNevera.forEach((stock) => {
       stockMap.set(stock.id_producto, stock);
     });
 
     // Combinar productos con su información de stock
-    const productosConStock = todosLosProductos.map(producto => {
+    const productosConStock = todosLosProductos.map((producto) => {
       const stockInfo = stockMap.get(producto.id_producto);
-      
+
       if (stockInfo) {
         // Si existe stock para este producto en la nevera
         return {
@@ -695,7 +726,7 @@ export class TiendasService {
           calificacion_surtido: stockInfo.calificacion_surtido,
           mensaje_sistema: stockInfo.mensaje_sistema,
           stock_en_tiempo_real: stockInfo.stock_en_tiempo_real,
-          activo: stockInfo.activo
+          activo: stockInfo.activo,
         };
       } else {
         // Si no existe stock para este producto, mostrar valores en cero
@@ -715,7 +746,7 @@ export class TiendasService {
           calificacion_surtido: 'Sin configurar',
           mensaje_sistema: 'Producto no disponible en esta nevera',
           stock_en_tiempo_real: 0,
-          activo: true
+          activo: true,
         };
       }
     });
@@ -723,32 +754,38 @@ export class TiendasService {
     // Calcular estadísticas
     const totalProductos = todosLosProductos.length;
     // Contar productos que realmente tienen stock > 0
-    const productosConStockInfo = stockNevera.filter(s => s.stock_en_tiempo_real > 0).length;
+    const productosConStockInfo = stockNevera.filter(
+      (s) => s.stock_en_tiempo_real > 0,
+    ).length;
     const productosSinStock = totalProductos - productosConStockInfo;
 
     return {
       nevera: {
         id_nevera: nevera.id_nevera,
         id_tienda: nevera.tienda.id_tienda,
-        nombre_tienda: nevera.tienda.nombre_tienda
+        nombre_tienda: nevera.tienda.nombre_tienda,
       },
       estadisticas: {
         total_productos: totalProductos,
         productos_con_stock: productosConStockInfo,
-        productos_sin_stock: productosSinStock
+        productos_sin_stock: productosSinStock,
       },
-      productos: productosConStock
+      productos: productosConStock,
     };
   }
 
-  async updateStocksByNevera(id_nevera: number, stockUpdates: any[], id_usuario: number) {
+  async updateStocksByNevera(
+    id_nevera: number,
+    stockUpdates: any[],
+    id_usuario: number,
+  ) {
     // Obtener información del usuario actual
     const usuarioActual = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario: id_usuario },
       select: {
         id_usuario: true,
-        id_rol: true
-      }
+        id_rol: true,
+      },
     });
 
     if (!usuarioActual) {
@@ -757,9 +794,9 @@ export class TiendasService {
           status: HttpStatus.UNAUTHORIZED,
           error: 'Usuario no encontrado',
           message: 'El usuario no existe.',
-          code: 'USER_NOT_FOUND'
+          code: 'USER_NOT_FOUND',
         },
-        HttpStatus.UNAUTHORIZED
+        HttpStatus.UNAUTHORIZED,
       );
     }
 
@@ -771,10 +808,10 @@ export class TiendasService {
           select: {
             id_tienda: true,
             nombre_tienda: true,
-            id_usuario: true
-          }
-        }
-      }
+            id_usuario: true,
+          },
+        },
+      },
     });
 
     if (!nevera) {
@@ -783,9 +820,9 @@ export class TiendasService {
           status: HttpStatus.NOT_FOUND,
           error: 'Nevera no encontrada',
           message: `La nevera con ID ${id_nevera} no existe.`,
-          code: 'NEVERA_NOT_FOUND'
+          code: 'NEVERA_NOT_FOUND',
         },
-        HttpStatus.NOT_FOUND
+        HttpStatus.NOT_FOUND,
       );
     }
 
@@ -794,7 +831,7 @@ export class TiendasService {
       usuarioActual.id_rol,
       usuarioActual.id_usuario,
       nevera.tienda.id_usuario,
-      id_nevera
+      id_nevera,
     );
 
     if (!tienePermiso) {
@@ -803,9 +840,9 @@ export class TiendasService {
           status: HttpStatus.FORBIDDEN,
           error: 'Acceso denegado',
           message: 'No tienes permisos para modificar esta nevera.',
-          code: 'ACCESS_DENIED'
+          code: 'ACCESS_DENIED',
         },
-        HttpStatus.FORBIDDEN
+        HttpStatus.FORBIDDEN,
       );
     }
 
@@ -815,25 +852,32 @@ export class TiendasService {
     // Procesar cada actualización
     for (const update of stockUpdates) {
       try {
-        const { id_stock, id_producto, stock_minimo, stock_maximo, activo } = update;
+        const { id_stock, id_producto, stock_minimo, stock_maximo, activo } =
+          update;
 
         if (id_stock) {
           // ACTUALIZAR: Registro existente
           // Primero obtener el registro actual para verificar la calificación
-          const currentStock = await this.databaseService.sTOCK_NEVERA.findUnique({
-            where: { id: id_stock }
-          });
+          const currentStock =
+            await this.databaseService.sTOCK_NEVERA.findUnique({
+              where: { id: id_stock },
+            });
 
           // Preparar los datos de actualización
           const updateData: any = {};
-          
+
           // Solo actualizar campos que fueron enviados
-          if (stock_minimo !== undefined) updateData.stock_minimo = stock_minimo;
-          if (stock_maximo !== undefined) updateData.stock_maximo = stock_maximo;
+          if (stock_minimo !== undefined)
+            updateData.stock_minimo = stock_minimo;
+          if (stock_maximo !== undefined)
+            updateData.stock_maximo = stock_maximo;
           if (activo !== undefined) updateData.activo = activo;
 
           // Si la calificación actual es "Sin configurar", actualizarla a "BAJA"
-          if (currentStock && currentStock.calificacion_surtido === 'Sin configurar') {
+          if (
+            currentStock &&
+            currentStock.calificacion_surtido === 'Sin configurar'
+          ) {
             updateData.calificacion_surtido = 'BAJA';
           }
 
@@ -844,10 +888,10 @@ export class TiendasService {
               producto: {
                 select: {
                   id_producto: true,
-                  nombre_producto: true
-                }
-              }
-            }
+                  nombre_producto: true,
+                },
+              },
+            },
           });
 
           results.push({
@@ -857,24 +901,24 @@ export class TiendasService {
             nombre_producto: updatedStock.producto.nombre_producto,
             stock_minimo: updatedStock.stock_minimo,
             stock_maximo: updatedStock.stock_maximo,
-            activo: updatedStock.activo
+            activo: updatedStock.activo,
           });
-
         } else {
           // CREAR: Registro nuevo
           // Verificar que no exista ya un registro con este id_producto en la nevera
-          const existingStock = await this.databaseService.sTOCK_NEVERA.findFirst({
-            where: {
-              id_nevera: id_nevera,
-              id_producto: id_producto
-            }
-          });
+          const existingStock =
+            await this.databaseService.sTOCK_NEVERA.findFirst({
+              where: {
+                id_nevera: id_nevera,
+                id_producto: id_producto,
+              },
+            });
 
           if (existingStock) {
             errors.push({
               id_producto: id_producto,
               error: 'Ya existe un registro para este producto en la nevera',
-              code: 'PRODUCTO_YA_EXISTE'
+              code: 'PRODUCTO_YA_EXISTE',
             });
             continue;
           }
@@ -890,16 +934,16 @@ export class TiendasService {
               calificacion_surtido: 'BAJA',
               mensaje_sistema: 'producto pendiente de surtir en nevera',
               stock_en_tiempo_real: 0,
-              activo: activo !== undefined ? activo : true
+              activo: activo !== undefined ? activo : true,
             },
             include: {
               producto: {
                 select: {
                   id_producto: true,
-                  nombre_producto: true
-                }
-              }
-            }
+                  nombre_producto: true,
+                },
+              },
+            },
           });
 
           results.push({
@@ -909,15 +953,14 @@ export class TiendasService {
             nombre_producto: newStock.producto.nombre_producto,
             stock_minimo: newStock.stock_minimo,
             stock_maximo: newStock.stock_maximo,
-            activo: newStock.activo
+            activo: newStock.activo,
           });
         }
-
       } catch (error) {
         errors.push({
           id_producto: update.id_producto,
           error: error.message,
-          code: 'PROCESAMIENTO_ERROR'
+          code: 'PROCESAMIENTO_ERROR',
         });
       }
     }
@@ -927,326 +970,332 @@ export class TiendasService {
       nevera: {
         id_nevera: nevera.id_nevera,
         id_tienda: nevera.tienda.id_tienda,
-        nombre_tienda: nevera.tienda.nombre_tienda
+        nombre_tienda: nevera.tienda.nombre_tienda,
       },
       resultados: {
         exitosos: results,
         errores: errors,
         total_procesados: stockUpdates.length,
         exitosos_count: results.length,
-        errores_count: errors.length
-      }
+        errores_count: errors.length,
+      },
     };
   }
 
   async getTiendasSobrinas(id_usuario: number, rol_usuario: number) {
-
     try {
       // Validar que el rol sea 4 (logística), 2 (admin) o 5 (tienda)
       if (rol_usuario !== 4 && rol_usuario !== 2 && rol_usuario !== 5) {
-        throw new Error('Acceso denegado: Solo usuarios con rol 2, 4 o 5 pueden acceder a esta función');
+        throw new Error(
+          'Acceso denegado: Solo usuarios con rol 2, 4 o 5 pueden acceder a esta función',
+        );
       }
-
 
       // Si es rol 2 (admin), puede ver todas las tiendas de sus subordinados
       if (rol_usuario === 2) {
-        
         // Buscar usuarios logísticos (rol 4) creados por este admin
-        const logisticaTokens = await this.databaseService.tOKEN_REGISTRO.findMany({
-          where: {
-            id_usuario_creador: id_usuario,
-            id_rol_nuevo_usuario: 4, // Rol de logística
-          },
-          select: {
-            id_usuario_nuevo: true,
-          },
-        });
+        const logisticaTokens =
+          await this.databaseService.tOKEN_REGISTRO.findMany({
+            where: {
+              id_usuario_creador: id_usuario,
+              id_rol_nuevo_usuario: 4, // Rol de logística
+            },
+            select: {
+              id_usuario_nuevo: true,
+            },
+          });
 
-        const logisticaIds = logisticaTokens.map(t => t.id_usuario_nuevo).filter(id => id !== null);
-        
+        const logisticaIds = logisticaTokens
+          .map((t) => t.id_usuario_nuevo)
+          .filter((id) => id !== null);
+
         // Agregar el ID del usuario actual (admin) para incluir tiendas directas si las tiene
         logisticaIds.push(id_usuario);
-        
-        // Buscar usuarios tienda (rol 5) creados por estos logísticos
-        const tiendaTokens = await this.databaseService.tOKEN_REGISTRO.findMany({
-          where: {
-            id_usuario_creador: { in: logisticaIds },
-            id_rol_nuevo_usuario: 5, // Rol de tienda
-          },
-          select: {
-            id_usuario_nuevo: true,
-          },
-        });
 
-        
-        const tiendaUsuarioIds = tiendaTokens.map(t => t.id_usuario_nuevo).filter(id => id !== null);
-        
+        // Buscar usuarios tienda (rol 5) creados por estos logísticos
+        const tiendaTokens = await this.databaseService.tOKEN_REGISTRO.findMany(
+          {
+            where: {
+              id_usuario_creador: { in: logisticaIds },
+              id_rol_nuevo_usuario: 5, // Rol de tienda
+            },
+            select: {
+              id_usuario_nuevo: true,
+            },
+          },
+        );
+
+        const tiendaUsuarioIds = tiendaTokens
+          .map((t) => t.id_usuario_nuevo)
+          .filter((id) => id !== null);
+
         if (tiendaUsuarioIds.length === 0) {
-          
           // Devolver estructura vacía pero válida
           const ciudades = await this.databaseService.cIUDAD.findMany({
             include: {
               departamento: {
                 select: {
-                  nombre_departamento: true
-                }
-              }
+                  nombre_departamento: true,
+                },
+              },
             },
             orderBy: [
               { departamento: { nombre_departamento: 'asc' } },
-              { nombre_ciudad: 'asc' }
-            ]
+              { nombre_ciudad: 'asc' },
+            ],
           });
 
           return {
             usuarios_tienda: [],
-            ciudades_disponibles: ciudades.map(ciudad => ({
+            ciudades_disponibles: ciudades.map((ciudad) => ({
               id_ciudad: ciudad.id_ciudad,
               nombre_ciudad: ciudad.nombre_ciudad,
-              departamento: ciudad.departamento.nombre_departamento
-            }))
+              departamento: ciudad.departamento.nombre_departamento,
+            })),
           };
         }
 
         // Obtener información de los usuarios con rol 5 (usuarios tienda) y sus tiendas en una sola consulta
-        const usuariosTiendaConTiendas = await this.databaseService.uSUARIOS.findMany({
-          where: {
-            id_usuario: {
-              in: tiendaUsuarioIds,
+        const usuariosTiendaConTiendas =
+          await this.databaseService.uSUARIOS.findMany({
+            where: {
+              id_usuario: {
+                in: tiendaUsuarioIds,
+              },
+              activo: true, // Solo usuarios activos
             },
-            activo: true, // Solo usuarios activos
-          },
-          select: {
-            id_usuario: true,
-            nombre_usuario: true,
-            apellido_usuario: true,
-            email: true,
-            celular: true,
-            tiendas: {
-              include: {
-                ciudad: {
-                  select: {
-                    nombre_ciudad: true,
-                    departamento: {
-                      select: {
-                        nombre_departamento: true
-                      }
-                    }
-                  }
+            select: {
+              id_usuario: true,
+              nombre_usuario: true,
+              apellido_usuario: true,
+              email: true,
+              celular: true,
+              tiendas: {
+                include: {
+                  ciudad: {
+                    select: {
+                      nombre_ciudad: true,
+                      departamento: {
+                        select: {
+                          nombre_departamento: true,
+                        },
+                      },
+                    },
+                  },
+                  neveras: {
+                    select: {
+                      id_nevera: true,
+                      id_estado_nevera: true,
+                    },
+                  },
                 },
-                neveras: {
-                  select: {
-                    id_nevera: true,
-                    id_estado_nevera: true
-                  }
-                }
-              }
-            }
-          },
-        });
+              },
+            },
+          });
 
-        
         // Transformar los resultados y agregar información de pendientes de pago
         const resultadoUsuariosTienda = await Promise.all(
-          usuariosTiendaConTiendas.map(async usuarioTienda => ({
+          usuariosTiendaConTiendas.map(async (usuarioTienda) => ({
             id_usuario: usuarioTienda.id_usuario,
             nombre_usuario: usuarioTienda.nombre_usuario,
             apellido_usuario: usuarioTienda.apellido_usuario,
             email: usuarioTienda.email,
             celular: usuarioTienda.celular,
             tiendas: await Promise.all(
-              usuarioTienda.tiendas.map(async tienda => ({
+              usuarioTienda.tiendas.map(async (tienda) => ({
                 id_tienda: tienda.id_tienda,
                 nombre_tienda: tienda.nombre_tienda,
                 direccion: tienda.direccion,
                 ciudad: tienda.ciudad.nombre_ciudad,
                 departamento: tienda.ciudad.departamento.nombre_departamento,
                 neveras: await Promise.all(
-                  tienda.neveras.map(async nevera => {
+                  tienda.neveras.map(async (nevera) => {
                     // Verificar si hay empaques pendientes de pago (estado 4)
-                    const empaquesPendientes = await this.databaseService.eMPAQUES.count({
-                      where: {
-                        id_nevera: nevera.id_nevera,
-                        id_estado_empaque: 4 // Estado pendiente de pago
-                      }
-                    });
+                    const empaquesPendientes =
+                      await this.databaseService.eMPAQUES.count({
+                        where: {
+                          id_nevera: nevera.id_nevera,
+                          id_estado_empaque: 4, // Estado pendiente de pago
+                        },
+                      });
 
                     return {
                       id_nevera: nevera.id_nevera,
                       id_estado_nevera: nevera.id_estado_nevera,
-                      pendientes_pago: empaquesPendientes > 0
+                      pendientes_pago: empaquesPendientes > 0,
                     };
-                  })
-                )
-              }))
-            )
-          }))
+                  }),
+                ),
+              })),
+            ),
+          })),
         );
 
-        
         // Obtener todas las ciudades disponibles
         const ciudades = await this.databaseService.cIUDAD.findMany({
           include: {
             departamento: {
               select: {
-                nombre_departamento: true
-              }
-            }
+                nombre_departamento: true,
+              },
+            },
           },
           orderBy: [
             { departamento: { nombre_departamento: 'asc' } },
-            { nombre_ciudad: 'asc' }
-          ]
+            { nombre_ciudad: 'asc' },
+          ],
         });
 
-         return {
+        return {
           usuarios_tienda: resultadoUsuariosTienda,
-          ciudades_disponibles: ciudades.map(ciudad => ({
+          ciudades_disponibles: ciudades.map((ciudad) => ({
             id_ciudad: ciudad.id_ciudad,
             nombre_ciudad: ciudad.nombre_ciudad,
-            departamento: ciudad.departamento.nombre_departamento
-          }))
+            departamento: ciudad.departamento.nombre_departamento,
+          })),
         };
       } else if (rol_usuario === 4) {
+        const tiendaTokens = await this.databaseService.tOKEN_REGISTRO.findMany(
+          {
+            where: {
+              id_usuario_creador: id_usuario, // El logístico actual (ID 6) como creador
+              id_rol_nuevo_usuario: 5, // Rol de tienda
+            },
+            select: {
+              id_usuario_nuevo: true,
+            },
+          },
+        );
 
-      const tiendaTokens = await this.databaseService.tOKEN_REGISTRO.findMany({
-        where: {
-          id_usuario_creador: id_usuario, // El logístico actual (ID 6) como creador
-          id_rol_nuevo_usuario: 5, // Rol de tienda
-        },
-        select: {
-          id_usuario_nuevo: true,
-        },
-      });
+        const tiendaUsuarioIds = tiendaTokens
+          .map((t) => t.id_usuario_nuevo)
+          .filter((id) => id !== null);
 
-     
-      const tiendaUsuarioIds = tiendaTokens.map(t => t.id_usuario_nuevo).filter(id => id !== null);
-      
-      if (tiendaUsuarioIds.length === 0) {
-        
-        // Devolver estructura vacía pero válida
+        if (tiendaUsuarioIds.length === 0) {
+          // Devolver estructura vacía pero válida
+          const ciudades = await this.databaseService.cIUDAD.findMany({
+            include: {
+              departamento: {
+                select: {
+                  nombre_departamento: true,
+                },
+              },
+            },
+            orderBy: [
+              { departamento: { nombre_departamento: 'asc' } },
+              { nombre_ciudad: 'asc' },
+            ],
+          });
+
+          return {
+            usuarios_tienda: [],
+            ciudades_disponibles: ciudades.map((ciudad) => ({
+              id_ciudad: ciudad.id_ciudad,
+              nombre_ciudad: ciudad.nombre_ciudad,
+              departamento: ciudad.departamento.nombre_departamento,
+            })),
+          };
+        }
+
+        // Obtener información de los usuarios con rol 5 (usuarios tienda) y sus tiendas en una sola consulta
+        const usuariosTiendaConTiendas =
+          await this.databaseService.uSUARIOS.findMany({
+            where: {
+              id_usuario: {
+                in: tiendaUsuarioIds,
+              },
+              activo: true, // Solo usuarios activos
+            },
+            select: {
+              id_usuario: true,
+              nombre_usuario: true,
+              apellido_usuario: true,
+              email: true,
+              celular: true,
+              tiendas: {
+                include: {
+                  ciudad: {
+                    select: {
+                      nombre_ciudad: true,
+                      departamento: {
+                        select: {
+                          nombre_departamento: true,
+                        },
+                      },
+                    },
+                  },
+                  neveras: {
+                    select: {
+                      id_nevera: true,
+                      id_estado_nevera: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+
+        // Transformar los resultados y agregar información de pendientes de pago
+        const resultadoUsuariosTienda = await Promise.all(
+          usuariosTiendaConTiendas.map(async (usuarioTienda) => ({
+            id_usuario: usuarioTienda.id_usuario,
+            nombre_usuario: usuarioTienda.nombre_usuario,
+            apellido_usuario: usuarioTienda.apellido_usuario,
+            email: usuarioTienda.email,
+            celular: usuarioTienda.celular,
+            tiendas: await Promise.all(
+              usuarioTienda.tiendas.map(async (tienda) => ({
+                id_tienda: tienda.id_tienda,
+                nombre_tienda: tienda.nombre_tienda,
+                direccion: tienda.direccion,
+                ciudad: tienda.ciudad.nombre_ciudad,
+                departamento: tienda.ciudad.departamento.nombre_departamento,
+                neveras: await Promise.all(
+                  tienda.neveras.map(async (nevera) => {
+                    // Verificar si hay empaques pendientes de pago (estado 4)
+                    const empaquesPendientes =
+                      await this.databaseService.eMPAQUES.count({
+                        where: {
+                          id_nevera: nevera.id_nevera,
+                          id_estado_empaque: 4, // Estado pendiente de pago
+                        },
+                      });
+
+                    return {
+                      id_nevera: nevera.id_nevera,
+                      id_estado_nevera: nevera.id_estado_nevera,
+                      pendientes_pago: empaquesPendientes > 0,
+                    };
+                  }),
+                ),
+              })),
+            ),
+          })),
+        );
+
+        // Obtener todas las ciudades disponibles
         const ciudades = await this.databaseService.cIUDAD.findMany({
           include: {
             departamento: {
               select: {
-                nombre_departamento: true
-              }
-            }
+                nombre_departamento: true,
+              },
+            },
           },
           orderBy: [
             { departamento: { nombre_departamento: 'asc' } },
-            { nombre_ciudad: 'asc' }
-          ]
+            { nombre_ciudad: 'asc' },
+          ],
         });
 
-         return {
-          usuarios_tienda: [],
-          ciudades_disponibles: ciudades.map(ciudad => ({
+        return {
+          usuarios_tienda: resultadoUsuariosTienda,
+          ciudades_disponibles: ciudades.map((ciudad) => ({
             id_ciudad: ciudad.id_ciudad,
             nombre_ciudad: ciudad.nombre_ciudad,
-            departamento: ciudad.departamento.nombre_departamento
-          }))
+            departamento: ciudad.departamento.nombre_departamento,
+          })),
         };
-      }
-
-      // Obtener información de los usuarios con rol 5 (usuarios tienda) y sus tiendas en una sola consulta
-      const usuariosTiendaConTiendas = await this.databaseService.uSUARIOS.findMany({
-        where: {
-          id_usuario: {
-            in: tiendaUsuarioIds,
-          },
-          activo: true, // Solo usuarios activos
-        },
-        select: {
-          id_usuario: true,
-          nombre_usuario: true,
-          apellido_usuario: true,
-          email: true,
-          celular: true,
-          tiendas: {
-            include: {
-              ciudad: {
-                select: {
-                  nombre_ciudad: true,
-                  departamento: {
-                    select: {
-                      nombre_departamento: true
-                    }
-                  }
-                }
-              },
-              neveras: {
-                select: {
-                  id_nevera: true,
-                  id_estado_nevera: true
-                }
-              }
-            }
-          }
-        },
-      });
-
-      // Transformar los resultados y agregar información de pendientes de pago
-      const resultadoUsuariosTienda = await Promise.all(
-        usuariosTiendaConTiendas.map(async usuarioTienda => ({
-          id_usuario: usuarioTienda.id_usuario,
-          nombre_usuario: usuarioTienda.nombre_usuario,
-          apellido_usuario: usuarioTienda.apellido_usuario,
-          email: usuarioTienda.email,
-          celular: usuarioTienda.celular,
-          tiendas: await Promise.all(
-            usuarioTienda.tiendas.map(async tienda => ({
-              id_tienda: tienda.id_tienda,
-              nombre_tienda: tienda.nombre_tienda,
-              direccion: tienda.direccion,
-              ciudad: tienda.ciudad.nombre_ciudad,
-              departamento: tienda.ciudad.departamento.nombre_departamento,
-              neveras: await Promise.all(
-                tienda.neveras.map(async nevera => {
-                  // Verificar si hay empaques pendientes de pago (estado 4)
-                  const empaquesPendientes = await this.databaseService.eMPAQUES.count({
-                    where: {
-                      id_nevera: nevera.id_nevera,
-                      id_estado_empaque: 4 // Estado pendiente de pago
-                    }
-                  });
-
-                  return {
-                    id_nevera: nevera.id_nevera,
-                    id_estado_nevera: nevera.id_estado_nevera,
-                    pendientes_pago: empaquesPendientes > 0
-                  };
-                })
-              )
-            }))
-          )
-        }))
-      );
-
-     
-      // Obtener todas las ciudades disponibles
-      const ciudades = await this.databaseService.cIUDAD.findMany({
-        include: {
-          departamento: {
-            select: {
-              nombre_departamento: true
-            }
-          }
-        },
-        orderBy: [
-          { departamento: { nombre_departamento: 'asc' } },
-          { nombre_ciudad: 'asc' }
-        ]
-      });
-
-       return {
-        usuarios_tienda: resultadoUsuariosTienda,
-        ciudades_disponibles: ciudades.map(ciudad => ({
-          id_ciudad: ciudad.id_ciudad,
-          nombre_ciudad: ciudad.nombre_ciudad,
-          departamento: ciudad.departamento.nombre_departamento
-        }))
-      };
       } else if (rol_usuario === 5) {
         // Para rol 5 (tienda), devolver su propia información
         const usuarioTienda = await this.databaseService.uSUARIOS.findUnique({
@@ -1268,19 +1317,19 @@ export class TiendasService {
                     nombre_ciudad: true,
                     departamento: {
                       select: {
-                        nombre_departamento: true
-                      }
-                    }
-                  }
+                        nombre_departamento: true,
+                      },
+                    },
+                  },
                 },
                 neveras: {
                   select: {
                     id_nevera: true,
-                    id_estado_nevera: true
-                  }
-                }
-              }
-            }
+                    id_estado_nevera: true,
+                  },
+                },
+              },
+            },
           },
         });
 
@@ -1290,21 +1339,21 @@ export class TiendasService {
               status: HttpStatus.NOT_FOUND,
               error: 'Usuario no encontrado',
               message: 'El usuario no existe o no está activo.',
-              code: 'USER_NOT_FOUND'
+              code: 'USER_NOT_FOUND',
             },
-            HttpStatus.NOT_FOUND
+            HttpStatus.NOT_FOUND,
           );
         }
 
         // Para usuarios rol 5, extraer las ciudades únicas donde tienen tiendas
         const ciudadesTiendaUsuario = new Map();
-        usuarioTienda.tiendas.forEach(tienda => {
+        usuarioTienda.tiendas.forEach((tienda) => {
           const id_ciudad = tienda.ciudad.id_ciudad;
           if (!ciudadesTiendaUsuario.has(id_ciudad)) {
             ciudadesTiendaUsuario.set(id_ciudad, {
               id_ciudad: tienda.ciudad.id_ciudad,
               nombre_ciudad: tienda.ciudad.nombre_ciudad,
-              departamento: tienda.ciudad.departamento.nombre_departamento
+              departamento: tienda.ciudad.departamento.nombre_departamento,
             });
           }
         });
@@ -1317,31 +1366,32 @@ export class TiendasService {
           email: usuarioTienda.email,
           celular: usuarioTienda.celular,
           tiendas: await Promise.all(
-            usuarioTienda.tiendas.map(async tienda => ({
+            usuarioTienda.tiendas.map(async (tienda) => ({
               id_tienda: tienda.id_tienda,
               nombre_tienda: tienda.nombre_tienda,
               direccion: tienda.direccion,
               ciudad: tienda.ciudad.nombre_ciudad,
               departamento: tienda.ciudad.departamento.nombre_departamento,
               neveras: await Promise.all(
-                tienda.neveras.map(async nevera => {
+                tienda.neveras.map(async (nevera) => {
                   // Verificar si hay empaques pendientes de pago (estado 4)
-                  const empaquesPendientes = await this.databaseService.eMPAQUES.count({
-                    where: {
-                      id_nevera: nevera.id_nevera,
-                      id_estado_empaque: 4 // Estado pendiente de pago
-                    }
-                  });
+                  const empaquesPendientes =
+                    await this.databaseService.eMPAQUES.count({
+                      where: {
+                        id_nevera: nevera.id_nevera,
+                        id_estado_empaque: 4, // Estado pendiente de pago
+                      },
+                    });
 
                   return {
                     id_nevera: nevera.id_nevera,
                     id_estado_nevera: nevera.id_estado_nevera,
-                    pendientes_pago: empaquesPendientes > 0
+                    pendientes_pago: empaquesPendientes > 0,
                   };
-                })
-              )
-            }))
-          )
+                }),
+              ),
+            })),
+          ),
         };
 
         // Convertir el Map a array de ciudades disponibles
@@ -1349,7 +1399,7 @@ export class TiendasService {
 
         return {
           usuarios_tienda: [resultadoUsuarioTienda],
-          ciudades_disponibles: ciudadesDisponibles
+          ciudades_disponibles: ciudadesDisponibles,
         };
       }
     } catch (error) {

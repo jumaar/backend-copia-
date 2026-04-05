@@ -77,14 +77,15 @@ model CIUDAD {
 }
 
 model TIENDAS {
-  id_tienda     Int       @id @default(autoincrement())
-  id_usuario    Int
-  nombre_tienda String
-  direccion     String    @unique
-  id_ciudad     Int
-  neveras       NEVERAS[]
-  ciudad        CIUDAD    @relation(fields: [id_ciudad], references: [id_ciudad])
-  usuario       USUARIOS  @relation(fields: [id_usuario], references: [id_usuario])
+  id_tienda      Int       @id @default(autoincrement())
+  id_usuario     Int
+  nombre_tienda  String
+  direccion      String    @unique
+  id_ciudad      Int
+  fecha_creacion DateTime  @default(now())
+  neveras        NEVERAS[]
+  ciudad         CIUDAD    @relation(fields: [id_ciudad], references: [id_ciudad])
+  usuario        USUARIOS  @relation(fields: [id_usuario], references: [id_usuario])
 }
 
 model FRIGORIFICO {
@@ -122,6 +123,8 @@ model NEVERAS {
   version_software      Decimal
   ultima_conexion       DateTime?
   id_lista_reproduccion Int?
+  fecha_creacion        DateTime                 @default(now())
+  fecha_activacion      DateTime?
   empaques              EMPAQUES[]
   estadoNevera          ESTADO_NEVERA            @relation(fields: [id_estado_nevera], references: [id_estado_nevera])
   lista_reproduccion    LISTA_DE_REPRODUCCION?   @relation(fields: [id_lista_reproduccion], references: [id_lista_reproduccion])

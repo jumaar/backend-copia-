@@ -31,38 +31,45 @@ export class NeverasService {
     // Buscar nevera con la contraseña proporcionada
     const nevera = await this.databaseService.nEVERAS.findUnique({
       where: {
-        contraseña: contrasena
+        contraseña: contrasena,
       },
       include: {
-        tienda: true
-      }
+        tienda: true,
+      },
     });
 
     if (!nevera) {
-      throw new HttpException({
-        success: false,
-        error: 'Contraseña incorrecta',
-        code: 'CONTRASENA_INCORRECTA'
-      }, HttpStatus.UNAUTHORIZED);
+      throw new HttpException(
+        {
+          success: false,
+          error: 'Contraseña incorrecta',
+          code: 'CONTRASENA_INCORRECTA',
+        },
+        HttpStatus.UNAUTHORIZED,
+      );
     }
 
     // Verificar que la nevera esté en estado 1 (inactiva)
     if (nevera.id_estado_nevera !== 1) {
-      throw new HttpException({
-        success: false,
-        error: 'La nevera no está en estado inactivo',
-        code: 'ESTADO_NO_PERMITIDO'
-      }, HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        {
+          success: false,
+          error: 'La nevera no está en estado inactivo',
+          code: 'ESTADO_NO_PERMITIDO',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     // Actualizar el estado de la nevera de 1 a 2 (de inactiva a activa)
     await this.databaseService.nEVERAS.update({
       where: {
-        id_nevera: nevera.id_nevera
+        id_nevera: nevera.id_nevera,
       },
       data: {
-        id_estado_nevera: 2
-      }
+        id_estado_nevera: 2,
+        fecha_activacion: new Date(),
+      },
     });
 
     // Obtener todos los productos con su nombre, descripción, peso nominal e id_producto
@@ -71,17 +78,17 @@ export class NeverasService {
         id_producto: true,
         nombre_producto: true,
         descripcion_producto: true,
-        peso_nominal_g: true
-      }
+        peso_nominal_g: true,
+      },
     });
 
     // Generar un JWT con duración infinita (sin expiración)
     const payload = {
       sub: nevera.id_nevera,
       tipo: 'nevera_activacion',
-      contrasena: contrasena
+      contrasena: contrasena,
     };
-    
+
     // Generar token con una expiración muy larga (aproximadamente 100 años) para simular "infinito"
     const token = this.jwtService.sign(payload, { expiresIn: '876000h' }); // 100 años aproximadamente
 
@@ -91,7 +98,7 @@ export class NeverasService {
       token: token,
       id_nevera: nevera.id_nevera,
       nombre_tienda: nevera.tienda?.nombre_tienda,
-      productos: productos
+      productos: productos,
     };
   }
 
@@ -103,22 +110,31 @@ export class NeverasService {
     const horaCalificacion = new Date();
 
     if (!idCiudadesParam || idCiudadesParam.trim() === '') {
-      throw new HttpException({
-        success: false,
-        error: 'El parámetro id_ciudad es requerido',
-        code: 'MISSING_CIUDAD_PARAM'
-      }, HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        {
+          success: false,
+          error: 'El parámetro id_ciudad es requerido',
+          code: 'MISSING_CIUDAD_PARAM',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     // Parsear ciudades
-    const idCiudades = idCiudadesParam.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+    const idCiudades = idCiudadesParam
+      .split(',')
+      .map((id) => parseInt(id.trim()))
+      .filter((id) => !isNaN(id));
 
     if (idCiudades.length === 0) {
-      throw new HttpException({
-        success: false,
-        error: 'Debe proporcionar al menos un id_ciudad válido',
-        code: 'INVALID_CIUDAD_IDS'
-      }, HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        {
+          success: false,
+          error: 'Debe proporcionar al menos un id_ciudad válido',
+          code: 'INVALID_CIUDAD_IDS',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     // FASE 1: RECOLECCIÓN DE DATOS
@@ -129,9 +145,9 @@ export class NeverasService {
         id_estado_nevera: 2, // Activas
         tienda: {
           ciudad: {
-            id_ciudad: { in: idCiudades }
-          }
-        }
+            id_ciudad: { in: idCiudades },
+          },
+        },
       },
       select: {
         id_nevera: true,
@@ -142,28 +158,32 @@ export class NeverasService {
             ciudad: {
               select: {
                 id_ciudad: true,
-                nombre_ciudad: true
-              }
-            }
-          }
-        }
-      }
+                nombre_ciudad: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (neverasActivas.length === 0) {
-      throw new HttpException({
-        success: false,
-        error: 'No hay neveras disponibles para surtir en las ciudades seleccionadas',
-        code: 'NO_NEVERAS_DISPONIBLES'
-      }, HttpStatus.NOT_FOUND);
+      throw new HttpException(
+        {
+          success: false,
+          error:
+            'No hay neveras disponibles para surtir en las ciudades seleccionadas',
+          code: 'NO_NEVERAS_DISPONIBLES',
+        },
+        HttpStatus.NOT_FOUND,
+      );
     }
 
-    const idsNeveras = neverasActivas.map(n => n.id_nevera);
+    const idsNeveras = neverasActivas.map((n) => n.id_nevera);
 
     // 1.2 Obtener STOCK_NEVERA de esas neveras (filtrar activo=false)
     const stockExistente = await this.databaseService.sTOCK_NEVERA.findMany({
       where: {
-        id_nevera: { in: idsNeveras }
+        id_nevera: { in: idsNeveras },
       },
       select: {
         id: true,
@@ -175,47 +195,53 @@ export class NeverasService {
         stock_minimo: true,
         stock_maximo: true,
         stock_ideal_final: true,
-        activo: true
-      }
+        activo: true,
+      },
     });
 
     // 1.3 Obtener productos en logística del usuario
     const usuarioLogistica = await this.databaseService.lOGISTICA.findFirst({
       where: { id_usuario: idUsuario },
-      select: { id_logistica: true }
+      select: { id_logistica: true },
     });
 
     if (!usuarioLogistica) {
-      throw new HttpException({
-        success: false,
-        error: 'Usuario no tiene logística asociada',
-        code: 'NO_LOGISTICA'
-      }, HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        {
+          success: false,
+          error: 'Usuario no tiene logística asociada',
+          code: 'NO_LOGISTICA',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     const productosEnLogistica = await this.databaseService.eMPAQUES.groupBy({
       by: ['id_producto'],
       where: {
         id_estado_empaque: 2, // En logística
-        id_logistica: usuarioLogistica.id_logistica
+        id_logistica: usuarioLogistica.id_logistica,
       },
       _count: {
-        id_empaque: true
-      }
+        id_empaque: true,
+      },
     });
 
     if (productosEnLogistica.length === 0) {
-      throw new HttpException({
-        success: false,
-        error: 'No hay productos en logística para surtir',
-        code: 'NO_PRODUCTOS_LOGISTICA'
-      }, HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        {
+          success: false,
+          error: 'No hay productos en logística para surtir',
+          code: 'NO_PRODUCTOS_LOGISTICA',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     // Convertir a formato más manejable
-    const productosLogistica = productosEnLogistica.map(p => ({
+    const productosLogistica = productosEnLogistica.map((p) => ({
       id_producto: p.id_producto,
-      cantidad: p._count.id_empaque
+      cantidad: p._count.id_empaque,
     }));
 
     // LOOP: Iterar por cada producto en logística
@@ -227,7 +253,8 @@ export class NeverasService {
       // 2.1 Para cada nevera, verificar si existe registro
       for (const nevera of neverasActivas) {
         const stockExistenteNevera = stockExistente.find(
-          s => s.id_nevera === nevera.id_nevera && s.id_producto === id_producto
+          (s) =>
+            s.id_nevera === nevera.id_nevera && s.id_producto === id_producto,
         );
 
         // Verificar si el registro existe y está activo
@@ -246,16 +273,16 @@ export class NeverasService {
               stock_maximo: 0,
               stock_ideal_final: 0,
               activo: true,
-              hora_calificacion: horaCalificacion
-            }
+              hora_calificacion: horaCalificacion,
+            },
           });
         } else if (stockExistenteNevera.activo) {
           // SI existe y está activo → ACTUALIZAR hora_calificacion
           await this.databaseService.sTOCK_NEVERA.update({
             where: { id: stockExistenteNevera.id },
             data: {
-              hora_calificacion: horaCalificacion
-            }
+              hora_calificacion: horaCalificacion,
+            },
           });
         }
       }
@@ -265,7 +292,7 @@ export class NeverasService {
         where: {
           id_nevera: { in: idsNeveras },
           id_producto: id_producto,
-          activo: true
+          activo: true,
         },
         select: {
           id: true,
@@ -275,16 +302,16 @@ export class NeverasService {
           venta_semanal: true,
           calificacion_surtido: true,
           stock_minimo: true,
-          stock_maximo: true
-        }
+          stock_maximo: true,
+        },
       });
 
       // 2.2 Clasificar neveras: NUEVO vs RESURTIDO
       const neverasNuevas = stockProducto.filter(
-        s => s.stock_en_tiempo_real === 0 && s.venta_semanal === 0
+        (s) => s.stock_en_tiempo_real === 0 && s.venta_semanal === 0,
       );
       const neverasResurtido = stockProducto.filter(
-        s => s.venta_semanal > 0 || s.stock_en_tiempo_real > 0
+        (s) => s.venta_semanal > 0 || s.stock_en_tiempo_real > 0,
       );
 
       // FASE 3: CALIFICACIÓN DE NEVERAS RESURTIDO
@@ -292,11 +319,13 @@ export class NeverasService {
       if (neverasResurtido.length > 0) {
         // 3.1 Ordenar por venta_semanal
         const neverasOrdenadas = [...neverasResurtido].sort(
-          (a, b) => a.venta_semanal - b.venta_semanal
+          (a, b) => a.venta_semanal - b.venta_semanal,
         );
 
         // 3.2 Calcular valores de corte
-        const ventaMaxima = Math.max(...neverasResurtido.map(n => n.venta_semanal));
+        const ventaMaxima = Math.max(
+          ...neverasResurtido.map((n) => n.venta_semanal),
+        );
         const MEDIA_corte = ventaMaxima / 2;
         const BAJA_corte = MEDIA_corte * 0.5;
         const ALTA_corte = MEDIA_corte * 1.5;
@@ -316,8 +345,8 @@ export class NeverasService {
             where: { id: stock.id },
             data: {
               calificacion_surtido: calificacion,
-              hora_calificacion: horaCalificacion
-            }
+              hora_calificacion: horaCalificacion,
+            },
           });
         }
 
@@ -327,8 +356,8 @@ export class NeverasService {
           data: {
             media: MEDIA_corte,
             baja: BAJA_corte,
-            alta: ALTA_corte
-          }
+            alta: ALTA_corte,
+          },
         });
       }
 
@@ -340,29 +369,40 @@ export class NeverasService {
       // FASE 5: DISTRIBUCIÓN DE PRODUCTOS
 
       // Refrescar stock con calificaciones actualizadas
-      const stockActualizado = await this.databaseService.sTOCK_NEVERA.findMany({
-        where: {
-          id_nevera: { in: idsNeveras },
-          id_producto: id_producto,
-          activo: true
+      const stockActualizado = await this.databaseService.sTOCK_NEVERA.findMany(
+        {
+          where: {
+            id_nevera: { in: idsNeveras },
+            id_producto: id_producto,
+            activo: true,
+          },
+          select: {
+            id: true,
+            id_nevera: true,
+            stock_en_tiempo_real: true,
+            calificacion_surtido: true,
+          },
         },
-        select: {
-          id: true,
-          id_nevera: true,
-          stock_en_tiempo_real: true,
-          calificacion_surtido: true
-        }
-      });
+      );
 
       // 5.1 Calcular totales
-      const stockRealTotal = stockActualizado.reduce((sum, s) => sum + s.stock_en_tiempo_real, 0);
+      const stockRealTotal = stockActualizado.reduce(
+        (sum, s) => sum + s.stock_en_tiempo_real,
+        0,
+      );
       const totalDisponible = cantidadLogistica + stockRealTotal;
 
-      const N_alta = stockActualizado.filter(s => s.calificacion_surtido === 'ALTA').length;
-      const N_media = stockActualizado.filter(s => s.calificacion_surtido === 'MEDIA').length;
-      const N_baja = stockActualizado.filter(s => s.calificacion_surtido === 'BAJA').length;
+      const N_alta = stockActualizado.filter(
+        (s) => s.calificacion_surtido === 'ALTA',
+      ).length;
+      const N_media = stockActualizado.filter(
+        (s) => s.calificacion_surtido === 'MEDIA',
+      ).length;
+      const N_baja = stockActualizado.filter(
+        (s) => s.calificacion_surtido === 'BAJA',
+      ).length;
 
-      const pesoTotal = (2 * N_alta) + (1 * N_media) + (0.5 * N_baja);
+      const pesoTotal = 2 * N_alta + 1 * N_media + 0.5 * N_baja;
 
       // 5.2 Calcular asignación con FLOOR
       const MEDIA_asig = Math.floor(totalDisponible / pesoTotal);
@@ -370,12 +410,13 @@ export class NeverasService {
       const ALTA_asig = Math.floor(MEDIA_asig * 2);
 
       // 5.3 Calcular distribución inicial y sobrante
-      const totalAsignado = (ALTA_asig * N_alta) + (MEDIA_asig * N_media) + (BAJA_asig * N_baja);
+      const totalAsignado =
+        ALTA_asig * N_alta + MEDIA_asig * N_media + BAJA_asig * N_baja;
       let sobrante = totalDisponible - totalAsignado;
 
       // 5.4 Repartir sobrante a neveras MEDIA
       const neverasMedia = stockActualizado
-        .filter(s => s.calificacion_surtido === 'MEDIA')
+        .filter((s) => s.calificacion_surtido === 'MEDIA')
         .sort((a, b) => a.stock_en_tiempo_real - b.stock_en_tiempo_real);
 
       // Crear mapa de asignación extra por nevera
@@ -397,7 +438,7 @@ export class NeverasService {
       // 5.5, 5.6, 5.7 Actualizar cada registro de STOCK_NEVERA
       for (const stock of stockActualizado) {
         let asignacion: number;
-        
+
         if (stock.calificacion_surtido === 'ALTA') {
           asignacion = ALTA_asig;
         } else if (stock.calificacion_surtido === 'MEDIA') {
@@ -413,8 +454,8 @@ export class NeverasService {
           data: {
             stock_ideal_final: asignacion,
             stock_maximo: asignacion,
-            stock_minimo: stockMinimo
-          }
+            stock_minimo: stockMinimo,
+          },
         });
       }
     }
@@ -428,8 +469,8 @@ export class NeverasService {
       resumen: {
         ciudades_procesadas: idCiudades,
         neveras_procesadas: neverasActivas.length,
-        productos_procesados: productosLogistica.length
-      }
+        productos_procesados: productosLogistica.length,
+      },
     };
   }
 
@@ -453,26 +494,28 @@ export class NeverasService {
     // Verificar si la nevera tiene empaques asociados
     const empaques = await this.databaseService.eMPAQUES.findMany({
       where: {
-        id_nevera: id
-      }
+        id_nevera: id,
+      },
     });
 
     if (empaques.length > 0) {
-      throw new Error('No se puede eliminar la nevera porque tiene empaques asociados');
+      throw new Error(
+        'No se puede eliminar la nevera porque tiene empaques asociados',
+      );
     }
 
     // Si no tiene empaques, proceder con la eliminación
     const neveraEliminada = await this.databaseService.nEVERAS.delete({
       where: {
-        id_nevera: id
-      }
+        id_nevera: id,
+      },
     });
 
     return {
       message: 'Nevera eliminada exitosamente',
       nevera: {
-        id_nevera: neveraEliminada.id_nevera
-      }
+        id_nevera: neveraEliminada.id_nevera,
+      },
     };
   }
 
@@ -480,34 +523,36 @@ export class NeverasService {
     // Obtener todas las neveras activas (estado 2) con sus tiendas
     const neverasActivas = await this.databaseService.nEVERAS.findMany({
       where: {
-        id_estado_nevera: 2 // Solo neveras activas
+        id_estado_nevera: 2, // Solo neveras activas
       },
       include: {
         tienda: {
           select: {
-            nombre_tienda: true
-          }
-        }
-      }
+            nombre_tienda: true,
+          },
+        },
+      },
     });
 
     // Procesar cada nevera para generar su token y preparar la información
-    const neverasProcesadas = await Promise.all(neverasActivas.map(async (nevera) => {
-      // Generar token para esta nevera
-      const payload = {
-        sub: nevera.id_nevera,
-        tipo: 'nevera_actualizacion',
-        contrasena: nevera.contraseña
-      };
-      
-      const token = this.jwtService.sign(payload, { expiresIn: '876000h' }); // 100 años aproximadamente
+    const neverasProcesadas = await Promise.all(
+      neverasActivas.map(async (nevera) => {
+        // Generar token para esta nevera
+        const payload = {
+          sub: nevera.id_nevera,
+          tipo: 'nevera_actualizacion',
+          contrasena: nevera.contraseña,
+        };
 
-      return {
-        id_nevera: nevera.id_nevera,
-        nombre_tienda: nevera.tienda?.nombre_tienda,
-        token: token
-      };
-    }));
+        const token = this.jwtService.sign(payload, { expiresIn: '876000h' }); // 100 años aproximadamente
+
+        return {
+          id_nevera: nevera.id_nevera,
+          nombre_tienda: nevera.tienda?.nombre_tienda,
+          token: token,
+        };
+      }),
+    );
 
     // Obtener todos los productos únicos (tabla global)
     const productos = await this.databaseService.pRODUCTOS.findMany({
@@ -515,25 +560,25 @@ export class NeverasService {
         id_producto: true,
         nombre_producto: true,
         descripcion_producto: true,
-        peso_nominal_g: true
-      }
+        peso_nominal_g: true,
+      },
     });
 
     return {
       success: true,
       message: 'Información de neveras activas obtenida exitosamente',
       neveras: neverasProcesadas,
-      productos: productos
+      productos: productos,
     };
   }
 
   /**
-    * Endpoint para validar empaques que entran a una nevera
-    * PATCH /api/neveras/validacionDosaTres
-    */
-   async validacionDosaTres(idNevera: number, dto: ValidacionDosaTresDto) {
-     const { timestamp, pending_packages } = dto;
-     this.logger.log(`Validando empaques para nevera ${idNevera}`);
+   * Endpoint para validar empaques que entran a una nevera
+   * PATCH /api/neveras/validacionDosaTres
+   */
+  async validacionDosaTres(idNevera: number, dto: ValidacionDosaTresDto) {
+    const { timestamp, pending_packages } = dto;
+    this.logger.log(`Validando empaques para nevera ${idNevera}`);
 
     // Convertir timestamp a fecha
     const fechaTimestamp = new Date(timestamp * 1000);
@@ -557,10 +602,10 @@ export class NeverasService {
           include: {
             producto: {
               select: {
-                id_producto: true
-              }
-            }
-          }
+                id_producto: true,
+              },
+            },
+          },
         });
       } else if (id_empaque) {
         empaque = await this.databaseService.eMPAQUES.findUnique({
@@ -569,10 +614,10 @@ export class NeverasService {
             producto: {
               select: {
                 id_producto: true,
-                nombre_producto: true
-              }
-            }
-          }
+                nombre_producto: true,
+              },
+            },
+          },
         });
       }
 
@@ -582,21 +627,24 @@ export class NeverasService {
           epc: epc || null,
           id_empaque: id_empaque || null,
           id_nevera: null,
-          error: `Empaque no encontrado: ${epc || id_empaque}`
+          error: `Empaque no encontrado: ${epc || id_empaque}`,
         });
-      } else if (empaque.id_estado_empaque !== 2 && empaque.id_estado_empaque !== 4) {
+      } else if (
+        empaque.id_estado_empaque !== 2 &&
+        empaque.id_estado_empaque !== 4
+      ) {
         empaquesInvalidos.push({
           epc: epc || null,
           id_empaque: id_empaque || null,
           id_nevera: empaque.id_nevera,
-          error: `Empaque no está en estado válido para validación (estado actual: ${empaque.id_estado_empaque}): ${epc || id_empaque}`
+          error: `Empaque no está en estado válido para validación (estado actual: ${empaque.id_estado_empaque}): ${epc || id_empaque}`,
         });
       } else {
         empaquesValidos.push({
           empaque: empaque,
           epc: epc || null,
           id_empaque: id_empaque || null,
-          estado_original: empaque.id_estado_empaque
+          estado_original: empaque.id_estado_empaque,
         });
       }
     }
@@ -607,76 +655,82 @@ export class NeverasService {
     let message = '';
 
     if (empaquesValidos.length === 0) {
-      throw new HttpException({
-        success: false,
-        error: 'Ningún empaque pudo ser procesado',
-        empaques_no_procesados: empaquesInvalidos,
-        code: 'NO_EMPAQUES_VALIDOS'
-      }, HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        {
+          success: false,
+          error: 'Ningún empaque pudo ser procesado',
+          empaques_no_procesados: empaquesInvalidos,
+          code: 'NO_EMPAQUES_VALIDOS',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     if (empaquesValidos.length > 0) {
-      empaquesActualizados = await this.databaseService.$transaction(async (prisma) => {
-        // 1. Actualizar la tabla de neveras con la última conexión
-         await prisma.nEVERAS.update({
-           where: { id_nevera: idNevera },
-           data: {
-             ultima_conexion: fechaConexion
-           }
-         });
+      empaquesActualizados = await this.databaseService.$transaction(
+        async (prisma) => {
+          // 1. Actualizar la tabla de neveras con la última conexión
+          await prisma.nEVERAS.update({
+            where: { id_nevera: idNevera },
+            data: {
+              ultima_conexion: fechaConexion,
+            },
+          });
 
-        // 2. Procesar cada empaque válido
-        const resultados: any[] = [];
+          // 2. Procesar cada empaque válido
+          const resultados: any[] = [];
 
-        for (const packageData of empaquesValidos) {
-          const { empaque, epc, id_empaque, estado_original } = packageData;
+          for (const packageData of empaquesValidos) {
+            const { empaque, epc, id_empaque, estado_original } = packageData;
 
-                    // Preparar los datos de actualización
-          const updateData: any = {
-            id_nevera: idNevera,
-            id_estado_empaque: 3 // Estado 3: en nevera
-          };
+            // Preparar los datos de actualización
+            const updateData: any = {
+              id_nevera: idNevera,
+              id_estado_empaque: 3, // Estado 3: en nevera
+            };
 
-          // Solo setear hora_en_nevera_3 si no venía de estado 4 (ya estaba en nevera)
-          if (estado_original !== 4) {
-            updateData.hora_en_nevera_3 = fechaTimestamp;
-          }
-
-          // Si el empaque venía en estado 4, limpiar hora_pendiente_pago_4
-          if (estado_original === 4) {
-            updateData.hora_pendiente_pago_4 = null;
-          }
-
-          // Actualizar el empaque
-          const empaqueActualizado = await prisma.eMPAQUES.update({
-            where: { id_empaque: empaque.id_empaque },
-            data: updateData,
-            include: {
-              producto: {
-                select: {
-                  id_producto: true,
-                  nombre_producto: true
-                }
-              }
+            // Solo setear hora_en_nevera_3 si no venía de estado 4 (ya estaba en nevera)
+            if (estado_original !== 4) {
+              updateData.hora_en_nevera_3 = fechaTimestamp;
             }
-          });
 
-          resultados.push({
-            id_empaque: empaqueActualizado.id_empaque,
-            epc: empaqueActualizado.EPC_id,
-            peso_exacto_g: empaqueActualizado.peso_exacto_g,
-            id_producto: empaqueActualizado.producto.id_producto,
-            nombre_producto: empaqueActualizado.producto.nombre_producto
-          });
-        }
+            // Si el empaque venía en estado 4, limpiar hora_pendiente_pago_4
+            if (estado_original === 4) {
+              updateData.hora_pendiente_pago_4 = null;
+            }
 
-        return resultados;
-      });
+            // Actualizar el empaque
+            const empaqueActualizado = await prisma.eMPAQUES.update({
+              where: { id_empaque: empaque.id_empaque },
+              data: updateData,
+              include: {
+                producto: {
+                  select: {
+                    id_producto: true,
+                    nombre_producto: true,
+                  },
+                },
+              },
+            });
+
+            resultados.push({
+              id_empaque: empaqueActualizado.id_empaque,
+              epc: empaqueActualizado.EPC_id,
+              peso_exacto_g: empaqueActualizado.peso_exacto_g,
+              id_producto: empaqueActualizado.producto.id_producto,
+              nombre_producto: empaqueActualizado.producto.nombre_producto,
+            });
+          }
+
+          return resultados;
+        },
+      );
 
       success = true;
-      message = empaquesInvalidos.length === 0
-        ? 'Validación de empaques completada exitosamente'
-        : `Se procesaron ${empaquesValidos.length} empaques válidos, ${empaquesInvalidos.length} no pudieron procesarse`;
+      message =
+        empaquesInvalidos.length === 0
+          ? 'Validación de empaques completada exitosamente'
+          : `Se procesaron ${empaquesValidos.length} empaques válidos, ${empaquesInvalidos.length} no pudieron procesarse`;
     } else {
       success = false;
       message = 'Ningún empaque pudo ser procesado';
@@ -686,32 +740,32 @@ export class NeverasService {
       success,
       message,
       empaques_procesados: empaquesActualizados,
-      empaques_no_procesados: empaquesInvalidos
+      empaques_no_procesados: empaquesInvalidos,
     };
   }
 
   /**
-    * Función para obtener el inventario de una nevera específica
-    * GET /api/neveras/inventario/:id_nevera
-    */
-   async inventarioNevera(idNevera: number): Promise<{
-     success: boolean;
-     message: string;
-     empaques: {
-       id_empaque: number;
-       epc: string;
-       peso_exacto_g: number;
-       id_producto: number;
-     }[];
-     empaques_pendiente_pago: {
-       id_empaque: number;
-       epc: string;
-       peso_exacto_g: number;
-       id_producto: number;
-       hora_pendiente_pago_4: string | null;
-     }[];
-     ultima_conexion: string;
-   }> {
+   * Función para obtener el inventario de una nevera específica
+   * GET /api/neveras/inventario/:id_nevera
+   */
+  async inventarioNevera(idNevera: number): Promise<{
+    success: boolean;
+    message: string;
+    empaques: {
+      id_empaque: number;
+      epc: string;
+      peso_exacto_g: number;
+      id_producto: number;
+    }[];
+    empaques_pendiente_pago: {
+      id_empaque: number;
+      epc: string;
+      peso_exacto_g: number;
+      id_producto: number;
+      hora_pendiente_pago_4: string | null;
+    }[];
+    ultima_conexion: string;
+  }> {
     this.logger.log(`Obteniendo inventario para nevera ${idNevera}`);
 
     // Obtener la fecha actual para la última conexión
@@ -721,30 +775,33 @@ export class NeverasService {
     const nevera = await this.databaseService.nEVERAS.update({
       where: { id_nevera: idNevera },
       data: {
-        ultima_conexion: fechaConexion
+        ultima_conexion: fechaConexion,
       },
       include: {
         tienda: {
           select: {
-            nombre_tienda: true
-          }
-        }
-      }
+            nombre_tienda: true,
+          },
+        },
+      },
     });
 
     if (!nevera) {
-      throw new HttpException({
-        success: false,
-        error: 'Nevera no encontrada',
-        code: 'NEVERA_NO_ENCONTRADA'
-      }, HttpStatus.NOT_FOUND);
+      throw new HttpException(
+        {
+          success: false,
+          error: 'Nevera no encontrada',
+          code: 'NEVERA_NO_ENCONTRADA',
+        },
+        HttpStatus.NOT_FOUND,
+      );
     }
 
     // Obtener los empaques que estén en estado 3 (en nevera) y pertenezcan a esta nevera
     const empaques = await this.databaseService.eMPAQUES.findMany({
       where: {
         id_nevera: idNevera,
-        id_estado_empaque: 3 // Estado 3: en nevera
+        id_estado_empaque: 3, // Estado 3: en nevera
       },
       select: {
         id_empaque: true,
@@ -753,24 +810,24 @@ export class NeverasService {
         producto: {
           select: {
             id_producto: true,
-          }
-        }
-      }
+          },
+        },
+      },
     });
 
     // Formatear la respuesta
-    const empaquesFormateados = empaques.map(empaque => ({
+    const empaquesFormateados = empaques.map((empaque) => ({
       id_empaque: empaque.id_empaque,
       epc: empaque.EPC_id,
       peso_exacto_g: Number(empaque.peso_exacto_g), // Convertir Decimal a number
-      id_producto: empaque.producto.id_producto
+      id_producto: empaque.producto.id_producto,
     }));
 
     // Obtener los empaques que estén en estado 4 (pendiente pago) y pertenezcan a esta nevera
     const empaquesPendientePago = await this.databaseService.eMPAQUES.findMany({
       where: {
         id_nevera: idNevera,
-        id_estado_empaque: 4 // Estado 4: pendiente pago
+        id_estado_empaque: 4, // Estado 4: pendiente pago
       },
       select: {
         id_empaque: true,
@@ -779,27 +836,31 @@ export class NeverasService {
         producto: {
           select: {
             id_producto: true,
-          }
+          },
         },
-        hora_pendiente_pago_4: true
-      }
+        hora_pendiente_pago_4: true,
+      },
     });
 
     // Formatear la respuesta de empaques pendientes de pago
-    const empaquesPendientePagoFormateados = empaquesPendientePago.map(empaque => ({
-      id_empaque: empaque.id_empaque,
-      epc: empaque.EPC_id,
-      peso_exacto_g: Number(empaque.peso_exacto_g), // Convertir Decimal a number
-      id_producto: empaque.producto.id_producto,
-      hora_pendiente_pago_4: empaque.hora_pendiente_pago_4 ? empaque.hora_pendiente_pago_4.toISOString() : null
-    }));
+    const empaquesPendientePagoFormateados = empaquesPendientePago.map(
+      (empaque) => ({
+        id_empaque: empaque.id_empaque,
+        epc: empaque.EPC_id,
+        peso_exacto_g: Number(empaque.peso_exacto_g), // Convertir Decimal a number
+        id_producto: empaque.producto.id_producto,
+        hora_pendiente_pago_4: empaque.hora_pendiente_pago_4
+          ? empaque.hora_pendiente_pago_4.toISOString()
+          : null,
+      }),
+    );
 
     return {
       success: true,
       message: `Inventario obtenido exitosamente para nevera ${idNevera}`,
       empaques: empaquesFormateados,
       empaques_pendiente_pago: empaquesPendientePagoFormateados,
-      ultima_conexion: fechaConexion.toISOString()
+      ultima_conexion: fechaConexion.toISOString(),
     };
   }
 
@@ -830,10 +891,10 @@ export class NeverasService {
             producto: {
               select: {
                 id_producto: true,
-                nombre_producto: true
-              }
-            }
-          }
+                nombre_producto: true,
+              },
+            },
+          },
         });
       } else if (epc) {
         empaque = await this.databaseService.eMPAQUES.findUnique({
@@ -842,10 +903,10 @@ export class NeverasService {
             producto: {
               select: {
                 id_producto: true,
-                nombre_producto: true
-              }
-            }
-          }
+                nombre_producto: true,
+              },
+            },
+          },
         });
       }
 
@@ -854,26 +915,26 @@ export class NeverasService {
         empaquesInvalidos.push({
           id_empaque: id_empaque || null,
           epc: epc || null,
-          error: `Empaque no encontrado con ${id_empaque ? `ID ${id_empaque}` : `EPC ${epc}`}`
+          error: `Empaque no encontrado con ${id_empaque ? `ID ${id_empaque}` : `EPC ${epc}`}`,
         });
       } else if (empaque.id_nevera !== idNevera) {
         empaquesInvalidos.push({
           id_empaque,
           epc,
-          error: `Empaque no pertenece a la nevera ${idNevera}`
+          error: `Empaque no pertenece a la nevera ${idNevera}`,
         });
       } else if (empaque.id_estado_empaque !== 3) {
         empaquesInvalidos.push({
           id_empaque,
           epc,
-          error: `Empaque no está en estado 3 (estado actual: ${empaque.id_estado_empaque})`
+          error: `Empaque no está en estado 3 (estado actual: ${empaque.id_estado_empaque})`,
         });
       } else {
         empaquesValidos.push({
           empaque,
           id_empaque: id_empaque || null,
           epc: epc || null,
-          fecha_venta: new Date(fecha_venta)
+          fecha_venta: new Date(fecha_venta),
         });
       }
     }
@@ -884,64 +945,70 @@ export class NeverasService {
     let message = '';
 
     if (empaquesValidos.length === 0) {
-      throw new HttpException({
-        success: false,
-        error: 'Ningún empaque pudo ser procesado',
-        empaques_no_procesados: empaquesInvalidos,
-        code: 'NO_EMPAQUES_VALIDOS'
-      }, HttpStatus.BAD_REQUEST);
+      throw new HttpException(
+        {
+          success: false,
+          error: 'Ningún empaque pudo ser procesado',
+          empaques_no_procesados: empaquesInvalidos,
+          code: 'NO_EMPAQUES_VALIDOS',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     if (empaquesValidos.length > 0) {
-      empaquesActualizados = await this.databaseService.$transaction(async (prisma) => {
-        // 1. Actualizar la tabla de neveras con la última conexión
-        await prisma.nEVERAS.update({
-          where: { id_nevera: idNevera },
-          data: {
-            ultima_conexion: fechaConexion
-          }
-        });
-
-        // 2. Procesar cada empaque válido
-        const resultados: any[] = [];
-
-        for (const packageData of empaquesValidos) {
-          const { empaque, id_empaque, epc, fecha_venta } = packageData;
-
-          // Actualizar el empaque a estado 4 y setear fecha_venta
-          const empaqueActualizado = await prisma.eMPAQUES.update({
-            where: { id_empaque: empaque.id_empaque },
+      empaquesActualizados = await this.databaseService.$transaction(
+        async (prisma) => {
+          // 1. Actualizar la tabla de neveras con la última conexión
+          await prisma.nEVERAS.update({
+            where: { id_nevera: idNevera },
             data: {
-              id_estado_empaque: 4, // Estado 4: pendiente pago
-              hora_pendiente_pago_4: fecha_venta
+              ultima_conexion: fechaConexion,
             },
-            include: {
-              producto: {
-                select: {
-                  id_producto: true,
-                  nombre_producto: true
-                }
-              }
-            }
           });
 
-          resultados.push({
-            id_empaque: empaqueActualizado.id_empaque,
-            epc: empaqueActualizado.EPC_id,
-            peso_exacto_g: empaqueActualizado.peso_exacto_g,
-            id_producto: empaqueActualizado.producto.id_producto,
-            nombre_producto: empaqueActualizado.producto.nombre_producto,
-            fecha_venta: fecha_venta.toISOString()
-          });
-        }
+          // 2. Procesar cada empaque válido
+          const resultados: any[] = [];
 
-        return resultados;
-      });
+          for (const packageData of empaquesValidos) {
+            const { empaque, id_empaque, epc, fecha_venta } = packageData;
+
+            // Actualizar el empaque a estado 4 y setear fecha_venta
+            const empaqueActualizado = await prisma.eMPAQUES.update({
+              where: { id_empaque: empaque.id_empaque },
+              data: {
+                id_estado_empaque: 4, // Estado 4: pendiente pago
+                hora_pendiente_pago_4: fecha_venta,
+              },
+              include: {
+                producto: {
+                  select: {
+                    id_producto: true,
+                    nombre_producto: true,
+                  },
+                },
+              },
+            });
+
+            resultados.push({
+              id_empaque: empaqueActualizado.id_empaque,
+              epc: empaqueActualizado.EPC_id,
+              peso_exacto_g: empaqueActualizado.peso_exacto_g,
+              id_producto: empaqueActualizado.producto.id_producto,
+              nombre_producto: empaqueActualizado.producto.nombre_producto,
+              fecha_venta: fecha_venta.toISOString(),
+            });
+          }
+
+          return resultados;
+        },
+      );
 
       success = true;
-      message = empaquesInvalidos.length === 0
-        ? 'Inventario procesado exitosamente'
-        : `Se procesaron ${empaquesValidos.length} empaques válidos, ${empaquesInvalidos.length} no pudieron procesarse`;
+      message =
+        empaquesInvalidos.length === 0
+          ? 'Inventario procesado exitosamente'
+          : `Se procesaron ${empaquesValidos.length} empaques válidos, ${empaquesInvalidos.length} no pudieron procesarse`;
     } else {
       success = false;
       message = 'Ningún empaque pudo ser procesado';
@@ -952,7 +1019,7 @@ export class NeverasService {
       message,
       empaques_procesados: empaquesActualizados,
       empaques_no_procesados: empaquesInvalidos,
-      ultima_conexion: fechaConexion.toISOString()
+      ultima_conexion: fechaConexion.toISOString(),
     };
   }
 }
