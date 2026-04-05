@@ -144,7 +144,7 @@ model PRODUCTOS {
   alta                 Float?
   baja                 Float?
   media                Float?
-  precio_tienda        Decimal
+  precio_tienda        Decimal        @default(0)
   empaques             EMPAQUES[]
   stockNeveras         STOCK_NEVERA[]
 }
@@ -184,7 +184,7 @@ model EMPAQUES {
   id_estado_empaque      Int
   promocion_id           Int?
   id_estacion            String
-  costo_tienda           Decimal
+  costo_tienda           Decimal        @default(0)
   estacion               ESTACIONES      @relation(fields: [id_estacion], references: [id_estacion])
   estadoEmpaque          ESTADO_EMPAQUE  @relation(fields: [id_estado_empaque], references: [id_estado_empaque])
   logistica              LOGISTICA?      @relation(fields: [id_logistica], references: [id_logistica])
