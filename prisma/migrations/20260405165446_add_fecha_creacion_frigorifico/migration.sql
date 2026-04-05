@@ -1,5 +1,5 @@
--- DropIndex
-DROP INDEX "public"."stock_nevera_unique_id_nevera_id_producto";
+-- Drop constraint instead of index
+ALTER TABLE "STOCK_NEVERA" DROP CONSTRAINT IF EXISTS "stock_nevera_unique_id_nevera_id_producto";
 
 -- AlterTable
 ALTER TABLE "EMPAQUES" ALTER COLUMN "costo_tienda" DROP DEFAULT;

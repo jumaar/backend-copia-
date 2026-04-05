@@ -94,7 +94,7 @@ model FRIGORIFICO {
   nombre_frigorifico String
   direccion          String       @unique
   id_ciudad          Int
-  fecha_creacion     DateTime     @default(now()) @db.Timestamp(6)
+  fecha_creacion     DateTime     @default(now())
   estaciones         ESTACIONES[]
   ciudad             CIUDAD       @relation(fields: [id_ciudad], references: [id_ciudad])
   usuario            USUARIOS     @relation(fields: [id_usuario], references: [id_usuario])
@@ -144,7 +144,7 @@ model PRODUCTOS {
   alta                 Float?
   baja                 Float?
   media                Float?
-  precio_tienda        Decimal        @default(0)
+  precio_tienda        Decimal
   empaques             EMPAQUES[]
   stockNeveras         STOCK_NEVERA[]
 }
@@ -184,7 +184,7 @@ model EMPAQUES {
   id_estado_empaque      Int
   promocion_id           Int?
   id_estacion            String
-  costo_tienda           Decimal         @default(0)
+  costo_tienda           Decimal
   estacion               ESTACIONES      @relation(fields: [id_estacion], references: [id_estacion])
   estadoEmpaque          ESTADO_EMPAQUE  @relation(fields: [id_estado_empaque], references: [id_estado_empaque])
   logistica              LOGISTICA?      @relation(fields: [id_logistica], references: [id_logistica])
@@ -257,8 +257,6 @@ model STOCK_NEVERA {
   activo               Boolean   @default(true)
   nevera               NEVERAS   @relation(fields: [id_nevera], references: [id_nevera])
   producto             PRODUCTOS @relation(fields: [id_producto], references: [id_producto])
-
-  @@unique([id_nevera, id_producto], map: "stock_nevera_unique_id_nevera_id_producto")
 }
 
 model BIBLIOTECA {
@@ -301,8 +299,6 @@ model ESTACIONES {
   id_frigorifico    Int
   clave_vinculacion String      @unique
   activa            Boolean     @default(false)
-  fecha_creacion    DateTime    @default(now())
-  fecha_activacion  DateTime?
   empaques          EMPAQUES[]
   frigorifico       FRIGORIFICO @relation(fields: [id_frigorifico], references: [id_frigorifico])
 }
