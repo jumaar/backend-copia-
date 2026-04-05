@@ -39,6 +39,8 @@ export class FrigorificoService {
           select: {
             id_estacion: true,
             clave_vinculacion: true,
+            fecha_creacion: true,
+            fecha_activacion: true,
           },
         },
       },
@@ -1846,7 +1848,10 @@ export class FrigorificoService {
       // Solo activar si no está activada
       await this.databaseService.eSTACIONES.update({
         where: { id_estacion: estacion.id_estacion },
-        data: { activa: true },
+        data: {
+          activa: true,
+          fecha_activacion: new Date(),
+        },
       });
     }
 

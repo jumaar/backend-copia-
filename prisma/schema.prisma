@@ -298,6 +298,8 @@ model ESTACIONES {
   id_frigorifico    Int
   clave_vinculacion String      @unique
   activa            Boolean     @default(false)
+  fecha_creacion    DateTime    @default(now())
+  fecha_activacion  DateTime?
   empaques          EMPAQUES[]
   frigorifico       FRIGORIFICO @relation(fields: [id_frigorifico], references: [id_frigorifico])
 }
