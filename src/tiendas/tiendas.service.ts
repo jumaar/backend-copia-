@@ -315,6 +315,7 @@ export class TiendasService {
         id_tienda: nuevaNevera.id_tienda,
         id_estado_nevera: nuevaNevera.id_estado_nevera,
         contraseña: nuevaNevera.contraseña,
+        fecha_creacion: nuevaNevera.fecha_creacion,
       },
     };
   }
