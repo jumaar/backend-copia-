@@ -515,7 +515,8 @@ export class LogisticaService {
         };
 
       } catch (error) {
-        throw new BadRequestException(`Error al registrar abono adelantado: ${error.message}`);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        throw new BadRequestException(`Error al registrar abono adelantado: ${errorMessage}`);
       }
     }
 
@@ -629,7 +630,8 @@ export class LogisticaService {
       };
 
     } catch (error) {
-      throw new BadRequestException(`Error al consolidar cuentas: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(`Error al consolidar cuentas: ${errorMessage}`);
     }
   }
 
@@ -725,6 +727,55 @@ export class LogisticaService {
 
     return {
       message: 'Surtido finalizado, estado de nevera cambiado a Activa'
+    };
+  }
+
+  async getEmpaquesPendientesPorNevera(idNevera: number) {
+    // 1. Obtener empaques en estado 4 de la nevera
+    const empaques = await this.databaseService.eMPAQUES.findMany({
+      where: {
+        id_nevera: idNevera,
+        id_estado_empaque: 4, // pendiente pago
+      },
+      select: {
+        id_empaque: true,
+        costo_tienda: true,
+        precio_venta_total: true,
+        id_producto: true,
+      },
+    });
+
+    if (empaques.length === 0) {
+      return { empaques: [], productos: [] };
+    }
+
+    // 2. Obtener IDs únicos de productos
+    const idsProductos = Array.from(new Set(empaques.map(e => e.id_producto)));
+
+    // 3. Obtener productos correspondientes
+    const productos = await this.databaseService.pRODUCTOS.findMany({
+      where: {
+        id_producto: { in: idsProductos },
+      },
+      select: {
+        id_producto: true,
+        nombre_producto: true,
+        peso_nominal_g: true,
+        precio_tienda: true,
+      },
+    });
+
+    // 4. Formatear empaques (convertir Decimal a number)
+    const empaquesFormateados = empaques.map(empaque => ({
+      id_empaque: empaque.id_empaque,
+      costo_tienda: parseFloat(empaque.costo_tienda.toString()),
+      precio_venta_total: parseFloat(empaque.precio_venta_total.toString()),
+      id_producto: empaque.id_producto,
+    }));
+
+    return {
+      empaques: empaquesFormateados,
+      productos: productos,
     };
   }
 }

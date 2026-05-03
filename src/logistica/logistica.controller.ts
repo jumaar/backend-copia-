@@ -61,5 +61,11 @@ export class LogisticaController {
     return this.logisticaService.finalizarSurtido(Number(id_nevera));
   }
 
+  @Get('cuentas/nevera/:id_nevera')
+  @Roles(1, 2, 4, 5)
+  async getCuentasNevera(@Param('id_nevera') idNevera: string) {
+    const idNeveraNum = Number(idNevera);
+    return this.logisticaService.getEmpaquesPendientesPorNevera(idNeveraNum);
+  }
 
 }
