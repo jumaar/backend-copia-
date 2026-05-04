@@ -958,9 +958,10 @@ export class TiendasService {
           });
         }
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         errors.push({
           id_producto: update.id_producto,
-          error: error.message,
+          error: errorMessage,
           code: 'PROCESAMIENTO_ERROR',
         });
       }
@@ -985,11 +986,106 @@ export class TiendasService {
 
   async getTiendasSobrinas(id_usuario: number, rol_usuario: number) {
     try {
-      // Validar que el rol sea 4 (logística), 2 (admin) o 5 (tienda)
-      if (rol_usuario !== 4 && rol_usuario !== 2 && rol_usuario !== 5) {
+      if (rol_usuario !== 4 && rol_usuario !== 2 && rol_usuario !== 5 && rol_usuario !== 1) {
         throw new Error(
-          'Acceso denegado: Solo usuarios con rol 2, 4 o 5 pueden acceder a esta función',
+          'Acceso denegado: Solo usuarios con rol 1, 2, 4 o 5 pueden acceder a esta función',
         );
+      }
+
+      if (rol_usuario === 1) {
+        const usuariosTiendaConTiendas =
+          await this.databaseService.uSUARIOS.findMany({
+            where: {
+              id_rol: 5,
+              activo: true,
+            },
+            select: {
+              id_usuario: true,
+              nombre_usuario: true,
+              apellido_usuario: true,
+              email: true,
+              celular: true,
+              tiendas: {
+                include: {
+                  ciudad: {
+                    select: {
+                      nombre_ciudad: true,
+                      departamento: {
+                        select: {
+                          nombre_departamento: true,
+                        },
+                      },
+                    },
+                  },
+                  neveras: {
+                    select: {
+                      id_nevera: true,
+                      id_estado_nevera: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+
+        const resultadoUsuariosTienda = await Promise.all(
+          usuariosTiendaConTiendas.map(async (usuarioTienda) => ({
+            id_usuario: usuarioTienda.id_usuario,
+            nombre_usuario: usuarioTienda.nombre_usuario,
+            apellido_usuario: usuarioTienda.apellido_usuario,
+            email: usuarioTienda.email,
+            celular: usuarioTienda.celular,
+            tiendas: await Promise.all(
+              usuarioTienda.tiendas.map(async (tienda) => ({
+                id_tienda: tienda.id_tienda,
+                nombre_tienda: tienda.nombre_tienda,
+                direccion: tienda.direccion,
+                ciudad: tienda.ciudad.nombre_ciudad,
+                departamento: tienda.ciudad.departamento.nombre_departamento,
+                neveras: await Promise.all(
+                  tienda.neveras.map(async (nevera) => {
+                    const empaquesPendientes =
+                      await this.databaseService.eMPAQUES.count({
+                        where: {
+                          id_nevera: nevera.id_nevera,
+                          id_estado_empaque: 4,
+                        },
+                      });
+
+                    return {
+                      id_nevera: nevera.id_nevera,
+                      id_estado_nevera: nevera.id_estado_nevera,
+                      pendientes_pago: empaquesPendientes > 0,
+                    };
+                  }),
+                ),
+              })),
+            ),
+          })),
+        );
+
+        const ciudades = await this.databaseService.cIUDAD.findMany({
+          include: {
+            departamento: {
+              select: {
+                nombre_departamento: true,
+              },
+            },
+          },
+          orderBy: [
+            { departamento: { nombre_departamento: 'asc' } },
+            { nombre_ciudad: 'asc' },
+          ],
+        });
+
+        return {
+          usuarios_tienda: resultadoUsuariosTienda,
+          ciudades_disponibles: ciudades.map((ciudad) => ({
+            id_ciudad: ciudad.id_ciudad,
+            nombre_ciudad: ciudad.nombre_ciudad,
+            departamento: ciudad.departamento.nombre_departamento,
+          })),
+        };
       }
 
       // Si es rol 2 (admin), puede ver todas las tiendas de sus subordinados

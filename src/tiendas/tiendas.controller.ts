@@ -78,7 +78,7 @@ export class TiendasController {
 
   @Get('sobrinas/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(2,4,5)
+  @Roles(1,2,4,5)
   getSobrinas(@Param('id') id: string, @Req() req: RequestWithUser) {
     const rol_usuario = req.user.roleId;
     const id_param = parseInt(id, 10);
