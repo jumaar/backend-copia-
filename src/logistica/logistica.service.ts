@@ -739,18 +739,21 @@ export class LogisticaService {
       },
       select: {
         id_empaque: true,
-        costo_tienda: true,
         precio_venta_total: true,
         id_producto: true,
+        promocion_id: true,
       },
     });
 
     if (empaques.length === 0) {
-      return { empaques: [], productos: [] };
+      return { empaques: [], productos: [], promociones: [] };
     }
 
     // 2. Obtener IDs únicos de productos
     const idsProductos = Array.from(new Set(empaques.map(e => e.id_producto)));
+
+    // 2.1 Obtener IDs únicos de promociones
+    const idsPromociones = Array.from(new Set(empaques.filter(e => e.promocion_id !== null).map(e => e.promocion_id as number)));
 
     // 3. Obtener productos correspondientes
     const productos = await this.databaseService.pRODUCTOS.findMany({
@@ -765,17 +768,34 @@ export class LogisticaService {
       },
     });
 
+    // 3.1 Obtener promociones correspondientes
+    let promociones: any[] = [];
+    if (idsPromociones.length > 0) {
+      promociones = await this.databaseService.pROMOCIONES.findMany({
+        where: {
+          id_promocion: { in: idsPromociones },
+        },
+      });
+      promociones = promociones.map(p => ({
+        id_promocion: p.id_promocion,
+        nombre: p.nombre,
+        tipo: p.tipo,
+        valor: parseFloat(p.valor.toString()),
+      }));
+    }
+
     // 4. Formatear empaques (convertir Decimal a number)
     const empaquesFormateados = empaques.map(empaque => ({
       id_empaque: empaque.id_empaque,
-      costo_tienda: parseFloat(empaque.costo_tienda.toString()),
-      precio_venta_total: parseFloat(empaque.precio_venta_total.toString()),
+      precio_venta_total: Math.ceil(parseFloat(empaque.precio_venta_total.toString())),
       id_producto: empaque.id_producto,
+      promocion: empaque.promocion_id,
     }));
 
     return {
       empaques: empaquesFormateados,
       productos: productos,
+      promociones: promociones,
     };
   }
 }
