@@ -69,7 +69,7 @@ export class FrigorificoGateway implements OnGatewayConnection, OnGatewayDisconn
 
       client.data.user = payload;
       this.logger.log(`✅ WS: Estación ${payload.sub} conectada desde ${clientIp} (token: ${tokenSource})`);
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`❌ WS: Error de autenticación desde ${clientIp}:`, error.message);
       client.disconnect();
     }
@@ -147,7 +147,7 @@ export class FrigorificoGateway implements OnGatewayConnection, OnGatewayDisconn
         timestamp: new Date()
       });
 
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`❌ WS: Error creando empaques - Estación ${user.sub}:`, error.message);
       client.emit('error', {
         tipo: 'batch-failed',
@@ -193,7 +193,7 @@ export class FrigorificoGateway implements OnGatewayConnection, OnGatewayDisconn
       }));
 
       client.emit('catalogo', catalogoDepurado);
-    } catch (error) {
+    } catch (error: any) {
       this.logger.error(`❌ WS: Error obteniendo catálogo - Estación ${user.sub}:`, error.message);
       client.emit('error', { tipo: 'catalogo-error', mensaje: error.message });
     }

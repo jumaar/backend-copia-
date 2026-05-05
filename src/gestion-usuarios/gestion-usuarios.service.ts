@@ -53,7 +53,7 @@ export class GestionUsuariosService {
         where: { id_usuario: user.id_usuario },
         include: includeRelations,
       });
-    } catch (error) {
+    } catch (error: any) {
       if (error.code === 'P1001') {
         this.logger.error(`Database connection error: ${error.message}`);
         throw new ServiceUnavailableException('Database server is temporarily unavailable');
