@@ -100,6 +100,18 @@ export class TiendasService {
     }
   }
 
+  private async verificarPendientesPagoNevera(id_nevera: number): Promise<boolean> {
+    const [empaquesPendientes, transaccionesPendientes] = await Promise.all([
+      this.databaseService.eMPAQUES.count({
+        where: { id_nevera, id_estado_empaque: 4 },
+      }),
+      this.databaseService.tRANSACCIONES.count({
+        where: { id_nevera, estado_transaccion: 1 },
+      }),
+    ]);
+    return empaquesPendientes > 0 || transaccionesPendientes > 0;
+  }
+
   async create(createTiendaDto: CreateTiendaDto, id_usuario: number) {
     const { nombre_tienda, direccion, id_ciudad } = createTiendaDto;
 
@@ -1028,7 +1040,7 @@ export class TiendasService {
             },
           });
 
-        const resultadoUsuariosTienda = await Promise.all(
+const resultadoUsuariosTienda = await Promise.all(
           usuariosTiendaConTiendas.map(async (usuarioTienda) => ({
             id_usuario: usuarioTienda.id_usuario,
             nombre_usuario: usuarioTienda.nombre_usuario,
@@ -1043,185 +1055,11 @@ export class TiendasService {
                 ciudad: tienda.ciudad.nombre_ciudad,
                 departamento: tienda.ciudad.departamento.nombre_departamento,
                 neveras: await Promise.all(
-                  tienda.neveras.map(async (nevera) => {
-                    const empaquesPendientes =
-                      await this.databaseService.eMPAQUES.count({
-                        where: {
-                          id_nevera: nevera.id_nevera,
-                          id_estado_empaque: 4,
-                        },
-                      });
-
-                    return {
-                      id_nevera: nevera.id_nevera,
-                      id_estado_nevera: nevera.id_estado_nevera,
-                      pendientes_pago: empaquesPendientes > 0,
-                    };
-                  }),
-                ),
-              })),
-            ),
-          })),
-        );
-
-        const ciudades = await this.databaseService.cIUDAD.findMany({
-          include: {
-            departamento: {
-              select: {
-                nombre_departamento: true,
-              },
-            },
-          },
-          orderBy: [
-            { departamento: { nombre_departamento: 'asc' } },
-            { nombre_ciudad: 'asc' },
-          ],
-        });
-
-        return {
-          usuarios_tienda: resultadoUsuariosTienda,
-          ciudades_disponibles: ciudades.map((ciudad) => ({
-            id_ciudad: ciudad.id_ciudad,
-            nombre_ciudad: ciudad.nombre_ciudad,
-            departamento: ciudad.departamento.nombre_departamento,
-          })),
-        };
-      }
-
-      // Si es rol 2 (admin), puede ver todas las tiendas de sus subordinados
-      if (rol_usuario === 2) {
-        // Buscar usuarios logísticos (rol 4) creados por este admin
-        const logisticaTokens =
-          await this.databaseService.tOKEN_REGISTRO.findMany({
-            where: {
-              id_usuario_creador: id_usuario,
-              id_rol_nuevo_usuario: 4, // Rol de logística
-            },
-            select: {
-              id_usuario_nuevo: true,
-            },
-          });
-
-        const logisticaIds = logisticaTokens
-          .map((t) => t.id_usuario_nuevo)
-          .filter((id) => id !== null);
-
-        // Agregar el ID del usuario actual (admin) para incluir tiendas directas si las tiene
-        logisticaIds.push(id_usuario);
-
-        // Buscar usuarios tienda (rol 5) creados por estos logísticos
-        const tiendaTokens = await this.databaseService.tOKEN_REGISTRO.findMany(
-          {
-            where: {
-              id_usuario_creador: { in: logisticaIds },
-              id_rol_nuevo_usuario: 5, // Rol de tienda
-            },
-            select: {
-              id_usuario_nuevo: true,
-            },
-          },
-        );
-
-        const tiendaUsuarioIds = tiendaTokens
-          .map((t) => t.id_usuario_nuevo)
-          .filter((id) => id !== null);
-
-        if (tiendaUsuarioIds.length === 0) {
-          // Devolver estructura vacía pero válida
-          const ciudades = await this.databaseService.cIUDAD.findMany({
-            include: {
-              departamento: {
-                select: {
-                  nombre_departamento: true,
-                },
-              },
-            },
-            orderBy: [
-              { departamento: { nombre_departamento: 'asc' } },
-              { nombre_ciudad: 'asc' },
-            ],
-          });
-
-          return {
-            usuarios_tienda: [],
-            ciudades_disponibles: ciudades.map((ciudad) => ({
-              id_ciudad: ciudad.id_ciudad,
-              nombre_ciudad: ciudad.nombre_ciudad,
-              departamento: ciudad.departamento.nombre_departamento,
-            })),
-          };
-        }
-
-        // Obtener información de los usuarios con rol 5 (usuarios tienda) y sus tiendas en una sola consulta
-        const usuariosTiendaConTiendas =
-          await this.databaseService.uSUARIOS.findMany({
-            where: {
-              id_usuario: {
-                in: tiendaUsuarioIds,
-              },
-              activo: true, // Solo usuarios activos
-            },
-            select: {
-              id_usuario: true,
-              nombre_usuario: true,
-              apellido_usuario: true,
-              email: true,
-              celular: true,
-              tiendas: {
-                include: {
-                  ciudad: {
-                    select: {
-                      nombre_ciudad: true,
-                      departamento: {
-                        select: {
-                          nombre_departamento: true,
-                        },
-                      },
-                    },
-                  },
-                  neveras: {
-                    select: {
-                      id_nevera: true,
-                      id_estado_nevera: true,
-                    },
-                  },
-                },
-              },
-            },
-          });
-
-        // Transformar los resultados y agregar información de pendientes de pago
-        const resultadoUsuariosTienda = await Promise.all(
-          usuariosTiendaConTiendas.map(async (usuarioTienda) => ({
-            id_usuario: usuarioTienda.id_usuario,
-            nombre_usuario: usuarioTienda.nombre_usuario,
-            apellido_usuario: usuarioTienda.apellido_usuario,
-            email: usuarioTienda.email,
-            celular: usuarioTienda.celular,
-            tiendas: await Promise.all(
-              usuarioTienda.tiendas.map(async (tienda) => ({
-                id_tienda: tienda.id_tienda,
-                nombre_tienda: tienda.nombre_tienda,
-                direccion: tienda.direccion,
-                ciudad: tienda.ciudad.nombre_ciudad,
-                departamento: tienda.ciudad.departamento.nombre_departamento,
-                neveras: await Promise.all(
-                  tienda.neveras.map(async (nevera) => {
-                    // Verificar si hay empaques pendientes de pago (estado 4)
-                    const empaquesPendientes =
-                      await this.databaseService.eMPAQUES.count({
-                        where: {
-                          id_nevera: nevera.id_nevera,
-                          id_estado_empaque: 4, // Estado pendiente de pago
-                        },
-                      });
-
-                    return {
-                      id_nevera: nevera.id_nevera,
-                      id_estado_nevera: nevera.id_estado_nevera,
-                      pendientes_pago: empaquesPendientes > 0,
-                    };
-                  }),
+                  tienda.neveras.map(async (nevera) => ({
+                    id_nevera: nevera.id_nevera,
+                    id_estado_nevera: nevera.id_estado_nevera,
+                    pendientes_pago: await this.verificarPendientesPagoNevera(nevera.id_nevera),
+                  })),
                 ),
               })),
             ),
@@ -1340,7 +1178,7 @@ export class TiendasService {
             apellido_usuario: usuarioTienda.apellido_usuario,
             email: usuarioTienda.email,
             celular: usuarioTienda.celular,
-            tiendas: await Promise.all(
+tiendas: await Promise.all(
               usuarioTienda.tiendas.map(async (tienda) => ({
                 id_tienda: tienda.id_tienda,
                 nombre_tienda: tienda.nombre_tienda,
@@ -1348,22 +1186,11 @@ export class TiendasService {
                 ciudad: tienda.ciudad.nombre_ciudad,
                 departamento: tienda.ciudad.departamento.nombre_departamento,
                 neveras: await Promise.all(
-                  tienda.neveras.map(async (nevera) => {
-                    // Verificar si hay empaques pendientes de pago (estado 4)
-                    const empaquesPendientes =
-                      await this.databaseService.eMPAQUES.count({
-                        where: {
-                          id_nevera: nevera.id_nevera,
-                          id_estado_empaque: 4, // Estado pendiente de pago
-                        },
-                      });
-
-                    return {
-                      id_nevera: nevera.id_nevera,
-                      id_estado_nevera: nevera.id_estado_nevera,
-                      pendientes_pago: empaquesPendientes > 0,
-                    };
-                  }),
+                  tienda.neveras.map(async (nevera) => ({
+                    id_nevera: nevera.id_nevera,
+                    id_estado_nevera: nevera.id_estado_nevera,
+                    pendientes_pago: await this.verificarPendientesPagoNevera(nevera.id_nevera),
+                  })),
                 ),
               })),
             ),
@@ -1469,23 +1296,12 @@ export class TiendasService {
               direccion: tienda.direccion,
               ciudad: tienda.ciudad.nombre_ciudad,
               departamento: tienda.ciudad.departamento.nombre_departamento,
-              neveras: await Promise.all(
-                tienda.neveras.map(async (nevera) => {
-                  // Verificar si hay empaques pendientes de pago (estado 4)
-                  const empaquesPendientes =
-                    await this.databaseService.eMPAQUES.count({
-                      where: {
-                        id_nevera: nevera.id_nevera,
-                        id_estado_empaque: 4, // Estado pendiente de pago
-                      },
-                    });
-
-                  return {
-                    id_nevera: nevera.id_nevera,
-                    id_estado_nevera: nevera.id_estado_nevera,
-                    pendientes_pago: empaquesPendientes > 0,
-                  };
-                }),
+neveras: await Promise.all(
+                tienda.neveras.map(async (nevera) => ({
+                  id_nevera: nevera.id_nevera,
+                  id_estado_nevera: nevera.id_estado_nevera,
+                  pendientes_pago: await this.verificarPendientesPagoNevera(nevera.id_nevera),
+                })),
               ),
             })),
           ),
