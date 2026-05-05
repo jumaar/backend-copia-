@@ -20,5 +20,9 @@ RUN chmod +x /usr/local/bin/backup.sh && \
 # Crear el archivo de log para cron
 RUN touch /var/log/cron.log
 
+# Crear .pgpass para autenticación de pg_dump (necesario porque cron no hereda env vars)
+RUN echo "db:5432:mi_base_de_datos:admin:password123" > /root/.pgpass && \
+    chmod 600 /root/.pgpass
+
 # Set entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
