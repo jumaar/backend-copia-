@@ -1157,6 +1157,7 @@ export class LogisticaService {
 
     try {
       const resultado = await this.databaseService.$transaction(async (prisma) => {
+        // 1. Transacción de pago (logístico recibe el dinero)
         const transaccionPago = await prisma.tRANSACCIONES.create({
           data: {
             id_empaque: null,
@@ -1173,6 +1174,7 @@ export class LogisticaService {
           },
         });
 
+        // 2. Ticket consolidado (lo que debe la tienda)
         const transaccionConsolidada = await prisma.tRANSACCIONES.create({
           data: {
             id_empaque: null,
@@ -1187,7 +1189,30 @@ export class LogisticaService {
           },
         });
 
+        // 3. Transacción individual por cada empaque + actualizar empaque a estado 8
+        const transaccionesEmpaques: any[] = [];
         for (const detalle of detallesCalculo) {
+          const transaccionEmpaque = await prisma.tRANSACCIONES.create({
+            data: {
+              id_empaque: detalle.id_empaque,
+              id_usuario: idUsuarioTienda,
+              id_transaccion_rel: transaccionConsolidada.id_transaccion,
+              monto: detalle.liquidar,
+              hora_transaccion: fechaAhora,
+              id_tipo_transaccion: 1,
+              nota_opcional: `Venta empaque #${detalle.id_empaque} - ${detalle.nombre_producto}${detalle.promocion_id ? ` (promo ${detalle.valor_promocion}% dto)` : ''}`,
+              estado_transaccion: 2,
+              id_nevera: idNevera,
+            },
+          });
+
+          transaccionesEmpaques.push({
+            id_transaccion: transaccionEmpaque.id_transaccion,
+            id_empaque: detalle.id_empaque,
+            producto: detalle.nombre_producto,
+            liquidar: detalle.liquidar,
+          });
+
           await prisma.eMPAQUES.update({
             where: { id_empaque: detalle.id_empaque },
             data: {
@@ -1198,6 +1223,7 @@ export class LogisticaService {
           });
         }
 
+        // 4. Si hay diferencia, crear transacción pendiente
         if (esAbonoParcial || esAbonoMayor) {
           const saldoNegativo = esAbonoMayor;
           await prisma.tRANSACCIONES.create({
@@ -1221,6 +1247,7 @@ export class LogisticaService {
           total_liquidado: totalLiquidar,
           monto_recibido: monto,
           saldo_pendiente: saldoPendiente,
+          transacciones_empaques: transaccionesEmpaques,
         };
       });
 
