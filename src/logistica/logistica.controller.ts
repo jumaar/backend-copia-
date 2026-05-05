@@ -4,6 +4,7 @@ import { CreateLogisticaDto } from './dto/create-logistica.dto';
 import { UpdateLogisticaDto } from './dto/update-logistica.dto';
 import { CuentasDto } from './dto/cuentas.dto';
 import { ConsolidacionCuentasDto } from './dto/consolidacion-cuentas.dto';
+import { LiquidacionNeveraDto } from './dto/liquidacion-nevera.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -63,9 +64,33 @@ export class LogisticaController {
 
   @Get('cuentas/nevera/:id_nevera')
   @Roles(1, 2, 4, 5)
-  async getCuentasNevera(@Param('id_nevera') idNevera: string) {
+  async getCuentasNevera(
+    @Param('id_nevera') idNevera: string,
+    @Query('mes') mes?: string,
+    @Query('año') año?: string,
+  ) {
     const idNeveraNum = Number(idNevera);
-    return this.logisticaService.getEmpaquesPendientesPorNevera(idNeveraNum);
+    return this.logisticaService.getEmpaquesPendientesPorNevera(
+      idNeveraNum,
+      mes ? Number(mes) : undefined,
+      año ? Number(año) : undefined,
+    );
+  }
+
+  @Post('cuentas/nevera/:id_nevera')
+  @Roles(2, 4)
+  async liquidarNevera(
+    @Param('id_nevera') idNevera: string,
+    @Body() liquidacionDto: LiquidacionNeveraDto,
+    @Req() req: any,
+  ) {
+    const idNeveraNum = Number(idNevera);
+    const idUsuarioLogistico = req.user.id_usuario;
+    return this.logisticaService.liquidarNevera(
+      idNeveraNum,
+      idUsuarioLogistico,
+      liquidacionDto,
+    );
   }
 
 }
