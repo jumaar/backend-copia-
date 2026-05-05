@@ -908,6 +908,20 @@ export class LogisticaService {
     const idUsuarioTienda = nevera.tienda.id_usuario;
     const fechaAhora = new Date();
 
+    const [logisticoInfo, tiendaInfo] = await Promise.all([
+      this.databaseService.uSUARIOS.findUnique({
+        where: { id_usuario: idUsuarioLogistico },
+        select: { nombre_usuario: true },
+      }),
+      this.databaseService.uSUARIOS.findUnique({
+        where: { id_usuario: idUsuarioTienda },
+        select: { nombre_usuario: true },
+      }),
+    ]);
+
+    const nombreLogistico = logisticoInfo?.nombre_usuario || 'Logistico';
+    const nombreTienda = tiendaInfo?.nombre_usuario || 'Tienda';
+
     // ─── CASO A: Liquidación con empaques ───
     if (idsEmpaques && idsEmpaques.length > 0) {
       const empaquesEncontrados = await this.databaseService.eMPAQUES.findMany({
@@ -989,7 +1003,7 @@ export class LogisticaService {
       return await this._ejecutarLiquidacion(
         idNevera, idUsuarioTienda, idUsuarioLogistico,
         monto, totalLiquidar, nota_opcional, fechaAhora,
-        detallesCalculo, nevera.tienda.nombre_tienda,
+        detallesCalculo, nombreTienda, nombreLogistico,
       );
     }
 
@@ -1029,9 +1043,7 @@ export class LogisticaService {
 
     try {
       const resultado = await this.databaseService.$transaction(async (prisma) => {
-        const notaPago = nota_opcional
-          ? `${nota_opcional} | #NEVERA:${idNevera}`
-          : `#NEVERA:${idNevera}`;
+        const notaPago = `Cobrado por: ${nombreLogistico} (ID: ${idUsuarioLogistico}) | Nota: abono de $${monto.toLocaleString('es-CO')} hecho por el usuario tienda (ID: ${idUsuarioTienda}) | #NEVERA:${idNevera}`;
 
         const transaccionPago = await prisma.tRANSACCIONES.create({
           data: {
@@ -1052,7 +1064,7 @@ export class LogisticaService {
             id_empaque: null,
             id_usuario: idUsuarioTienda,
             id_transaccion_rel: transaccionPago.id_transaccion,
-            monto: totalPendiente,
+            monto: -totalPendiente, // NEGATIVO (lo que debe la tienda)
             hora_transaccion: fechaAhora,
             id_tipo_transaccion: 3,
             nota_opcional: `#NEVERA:${idNevera} CONSOLIDADO_PENDIENTES${nota_opcional ? ' | ' + nota_opcional : ''}`,
@@ -1141,6 +1153,7 @@ export class LogisticaService {
     fechaAhora: Date,
     detallesCalculo: any[],
     nombreTienda: string,
+    nombreLogistico: string,
   ) {
     const esAbonoCompleto = monto === totalLiquidar;
     const esAbonoParcial = monto < totalLiquidar;
@@ -1158,6 +1171,8 @@ export class LogisticaService {
     try {
       const resultado = await this.databaseService.$transaction(async (prisma) => {
         // 1. Transacción de pago (logístico recibe el dinero)
+const notaPago = `Cobrado por: ${nombreLogistico} (ID: ${idUsuarioLogistico}) | Nota: abono de $${monto.toLocaleString('es-CO')} hecho por el usuario tienda (ID: ${idUsuarioTienda}) | #NEVERA:${idNevera}`;
+
         const transaccionPago = await prisma.tRANSACCIONES.create({
           data: {
             id_empaque: null,
@@ -1166,9 +1181,7 @@ export class LogisticaService {
             monto: monto,
             hora_transaccion: fechaAhora,
             id_tipo_transaccion: 4,
-            nota_opcional: nota_opcional
-              ? `${nota_opcional} | #NEVERA:${idNevera}`
-              : `#NEVERA:${idNevera}`,
+            nota_opcional: notaPago,
             estado_transaccion: 2,
             id_nevera: idNevera,
           },
@@ -1180,7 +1193,7 @@ export class LogisticaService {
             id_empaque: null,
             id_usuario: idUsuarioTienda,
             id_transaccion_rel: transaccionPago.id_transaccion,
-            monto: totalLiquidar,
+            monto: -totalLiquidar, // NEGATIVO (lo que debe la tienda)
             hora_transaccion: fechaAhora,
             id_tipo_transaccion: 3,
             nota_opcional: `#NEVERA:${idNevera} EMPAQUES:${idsEmpaquesStr}${nota_opcional ? ' | ' + nota_opcional : ''}`,
