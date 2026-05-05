@@ -811,6 +811,7 @@ export class LogisticaService {
     const transaccionesDirectas = await this.databaseService.tRANSACCIONES.findMany({
       where: {
         id_usuario: idUsuarioTienda,
+        id_nevera: idNevera,
         hora_transaccion: { gte: fechaInicio, lte: fechaFin },
       },
       include: {
@@ -828,35 +829,7 @@ export class LogisticaService {
       orderBy: { hora_transaccion: 'desc' },
     });
 
-    const transaccionesFiltradas = transaccionesDirectas.filter(t => {
-      if (t.id_empaque !== null && t.empaque?.id_nevera === idNevera) {
-        return true;
-      }
-      if (t.id_empaque === null && t.id_tipo_transaccion === 3 && t.nota_opcional?.includes(`#NEVERA:${idNevera}`)) {
-        return true;
-      }
-      if (t.id_empaque === null && t.id_tipo_transaccion === 4) {
-        const consolidadoQueLoReferencia = transaccionesDirectas.find(
-          tt =>
-            tt.id_tipo_transaccion === 3 &&
-            tt.id_transaccion_rel === t.id_transaccion &&
-            tt.nota_opcional?.includes(`#NEVERA:${idNevera}`),
-        );
-        if (consolidadoQueLoReferencia) return true;
-      }
-      if (t.id_empaque === null && t.id_tipo_transaccion === 2 && t.id_transaccion_rel !== null) {
-        const padre = transaccionesDirectas.find(
-          tt =>
-            tt.id_tipo_transaccion === 3 &&
-            tt.id_transaccion === t.id_transaccion_rel &&
-            tt.nota_opcional?.includes(`#NEVERA:${idNevera}`),
-        );
-        if (padre) return true;
-      }
-      return false;
-    });
-
-    const transaccionesFormateadas = transaccionesFiltradas.map(t => {
+    const transaccionesFormateadas = transaccionesDirectas.map(t => {
       const infoPago = (t.id_empaque === null && t.transaccionRel)
         ? {
             id_usuario_pago: t.transaccionRel.usuario.id_usuario,
@@ -933,83 +906,242 @@ export class LogisticaService {
     }
 
     const idUsuarioTienda = nevera.tienda.id_usuario;
+    const fechaAhora = new Date();
 
-    const empaquesEncontrados = await this.databaseService.eMPAQUES.findMany({
+    // ─── CASO A: Liquidación con empaques ───
+    if (idsEmpaques && idsEmpaques.length > 0) {
+      const empaquesEncontrados = await this.databaseService.eMPAQUES.findMany({
+        where: {
+          id_empaque: { in: idsEmpaques },
+          id_nevera: idNevera,
+          id_estado_empaque: 4,
+        },
+        include: {
+          producto: {
+            select: {
+              id_producto: true,
+              nombre_producto: true,
+              precio_tienda: true,
+            },
+          },
+          promocion: {
+            select: {
+              id_promocion: true,
+              valor: true,
+            },
+          },
+        },
+      });
+
+      const idsEncontrados = new Set(empaquesEncontrados.map(e => e.id_empaque));
+      const idsNoEncontrados = idsEmpaques.filter(id => !idsEncontrados.has(id));
+
+      if (idsNoEncontrados.length > 0) {
+        throw new BadRequestException({
+          error: 'Algunos empaques no están en estado pendiente de pago o no pertenecen a esta nevera',
+          empaques_no_validos: idsNoEncontrados,
+        });
+      }
+
+      if (empaquesEncontrados.length === 0) {
+        throw new BadRequestException('No hay empaques válidos para procesar');
+      }
+
+      const detallesCalculo: any[] = [];
+      let totalLiquidar = 0;
+
+      for (const empaque of empaquesEncontrados) {
+        const precioVenta = parseFloat(empaque.precio_venta_total.toString());
+        const precioTiendaPorcentaje = parseFloat(empaque.producto.precio_tienda.toString());
+        const tienePromocion = empaque.promocion !== null;
+        const valorPromocion = tienePromocion
+          ? parseFloat(empaque.promocion!.valor.toString())
+          : 0;
+
+        const descuento = tienePromocion
+          ? Math.ceil(precioVenta * valorPromocion / 100)
+          : 0;
+
+        const precioConDescuento = precioVenta - descuento;
+
+        const tiendaComision = Math.ceil(precioConDescuento * precioTiendaPorcentaje / 100);
+
+        let liquidar = precioConDescuento - tiendaComision;
+        liquidar = Math.ceil(liquidar);
+
+        totalLiquidar += liquidar;
+
+        detallesCalculo.push({
+          id_empaque: empaque.id_empaque,
+          id_producto: empaque.producto.id_producto,
+          nombre_producto: empaque.producto.nombre_producto,
+          precio_venta: precioVenta,
+          promocion_id: empaque.promocion?.id_promocion ?? null,
+          valor_promocion: valorPromocion,
+          descuento,
+          precio_con_descuento: precioConDescuento,
+          porcentaje_tienda: precioTiendaPorcentaje,
+          comision_tienda: tiendaComision,
+          liquidar,
+        });
+      }
+
+      return await this._ejecutarLiquidacion(
+        idNevera, idUsuarioTienda, idUsuarioLogistico,
+        monto, totalLiquidar, nota_opcional, fechaAhora,
+        detallesCalculo, nevera.tienda.nombre_tienda,
+      );
+    }
+
+    // ─── CASO B: Liquidación sin empaques (procesar transacciones pendientes) ───
+    const transaccionesPendientes = await this.databaseService.tRANSACCIONES.findMany({
       where: {
-        id_empaque: { in: idsEmpaques },
+        id_usuario: idUsuarioTienda,
         id_nevera: idNevera,
-        id_estado_empaque: 4,
+        estado_transaccion: 1,
+        id_tipo_transaccion: 2,
       },
-      include: {
-        producto: {
-          select: {
-            id_producto: true,
-            nombre_producto: true,
-            precio_tienda: true,
-          },
-        },
-        promocion: {
-          select: {
-            id_promocion: true,
-            valor: true,
-          },
-        },
+      select: {
+        id_transaccion: true,
+        monto: true,
       },
     });
 
-    const idsEncontrados = new Set(empaquesEncontrados.map(e => e.id_empaque));
-    const idsNoEncontrados = idsEmpaques.filter(id => !idsEncontrados.has(id));
+    if (transaccionesPendientes.length === 0) {
+      throw new BadRequestException(
+        'No hay transacciones pendientes para consolidar en esta nevera. Envía empaques en el body o verifica que existan saldos pendientes.',
+      );
+    }
 
-    if (idsNoEncontrados.length > 0) {
-      throw new BadRequestException({
-        error: 'Algunos empaques no están en estado pendiente de pago o no pertenecen a esta nevera',
-        empaques_no_validos: idsNoEncontrados,
+    const idsTransaccionesPendientes = transaccionesPendientes.map(t => t.id_transaccion);
+    const totalPendienteRaw = transaccionesPendientes.reduce(
+      (sum, t) => sum + parseFloat(t.monto.toString()),
+      0,
+    );
+    const totalPendiente = Math.round(totalPendienteRaw);
+
+    const detallesCalculo: any[] = transaccionesPendientes.map(t => ({
+      id_transaccion_pendiente: t.id_transaccion,
+      monto_pendiente: parseFloat(t.monto.toString()),
+    }));
+
+    let saldoPendiente = 0;
+
+    try {
+      const resultado = await this.databaseService.$transaction(async (prisma) => {
+        const notaPago = nota_opcional
+          ? `${nota_opcional} | #NEVERA:${idNevera}`
+          : `#NEVERA:${idNevera}`;
+
+        const transaccionPago = await prisma.tRANSACCIONES.create({
+          data: {
+            id_empaque: null,
+            id_usuario: idUsuarioLogistico,
+            id_transaccion_rel: null,
+            monto: monto,
+            hora_transaccion: fechaAhora,
+            id_tipo_transaccion: 4,
+            nota_opcional: notaPago,
+            estado_transaccion: 2,
+            id_nevera: idNevera,
+          },
+        });
+
+        const transaccionConsolidada = await prisma.tRANSACCIONES.create({
+          data: {
+            id_empaque: null,
+            id_usuario: idUsuarioTienda,
+            id_transaccion_rel: transaccionPago.id_transaccion,
+            monto: totalPendiente,
+            hora_transaccion: fechaAhora,
+            id_tipo_transaccion: 3,
+            nota_opcional: `#NEVERA:${idNevera} CONSOLIDADO_PENDIENTES${nota_opcional ? ' | ' + nota_opcional : ''}`,
+            estado_transaccion: 4,
+            id_nevera: idNevera,
+          },
+        });
+
+        await prisma.tRANSACCIONES.updateMany({
+          where: {
+            id_usuario: idUsuarioTienda,
+            id_nevera: idNevera,
+            estado_transaccion: 1,
+            id_transaccion: { in: idsTransaccionesPendientes },
+          },
+          data: {
+            estado_transaccion: 2,
+            id_transaccion_rel: transaccionConsolidada.id_transaccion,
+          },
+        });
+
+        const esAbonoCompleto = monto === totalPendiente;
+        const esAbonoParcial = monto < totalPendiente;
+        const esAbonoMayor = monto > totalPendiente;
+        saldoPendiente = 0;
+
+        if (esAbonoParcial) {
+          saldoPendiente = totalPendiente - monto;
+        } else if (esAbonoMayor) {
+          saldoPendiente = totalPendiente - monto;
+        }
+
+        if (esAbonoParcial || esAbonoMayor) {
+          await prisma.tRANSACCIONES.create({
+            data: {
+              id_empaque: null,
+              id_usuario: idUsuarioTienda,
+              id_transaccion_rel: transaccionConsolidada.id_transaccion,
+              monto: saldoPendiente,
+              hora_transaccion: fechaAhora,
+              id_tipo_transaccion: 2,
+              nota_opcional: `Saldo ${esAbonoMayor ? 'adelantado pendiente' : 'a favor del usuario'} consolidación #NEVERA:${idNevera} ticket:${transaccionConsolidada.id_transaccion}`,
+              estado_transaccion: 1,
+              id_nevera: idNevera,
+            },
+          });
+        }
+
+        return {
+          id_transaccion_consolidada: transaccionConsolidada.id_transaccion,
+          id_transaccion_pago: transaccionPago.id_transaccion,
+          total_pendiente_consolidado: totalPendiente,
+          monto_recibido: monto,
+          saldo_pendiente: saldoPendiente,
+        };
       });
+
+      return {
+        message: 'Consolidación de pendientes realizada exitosamente',
+        resumen: {
+          nevera: { id_nevera: idNevera, nombre_tienda: nevera.tienda.nombre_tienda },
+          usuario_tienda: idUsuarioTienda,
+          usuario_logistico: idUsuarioLogistico,
+          total_pendiente_consolidado: totalPendiente,
+          monto_recibido: monto,
+          saldo_pendiente: saldoPendiente,
+          transacciones_pendientes_procesadas: transaccionesPendientes.length,
+        },
+        detalle_pendientes: detallesCalculo,
+        transacciones: resultado,
+      };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new BadRequestException(`Error al consolidar pendientes de nevera: ${errorMessage}`);
     }
+  }
 
-    if (empaquesEncontrados.length === 0) {
-      throw new BadRequestException('No hay empaques válidos para procesar');
-    }
-
-    const detallesCalculo: any[] = [];
-    let totalLiquidar = 0;
-
-    for (const empaque of empaquesEncontrados) {
-      const precioVenta = parseFloat(empaque.precio_venta_total.toString());
-      const precioTiendaPorcentaje = parseFloat(empaque.producto.precio_tienda.toString());
-      const tienePromocion = empaque.promocion !== null;
-      const valorPromocion = tienePromocion
-        ? parseFloat(empaque.promocion!.valor.toString())
-        : 0;
-
-      const descuento = tienePromocion
-        ? Math.ceil(precioVenta * valorPromocion / 100)
-        : 0;
-
-      const precioConDescuento = precioVenta - descuento;
-
-      const tiendaComision = Math.ceil(precioConDescuento * precioTiendaPorcentaje / 100);
-
-      let liquidar = precioConDescuento - tiendaComision;
-      liquidar = Math.ceil(liquidar);
-
-      totalLiquidar += liquidar;
-
-      detallesCalculo.push({
-        id_empaque: empaque.id_empaque,
-        id_producto: empaque.producto.id_producto,
-        nombre_producto: empaque.producto.nombre_producto,
-        precio_venta: precioVenta,
-        promocion_id: empaque.promocion?.id_promocion ?? null,
-        valor_promocion: valorPromocion,
-        descuento,
-        precio_con_descuento: precioConDescuento,
-        porcentaje_tienda: precioTiendaPorcentaje,
-        comision_tienda: tiendaComision,
-        liquidar,
-      });
-    }
-
+  private async _ejecutarLiquidacion(
+    idNevera: number,
+    idUsuarioTienda: number,
+    idUsuarioLogistico: number,
+    monto: number,
+    totalLiquidar: number,
+    nota_opcional: string | undefined,
+    fechaAhora: Date,
+    detallesCalculo: any[],
+    nombreTienda: string,
+  ) {
     const esAbonoCompleto = monto === totalLiquidar;
     const esAbonoParcial = monto < totalLiquidar;
     const esAbonoMayor = monto > totalLiquidar;
@@ -1021,13 +1153,10 @@ export class LogisticaService {
       saldoPendiente = totalLiquidar - monto;
     }
 
-    const fechaAhora = new Date();
-    const idsEmpaquesStr = empaquesEncontrados.map(e => e.id_empaque).join(',');
+    const idsEmpaquesStr = detallesCalculo.map(d => d.id_empaque).join(',');
 
     try {
       const resultado = await this.databaseService.$transaction(async (prisma) => {
-        const notaConsolidado = `#NEVERA:${idNevera} EMPAQUES:${idsEmpaquesStr}${nota_opcional ? ' | ' + nota_opcional : ''}`;
-
         const transaccionPago = await prisma.tRANSACCIONES.create({
           data: {
             id_empaque: null,
@@ -1040,6 +1169,7 @@ export class LogisticaService {
               ? `${nota_opcional} | #NEVERA:${idNevera}`
               : `#NEVERA:${idNevera}`,
             estado_transaccion: 2,
+            id_nevera: idNevera,
           },
         });
 
@@ -1051,8 +1181,9 @@ export class LogisticaService {
             monto: totalLiquidar,
             hora_transaccion: fechaAhora,
             id_tipo_transaccion: 3,
-            nota_opcional: notaConsolidado,
+            nota_opcional: `#NEVERA:${idNevera} EMPAQUES:${idsEmpaquesStr}${nota_opcional ? ' | ' + nota_opcional : ''}`,
             estado_transaccion: 4,
+            id_nevera: idNevera,
           },
         });
 
@@ -1079,6 +1210,7 @@ export class LogisticaService {
               id_tipo_transaccion: 2,
               nota_opcional: `Saldo ${saldoNegativo ? 'adelantado pendiente' : 'a favor del usuario'} consolidación #NEVERA:${idNevera} ticket:${transaccionConsolidada.id_transaccion}`,
               estado_transaccion: 1,
+              id_nevera: idNevera,
             },
           });
         }
@@ -1095,13 +1227,13 @@ export class LogisticaService {
       return {
         message: 'Liquidación de nevera realizada exitosamente',
         resumen: {
-          nevera: { id_nevera: idNevera, nombre_tienda: nevera.tienda.nombre_tienda },
+          nevera: { id_nevera: idNevera, nombre_tienda: nombreTienda },
           usuario_tienda: idUsuarioTienda,
           usuario_logistico: idUsuarioLogistico,
           total_liquidado: totalLiquidar,
           monto_recibido: monto,
           saldo_pendiente: saldoPendiente,
-          empaques_procesados: empaquesEncontrados.length,
+          empaques_procesados: detallesCalculo.length,
         },
         detalle_calculo: detallesCalculo,
         transacciones: resultado,

@@ -1,4 +1,4 @@
-import { IsNumber, IsString, IsOptional, IsArray, ArrayMinSize, Min } from 'class-validator';
+import { IsNumber, IsString, IsOptional, IsArray, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class LiquidacionNeveraDto {
@@ -11,9 +11,9 @@ export class LiquidacionNeveraDto {
   @IsString()
   nota_opcional?: string;
 
+  @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
   @Type(() => Number)
   @IsNumber({}, { each: true })
-  empaques: number[];
+  empaques?: number[];
 }
