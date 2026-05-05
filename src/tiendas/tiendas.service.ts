@@ -100,13 +100,13 @@ export class TiendasService {
     }
   }
 
-  private async verificarPendientesPagoNevera(id_nevera: number): Promise<boolean> {
+  private async verificarPendientesPagoNevera(id_nevera: number, id_usuario_tienda: number): Promise<boolean> {
     const [empaquesPendientes, transaccionesPendientes] = await Promise.all([
       this.databaseService.eMPAQUES.count({
         where: { id_nevera, id_estado_empaque: 4 },
       }),
       this.databaseService.tRANSACCIONES.count({
-        where: { id_nevera, estado_transaccion: 1 },
+        where: { id_nevera, estado_transaccion: 1, id_usuario: id_usuario_tienda },
       }),
     ]);
     return empaquesPendientes > 0 || transaccionesPendientes > 0;
@@ -1058,7 +1058,7 @@ const resultadoUsuariosTienda = await Promise.all(
                   tienda.neveras.map(async (nevera) => ({
                     id_nevera: nevera.id_nevera,
                     id_estado_nevera: nevera.id_estado_nevera,
-                    pendientes_pago: await this.verificarPendientesPagoNevera(nevera.id_nevera),
+                    pendientes_pago: await this.verificarPendientesPagoNevera(nevera.id_nevera, usuarioTienda.id_usuario),
                   })),
                 ),
               })),
@@ -1189,7 +1189,7 @@ tiendas: await Promise.all(
                   tienda.neveras.map(async (nevera) => ({
                     id_nevera: nevera.id_nevera,
                     id_estado_nevera: nevera.id_estado_nevera,
-                    pendientes_pago: await this.verificarPendientesPagoNevera(nevera.id_nevera),
+                    pendientes_pago: await this.verificarPendientesPagoNevera(nevera.id_nevera, usuarioTienda.id_usuario),
                   })),
                 ),
               })),
@@ -1300,7 +1300,7 @@ neveras: await Promise.all(
                 tienda.neveras.map(async (nevera) => ({
                   id_nevera: nevera.id_nevera,
                   id_estado_nevera: nevera.id_estado_nevera,
-                  pendientes_pago: await this.verificarPendientesPagoNevera(nevera.id_nevera),
+                  pendientes_pago: await this.verificarPendientesPagoNevera(nevera.id_nevera, usuarioTienda.id_usuario),
                 })),
               ),
             })),

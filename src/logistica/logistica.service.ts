@@ -486,8 +486,8 @@ export class LogisticaService {
               hora_transaccion: new Date(),
               id_tipo_transaccion: 5, // dinero entregado a acreedor
               nota_opcional: notaConMonto,
-              estado_transaccion: 2 // pagado
-            }
+              estado_transaccion: 1 // pendiente (logístico liquida con admin después)
+            },
           });
 
           // Crear transacción pendiente para el monto adelantado
@@ -568,8 +568,8 @@ export class LogisticaService {
             hora_transaccion: new Date(),
             id_tipo_transaccion: 5, // dinero entregado a acreedor
             nota_opcional: notaConMonto,
-            estado_transaccion: 2 // pagado
-          }
+            estado_transaccion: 1 // pendiente (logístico liquida con admin después)
+          },
         });
 
         // PASO 2: Crear transacción consolidada (todo lo que debe el usuario)
@@ -1000,10 +1000,35 @@ export class LogisticaService {
         });
       }
 
+      const transaccionesPendientesPrevias = await this.databaseService.tRANSACCIONES.findMany({
+        where: {
+          id_usuario: idUsuarioTienda,
+          id_nevera: idNevera,
+          estado_transaccion: 1,
+          id_tipo_transaccion: 2,
+        },
+        select: { id_transaccion: true, monto: true },
+      });
+
+      const idsPendientesPrevias = transaccionesPendientesPrevias.map(t => t.id_transaccion);
+      const montoPendientesPrevias = transaccionesPendientesPrevias.reduce(
+        (sum, t) => sum + parseFloat(t.monto.toString()), 0,
+      );
+
+      totalLiquidar += montoPendientesPrevias;
+      totalLiquidar = Math.round(totalLiquidar);
+
+      if (totalLiquidar <= 0) {
+        throw new BadRequestException(
+          'El saldo a favor del usuario supera o iguala el valor de los empaques. Use la opción sin empaques para ajustar saldos directamente.',
+        );
+      }
+
       return await this._ejecutarLiquidacion(
         idNevera, idUsuarioTienda, idUsuarioLogistico,
         monto, totalLiquidar, nota_opcional, fechaAhora,
         detallesCalculo, nombreTienda, nombreLogistico,
+        idsPendientesPrevias,
       );
     }
 
@@ -1022,9 +1047,61 @@ export class LogisticaService {
     });
 
     if (transaccionesPendientes.length === 0) {
-      throw new BadRequestException(
-        'No hay transacciones pendientes para consolidar en esta nevera. Envía empaques en el body o verifica que existan saldos pendientes.',
-      );
+      const montoAdelanto = Math.abs(monto);
+
+      try {
+        const resultado = await this.databaseService.$transaction(async (prisma) => {
+          const notaPago = `Cobrado por: ${nombreLogistico} (ID: ${idUsuarioLogistico}) | Nota: adelanto de $${montoAdelanto.toLocaleString('es-CO')} hecho por el usuario tienda (ID: ${idUsuarioTienda}) | #NEVERA:${idNevera}`;
+
+          const transaccionPago = await prisma.tRANSACCIONES.create({
+            data: {
+              id_empaque: null,
+              id_usuario: idUsuarioLogistico,
+              id_transaccion_rel: null,
+              monto: montoAdelanto,
+              hora_transaccion: fechaAhora,
+              id_tipo_transaccion: 4,
+              nota_opcional: notaPago,
+              estado_transaccion: 1,
+              id_nevera: idNevera,
+            },
+          });
+
+          const transaccionAdelanto = await prisma.tRANSACCIONES.create({
+            data: {
+              id_empaque: null,
+              id_usuario: idUsuarioTienda,
+              id_transaccion_rel: transaccionPago.id_transaccion,
+              monto: -montoAdelanto,
+              hora_transaccion: fechaAhora,
+              id_tipo_transaccion: 2,
+              nota_opcional: `Adelanto pendiente #NEVERA:${idNevera}${nota_opcional ? ' | ' + nota_opcional : ''}`,
+              estado_transaccion: 1,
+              id_nevera: idNevera,
+            },
+          });
+
+          return {
+            id_transaccion_pago: transaccionPago.id_transaccion,
+            id_transaccion_adelanto: transaccionAdelanto.id_transaccion,
+            monto_adelantado: montoAdelanto,
+          };
+        });
+
+        return {
+          message: 'Adelanto registrado exitosamente',
+          resumen: {
+            nevera: { id_nevera: idNevera, nombre_tienda: nevera.tienda.nombre_tienda },
+            usuario_tienda: idUsuarioTienda,
+            usuario_logistico: idUsuarioLogistico,
+            monto_adelantado: montoAdelanto,
+          },
+          transacciones: resultado,
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        throw new BadRequestException(`Error al registrar adelanto: ${errorMessage}`);
+      }
     }
 
     const idsTransaccionesPendientes = transaccionesPendientes.map(t => t.id_transaccion);
@@ -1054,7 +1131,7 @@ export class LogisticaService {
             hora_transaccion: fechaAhora,
             id_tipo_transaccion: 4,
             nota_opcional: notaPago,
-            estado_transaccion: 2,
+            estado_transaccion: 1,
             id_nevera: idNevera,
           },
         });
@@ -1154,6 +1231,7 @@ export class LogisticaService {
     detallesCalculo: any[],
     nombreTienda: string,
     nombreLogistico: string,
+    idsPendientesPrevias: number[],
   ) {
     const esAbonoCompleto = monto === totalLiquidar;
     const esAbonoParcial = monto < totalLiquidar;
@@ -1182,7 +1260,7 @@ const notaPago = `Cobrado por: ${nombreLogistico} (ID: ${idUsuarioLogistico}) | 
             hora_transaccion: fechaAhora,
             id_tipo_transaccion: 4,
             nota_opcional: notaPago,
-            estado_transaccion: 2,
+            estado_transaccion: 1,
             id_nevera: idNevera,
           },
         });
@@ -1201,6 +1279,18 @@ const notaPago = `Cobrado por: ${nombreLogistico} (ID: ${idUsuarioLogistico}) | 
             id_nevera: idNevera,
           },
         });
+
+        if (idsPendientesPrevias.length > 0) {
+          await prisma.tRANSACCIONES.updateMany({
+            where: {
+              id_transaccion: { in: idsPendientesPrevias },
+            },
+            data: {
+              estado_transaccion: 2,
+              id_transaccion_rel: transaccionConsolidada.id_transaccion,
+            },
+          });
+        }
 
         // 3. Transacción individual por cada empaque + actualizar empaque a estado 8
         const transaccionesEmpaques: any[] = [];
