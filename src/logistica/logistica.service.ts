@@ -817,7 +817,7 @@ export class LogisticaService {
       include: {
         estadoTransaccion: { select: { id_estado_transaccion: true, nombre_estado: true } },
         tipoTransaccion: { select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true } },
-        empaque: { select: { id_empaque: true, EPC_id: true, id_nevera: true } },
+        empaque: { select: { id_empaque: true, EPC_id: true, id_nevera: true, costo_tienda: true } },
         transaccionRel: {
           select: {
             id_transaccion: true,
@@ -847,6 +847,7 @@ export class LogisticaService {
         nombre_tipo_transaccion: t.tipoTransaccion.nombre_codigo,
         nombre_estado_transaccion: t.estadoTransaccion.nombre_estado,
         nota_opcional: t.nota_opcional,
+        costo_tienda: t.empaque ? parseFloat(t.empaque.costo_tienda.toString()) : null,
         ...(infoPago && { info_pago: infoPago }),
       };
     });
