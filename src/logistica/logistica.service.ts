@@ -217,7 +217,8 @@ export class LogisticaService {
         where: {
           id_transaccion: {
             in: idsTransaccionesAcreedoras
-          }
+          },
+          id_usuario: id_usuario
         },
         include: {
           estadoTransaccion: {
