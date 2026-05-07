@@ -77,6 +77,21 @@ export class LogisticaController {
     );
   }
 
+  @Get('historial/tienda/:id_usuario')
+  @Roles(1, 2, 4, 5)
+  async getHistorialTienda(
+    @Param('id_usuario') idUsuario: string,
+    @Query('mes') mes?: string,
+    @Query('año') año?: string,
+  ) {
+    const idUsuarioNum = Number(idUsuario);
+    return this.logisticaService.getHistorialTienda(
+      idUsuarioNum,
+      mes ? Number(mes) : undefined,
+      año ? Number(año) : undefined,
+    );
+  }
+
   @Post('cuentas/nevera/:id_nevera')
   @Roles(2, 4)
   async liquidarNevera(

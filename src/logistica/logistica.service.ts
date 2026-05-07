@@ -886,6 +886,91 @@ export class LogisticaService {
     };
   }
 
+  async getHistorialTienda(
+    idUsuario: number,
+    mesParam?: number,
+    añoParam?: number,
+  ) {
+    const usuario = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario: idUsuario },
+      select: { id_usuario: true },
+    });
+
+    if (!usuario) {
+      throw new BadRequestException('Usuario no encontrado');
+    }
+
+    const tiendas = await this.databaseService.tIENDAS.findMany({
+      where: { id_usuario: idUsuario },
+      select: { id_tienda: true },
+    });
+
+    const tiendaIds = tiendas.map(t => t.id_tienda);
+
+    if (tiendaIds.length === 0) {
+      return {
+        neveras: [],
+        fecha_creacion_usuario: null,
+        nombre_usuario: null,
+        apellido_usuario: null,
+        periodo: null,
+        fecha_inicio_periodo: null,
+        fecha_fin_periodo: null,
+        parametros_usados: null,
+      };
+    }
+
+    const neveras = await this.databaseService.nEVERAS.findMany({
+      where: { id_tienda: { in: tiendaIds } },
+      select: { id_nevera: true },
+    });
+
+    const resultados: any[] = [];
+    for (const nevera of neveras) {
+      const data = await this.getEmpaquesPendientesPorNevera(
+        nevera.id_nevera,
+        mesParam,
+        añoParam,
+      );
+      resultados.push(data);
+    }
+
+    if (resultados.length === 0) {
+      return {
+        neveras: [],
+        fecha_creacion_usuario: null,
+        nombre_usuario: null,
+        apellido_usuario: null,
+        periodo: null,
+        fecha_inicio_periodo: null,
+        fecha_fin_periodo: null,
+        parametros_usados: null,
+      };
+    }
+
+    const primerResultado = resultados[0];
+
+    const neverasData = resultados.map(r => ({
+      nevera: r.nevera,
+      empaques: r.empaques,
+      productos: r.productos,
+      promociones: r.promociones,
+      transacciones: r.transacciones,
+      total_transacciones: r.total_transacciones,
+    }));
+
+    return {
+      neveras: neverasData,
+      fecha_creacion_usuario: primerResultado.fecha_creacion_usuario,
+      nombre_usuario: primerResultado.nombre_usuario,
+      apellido_usuario: primerResultado.apellido_usuario,
+      periodo: primerResultado.periodo,
+      fecha_inicio_periodo: primerResultado.fecha_inicio_periodo,
+      fecha_fin_periodo: primerResultado.fecha_fin_periodo,
+      parametros_usados: primerResultado.parametros_usados,
+    };
+  }
+
   async liquidarNevera(
     idNevera: number,
     idUsuarioLogistico: number,
