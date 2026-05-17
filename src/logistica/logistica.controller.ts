@@ -29,7 +29,7 @@ export class LogisticaController {
   }
 
   @Get('cuentas')
-  @Roles(1, 2, 3, 4)
+  @Roles(1, 2, 3, 4, 5)
   getCuentasTransacciones(@Query() cuentasDto: CuentasDto) {
     return this.logisticaService.getCuentasTransacciones(cuentasDto);
   }
