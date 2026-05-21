@@ -5,6 +5,7 @@ import { UpdateLogisticaDto } from './dto/update-logistica.dto';
 import { CuentasDto } from './dto/cuentas.dto';
 import { ConsolidacionCuentasDto } from './dto/consolidacion-cuentas.dto';
 import { LiquidacionNeveraDto } from './dto/liquidacion-nevera.dto';
+import { UMBRAL_VENCIDO } from '../common/config/constants';
 
 @Injectable()
 export class LogisticaService {
@@ -96,12 +97,173 @@ export class LogisticaService {
       ultimaHoraCalificacion = ultimaCalificacion.hora_calificacion.toISOString();
     }
 
+    // ═══════════════════════════════════════════════════════════════
+    // NUEVO: EMPAQUES EN ESTADO 5 (PARA CAMBIO) — Tasks 1 & 4
+    // Agrupados por ciudad → nevera, divididos en:
+    //   para_cambio: 75% ≤ tiempo transcurrido < 100%
+    //   vencidos:    tiempo transcurrido ≥ 100%
+    // ═══════════════════════════════════════════════════════════════
+
+    const usuario = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario },
+      select: { id_rol: true },
+    });
+
+    const obtenerDescendientes = async (
+      idCreador: number,
+    ): Promise<number[]> => {
+      const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
+        where: { id_usuario_creador: idCreador },
+        select: { id_usuario_nuevo: true },
+      });
+      const directos = tokens
+        .filter((t) => t.id_usuario_nuevo !== null)
+        .map((t) => t.id_usuario_nuevo!);
+      let todos = [...directos];
+      for (const d of directos) {
+        const sub = await obtenerDescendientes(d);
+        todos.push(...sub);
+      }
+      return todos;
+    };
+
+    let usuariosPermitidos: number[] = [id_usuario];
+    if (usuario && (usuario.id_rol === 1 || usuario.id_rol === 2)) {
+      const descendientes = await obtenerDescendientes(id_usuario);
+      usuariosPermitidos.push(...descendientes);
+    } else if (usuario && usuario.id_rol === 4) {
+      const descendientes = await obtenerDescendientes(id_usuario);
+      usuariosPermitidos.push(...descendientes);
+    }
+
+    const empaquesEstado5 = await this.databaseService.eMPAQUES.findMany({
+      where: {
+        id_estado_empaque: 5,
+        nevera: {
+          id_estado_nevera: 2,
+          tienda: {
+            id_usuario: { in: usuariosPermitidos },
+          },
+        },
+      },
+      include: {
+        producto: {
+          select: {
+            id_producto: true,
+            nombre_producto: true,
+            dias_vencimiento: true,
+          },
+        },
+        nevera: {
+          include: {
+            tienda: {
+              include: {
+                ciudad: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const ahora = new Date();
+    const empaquesParaCambioRaw: any[] = [];
+    const empaquesVencidosRaw: any[] = [];
+
+    for (const e of empaquesEstado5) {
+      if (!e.nevera) continue;
+
+      const diasVida = e.producto.dias_vencimiento;
+      const fechaEmpaque = new Date(e.fecha_empaque_1);
+      const msTranscurridos = ahora.getTime() - fechaEmpaque.getTime();
+      const diasTranscurridos = msTranscurridos / (1000 * 60 * 60 * 24);
+      const porcentaje =
+        diasVida > 0
+          ? Math.round((diasTranscurridos / diasVida) * 100 * 100) / 100
+          : 0;
+
+      const nevera = e.nevera;
+
+      const item = {
+        id_empaque: e.id_empaque,
+        epc: e.EPC_id,
+        id_producto: e.producto.id_producto,
+        nombre_producto: e.producto.nombre_producto,
+        fecha_empaque_1: e.fecha_empaque_1,
+        fecha_vencimiento: e.fecha_vencimiento,
+        dias_vencimiento: diasVida,
+        porcentaje_transcurrido: porcentaje,
+        ciudad: {
+          id_ciudad: nevera.tienda.ciudad.id_ciudad,
+          nombre_ciudad: nevera.tienda.ciudad.nombre_ciudad,
+        },
+        nevera: {
+          id_nevera: nevera.id_nevera,
+          nombre_tienda: nevera.tienda.nombre_tienda,
+          direccion: nevera.tienda.direccion,
+        },
+      };
+
+      if (porcentaje >= UMBRAL_VENCIDO) {
+        empaquesVencidosRaw.push(item);
+      } else {
+        empaquesParaCambioRaw.push(item);
+      }
+    }
+
+    function agruparPorCiudadNevera(items: any[]) {
+      const mapa: Record<string, any> = {};
+
+      for (const item of items) {
+        const cId = item.ciudad.id_ciudad;
+        const nId = item.nevera.id_nevera;
+
+        if (!mapa[cId]) {
+          mapa[cId] = {
+            id_ciudad: cId,
+            nombre_ciudad: item.ciudad.nombre_ciudad,
+            neverasMap: {},
+          };
+        }
+        if (!mapa[cId].neverasMap[nId]) {
+          mapa[cId].neverasMap[nId] = {
+            id_nevera: nId,
+            nombre_tienda: item.nevera.nombre_tienda,
+            direccion: item.nevera.direccion,
+            empaques: [],
+          };
+        }
+
+        mapa[cId].neverasMap[nId].empaques.push({
+          id_empaque: item.id_empaque,
+          epc: item.epc,
+          id_producto: item.id_producto,
+          nombre_producto: item.nombre_producto,
+          fecha_empaque_1: item.fecha_empaque_1,
+          fecha_vencimiento: item.fecha_vencimiento,
+          dias_vencimiento: item.dias_vencimiento,
+          porcentaje_transcurrido: item.porcentaje_transcurrido,
+        });
+      }
+
+      return Object.values(mapa).map((c: any) => ({
+        id_ciudad: c.id_ciudad,
+        nombre_ciudad: c.nombre_ciudad,
+        neveras: Object.values(c.neverasMap),
+      }));
+    }
+
+    const paraCambio = agruparPorCiudadNevera(empaquesParaCambioRaw);
+    const vencidos = agruparPorCiudadNevera(empaquesVencidosRaw);
+
     return {
       productos_por_logistica: resultado,
       total_productos_diferentes: resultado.length,
       total_empaques: empaques.length,
       id_logistica_usuario: usuarioLogistica.id_logistica,
-      ultima_hora_calificacion: ultimaHoraCalificacion
+      ultima_hora_calificacion: ultimaHoraCalificacion,
+      para_cambio: paraCambio,
+      vencidos: vencidos,
     };
   }
 

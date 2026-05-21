@@ -6,6 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ValidacionDosaTresDto } from './dto/validacion-dosatres.dto';
 import { InventarioDto } from './dto/inventario.dto';
 import { EmpaqueValidado } from './interfaces/empaque.interface';
+import { UMBRAL_PARA_CAMBIO } from '../common/config/constants';
 
 @Injectable()
 export class NeverasService {
@@ -179,6 +180,58 @@ export class NeverasService {
     }
 
     const idsNeveras = neverasActivas.map((n) => n.id_nevera);
+
+    // ═══════════════════════════════════════════════════════════════
+    // FASE 0: ESCANEO DE VENCIMIENTO — Tasks 1 & 4
+    // Escanea empaques en estado 3 (EN NEVERA) de TODAS las neveras
+    // activas del sistema y los marca como estado 5 (PARA CAMBIO)
+    // si superan el UMBRAL_PARA_CAMBIO de su vida util.
+    // Ambos umbrales (≥UMBRAL_PARA_CAMBIO y ≥UMBRAL_VENCIDO) van a estado 5.
+    // ═══════════════════════════════════════════════════════════════
+    const empaquesEnNeveras = await this.databaseService.eMPAQUES.findMany({
+      where: {
+        id_estado_empaque: 3,
+        nevera: {
+          id_estado_nevera: 2,
+        },
+      },
+      include: {
+        producto: {
+          select: { dias_vencimiento: true },
+        },
+      },
+    });
+
+    if (empaquesEnNeveras.length > 0) {
+      const ahora = new Date();
+      const idsParaCambio: number[] = [];
+
+      for (const empaque of empaquesEnNeveras) {
+        const diasVida = empaque.producto.dias_vencimiento;
+        if (!diasVida || diasVida <= 0) continue;
+
+        const msTranscurridos =
+          ahora.getTime() - new Date(empaque.fecha_empaque_1).getTime();
+        const diasTranscurridos = msTranscurridos / (1000 * 60 * 60 * 24);
+        const porcentaje = (diasTranscurridos / diasVida) * 100;
+
+        if (porcentaje >= UMBRAL_PARA_CAMBIO) {
+          idsParaCambio.push(empaque.id_empaque);
+        }
+      }
+
+      if (idsParaCambio.length > 0) {
+        await this.databaseService.eMPAQUES.updateMany({
+          where: { id_empaque: { in: idsParaCambio } },
+          data: {
+            id_estado_empaque: 5,
+          },
+        });
+        this.logger.log(
+          `Fase 0: ${idsParaCambio.length} empaques marcados PARA CAMBIO (≥75% vida util)`,
+        );
+      }
+    }
 
     // 1.2 Obtener STOCK_NEVERA de esas neveras (filtrar activo=false)
     const stockExistente = await this.databaseService.sTOCK_NEVERA.findMany({
