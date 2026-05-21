@@ -6,7 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ValidacionDosaTresDto } from './dto/validacion-dosatres.dto';
 import { InventarioDto } from './dto/inventario.dto';
 import { EmpaqueValidado } from './interfaces/empaque.interface';
-import { UMBRAL_PARA_CAMBIO } from '../common/config/constants';
+import { UMBRAL_PARA_CAMBIO, UMBRAL_VENCIDO } from '../common/config/constants';
 
 @Injectable()
 export class NeverasService {
@@ -187,6 +187,9 @@ export class NeverasService {
     // activas del sistema y los marca como estado 5 (PARA CAMBIO)
     // si superan el UMBRAL_PARA_CAMBIO de su vida util.
     // Ambos umbrales (≥UMBRAL_PARA_CAMBIO y ≥UMBRAL_VENCIDO) van a estado 5.
+    // El trigger de BD 'update_stock_nevera' se encarga de mantener
+    // stock_en_tiempo_real contando estado 3 + 5.
+    // Aqui solo seteamos mensaje_sistema con alertas de vencimiento.
     // ═══════════════════════════════════════════════════════════════
     const empaquesEnNeveras = await this.databaseService.eMPAQUES.findMany({
       where: {
@@ -205,6 +208,15 @@ export class NeverasService {
     if (empaquesEnNeveras.length > 0) {
       const ahora = new Date();
       const idsParaCambio: number[] = [];
+      const alertas = new Map<
+        string,
+        {
+          paraCambio: number;
+          vencidos: number;
+          idNevera: number;
+          idProducto: number;
+        }
+      >();
 
       for (const empaque of empaquesEnNeveras) {
         const diasVida = empaque.producto.dias_vencimiento;
@@ -217,6 +229,22 @@ export class NeverasService {
 
         if (porcentaje >= UMBRAL_PARA_CAMBIO) {
           idsParaCambio.push(empaque.id_empaque);
+
+          const key = `${empaque.id_nevera}_${empaque.id_producto}`;
+          if (!alertas.has(key)) {
+            alertas.set(key, {
+              paraCambio: 0,
+              vencidos: 0,
+              idNevera: empaque.id_nevera ?? 0,
+              idProducto: empaque.id_producto,
+            });
+          }
+          const a = alertas.get(key)!;
+          if (porcentaje >= UMBRAL_VENCIDO) {
+            a.vencidos++;
+          } else {
+            a.paraCambio++;
+          }
         }
       }
 
@@ -228,8 +256,44 @@ export class NeverasService {
           },
         });
         this.logger.log(
-          `Fase 0: ${idsParaCambio.length} empaques marcados PARA CAMBIO (≥75% vida util)`,
+          `Fase 0: ${idsParaCambio.length} empaques marcados PARA CAMBIO`,
         );
+
+        // Setear mensaje_sistema con alertas de vencimiento
+        // (el stock_en_tiempo_real lo maneja el trigger de BD)
+        for (const [, a] of alertas) {
+          if (!a.idNevera) continue;
+
+          const mensajes: string[] = [];
+          if (a.paraCambio > 0) {
+            mensajes.push(
+              'De este producto hay empaques proximos a vencer',
+            );
+          }
+          if (a.vencidos > 0) {
+            mensajes.push(
+              'Alerta: de este producto hay empaques vencidos',
+            );
+          }
+
+          const stockRecord =
+            await this.databaseService.sTOCK_NEVERA.findFirst({
+              where: {
+                id_nevera: a.idNevera,
+                id_producto: a.idProducto,
+              },
+            });
+
+          if (stockRecord) {
+            await this.databaseService.sTOCK_NEVERA.update({
+              where: { id: stockRecord.id },
+              data: {
+                mensaje_sistema:
+                  mensajes.length > 0 ? mensajes.join(', ') : null,
+              },
+            });
+          }
+        }
       }
     }
 
