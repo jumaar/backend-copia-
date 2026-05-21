@@ -5,7 +5,7 @@ import { UpdateLogisticaDto } from './dto/update-logistica.dto';
 import { CuentasDto } from './dto/cuentas.dto';
 import { ConsolidacionCuentasDto } from './dto/consolidacion-cuentas.dto';
 import { LiquidacionNeveraDto } from './dto/liquidacion-nevera.dto';
-import { UMBRAL_VENCIDO } from '../common/config/constants';
+import { UMBRAL_VENCIDO, UMBRAL_PARA_CAMBIO } from '../common/config/constants';
 
 @Injectable()
 export class LogisticaService {
@@ -481,6 +481,66 @@ export class LogisticaService {
     };
   }
   async getNeverasActivas(id_usuario: number) {
+    // FASE 0: Escanea empaques en estado 3 y 5, cambia a estado 5 los ≥75%
+    // que aun esten en estado 3, y setea mensaje_sistema para ambos.
+    const empaquesScan = await this.databaseService.eMPAQUES.findMany({
+      where: {
+        id_estado_empaque: { in: [3, 5] },
+        nevera: { id_estado_nevera: 2 },
+      },
+      include: { producto: { select: { dias_vencimiento: true } } },
+    });
+
+    if (empaquesScan.length > 0) {
+      const ahora = new Date();
+      const idsParaCambio: number[] = [];
+      const mensajesPorNeveraProducto = new Map<
+        string,
+        { proximos: boolean; vencidos: boolean; idNevera: number; idProducto: number }
+      >();
+
+      for (const e of empaquesScan) {
+        const diasVida = e.producto.dias_vencimiento;
+        if (!diasVida || diasVida <= 0) continue;
+        const pct = ((ahora.getTime() - new Date(e.fecha_empaque_1).getTime()) / (1000 * 60 * 60 * 24) / diasVida) * 100;
+
+        const key = `${e.id_nevera}_${e.id_producto}`;
+        if (!mensajesPorNeveraProducto.has(key)) {
+          mensajesPorNeveraProducto.set(key, { proximos: false, vencidos: false, idNevera: e.id_nevera ?? 0, idProducto: e.id_producto });
+        }
+        const m = mensajesPorNeveraProducto.get(key)!;
+
+        if (pct >= UMBRAL_VENCIDO) {
+          m.vencidos = true;
+        } else if (pct >= UMBRAL_PARA_CAMBIO) {
+          m.proximos = true;
+        }
+
+        if (e.id_estado_empaque === 3 && pct >= UMBRAL_PARA_CAMBIO) {
+          idsParaCambio.push(e.id_empaque);
+        }
+      }
+
+      if (idsParaCambio.length > 0) {
+        await this.databaseService.eMPAQUES.updateMany({
+          where: { id_empaque: { in: idsParaCambio } },
+          data: { id_estado_empaque: 5 },
+        });
+      }
+
+      for (const [, m] of mensajesPorNeveraProducto) {
+        if (!m.idNevera) continue;
+        const partes: string[] = [];
+        if (m.proximos) partes.push('De este producto hay empaques proximos a vencer');
+        if (m.vencidos) partes.push('Alerta: de este producto hay empaques vencidos');
+
+        await this.databaseService.sTOCK_NEVERA.updateMany({
+          where: { id_nevera: m.idNevera, id_producto: m.idProducto },
+          data: { mensaje_sistema: partes.length > 0 ? partes.join(', ') : null },
+        });
+      }
+    }
+
     // Obtener el rol del usuario
     const usuario = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario: id_usuario },
@@ -564,17 +624,17 @@ export class LogisticaService {
     });
 
     // Formatear la respuesta
-    const neverasFormateadas = neveras.map(nevera => ({
+    const neverasFormateadas = neveras.map((nevera) => ({
       id_nevera: nevera.id_nevera,
       nombre_tienda: nevera.tienda.nombre_tienda,
       direccion: nevera.tienda.direccion,
       ciudad: nevera.tienda.ciudad.nombre_ciudad,
-      id_ciudad: nevera.tienda.ciudad.id_ciudad
+      id_ciudad: nevera.tienda.ciudad.id_ciudad,
     }));
 
     return {
       neveras_activas: neverasFormateadas,
-      total_neveras: neverasFormateadas.length
+      total_neveras: neverasFormateadas.length,
     };
   }
 

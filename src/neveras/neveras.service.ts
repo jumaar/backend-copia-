@@ -193,7 +193,7 @@ export class NeverasService {
     // ═══════════════════════════════════════════════════════════════
     const empaquesEnNeveras = await this.databaseService.eMPAQUES.findMany({
       where: {
-        id_estado_empaque: 3,
+        id_estado_empaque: { in: [3, 5] },
         nevera: {
           id_estado_nevera: 2,
         },
@@ -208,14 +208,9 @@ export class NeverasService {
     if (empaquesEnNeveras.length > 0) {
       const ahora = new Date();
       const idsParaCambio: number[] = [];
-      const alertas = new Map<
+      const mensajesPorNeveraProducto = new Map<
         string,
-        {
-          paraCambio: number;
-          vencidos: number;
-          idNevera: number;
-          idProducto: number;
-        }
+        { proximos: boolean; vencidos: boolean; idNevera: number; idProducto: number }
       >();
 
       for (const empaque of empaquesEnNeveras) {
@@ -227,73 +222,48 @@ export class NeverasService {
         const diasTranscurridos = msTranscurridos / (1000 * 60 * 60 * 24);
         const porcentaje = (diasTranscurridos / diasVida) * 100;
 
-        if (porcentaje >= UMBRAL_PARA_CAMBIO) {
-          idsParaCambio.push(empaque.id_empaque);
+        const key = `${empaque.id_nevera}_${empaque.id_producto}`;
+        if (!mensajesPorNeveraProducto.has(key)) {
+          mensajesPorNeveraProducto.set(key, {
+            proximos: false,
+            vencidos: false,
+            idNevera: empaque.id_nevera ?? 0,
+            idProducto: empaque.id_producto,
+          });
+        }
+        const m = mensajesPorNeveraProducto.get(key)!;
 
-          const key = `${empaque.id_nevera}_${empaque.id_producto}`;
-          if (!alertas.has(key)) {
-            alertas.set(key, {
-              paraCambio: 0,
-              vencidos: 0,
-              idNevera: empaque.id_nevera ?? 0,
-              idProducto: empaque.id_producto,
-            });
-          }
-          const a = alertas.get(key)!;
-          if (porcentaje >= UMBRAL_VENCIDO) {
-            a.vencidos++;
-          } else {
-            a.paraCambio++;
-          }
+        if (porcentaje >= UMBRAL_VENCIDO) {
+          m.vencidos = true;
+        } else if (porcentaje >= UMBRAL_PARA_CAMBIO) {
+          m.proximos = true;
+        }
+
+        if (empaque.id_estado_empaque === 3 && porcentaje >= UMBRAL_PARA_CAMBIO) {
+          idsParaCambio.push(empaque.id_empaque);
         }
       }
 
       if (idsParaCambio.length > 0) {
         await this.databaseService.eMPAQUES.updateMany({
           where: { id_empaque: { in: idsParaCambio } },
-          data: {
-            id_estado_empaque: 5,
-          },
+          data: { id_estado_empaque: 5 },
         });
         this.logger.log(
           `Fase 0: ${idsParaCambio.length} empaques marcados PARA CAMBIO`,
         );
+      }
 
-        // Setear mensaje_sistema con alertas de vencimiento
-        // (el stock_en_tiempo_real lo maneja el trigger de BD)
-        for (const [, a] of alertas) {
-          if (!a.idNevera) continue;
+      for (const [, m] of mensajesPorNeveraProducto) {
+        if (!m.idNevera) continue;
+        const partes: string[] = [];
+        if (m.proximos) partes.push('De este producto hay empaques proximos a vencer');
+        if (m.vencidos) partes.push('Alerta: de este producto hay empaques vencidos');
 
-          const mensajes: string[] = [];
-          if (a.paraCambio > 0) {
-            mensajes.push(
-              'De este producto hay empaques proximos a vencer',
-            );
-          }
-          if (a.vencidos > 0) {
-            mensajes.push(
-              'Alerta: de este producto hay empaques vencidos',
-            );
-          }
-
-          const stockRecord =
-            await this.databaseService.sTOCK_NEVERA.findFirst({
-              where: {
-                id_nevera: a.idNevera,
-                id_producto: a.idProducto,
-              },
-            });
-
-          if (stockRecord) {
-            await this.databaseService.sTOCK_NEVERA.update({
-              where: { id: stockRecord.id },
-              data: {
-                mensaje_sistema:
-                  mensajes.length > 0 ? mensajes.join(', ') : null,
-              },
-            });
-          }
-        }
+        await this.databaseService.sTOCK_NEVERA.updateMany({
+          where: { id_nevera: m.idNevera, id_producto: m.idProducto },
+          data: { mensaje_sistema: partes.length > 0 ? partes.join(', ') : null },
+        });
       }
     }
 
