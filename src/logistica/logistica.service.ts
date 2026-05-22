@@ -943,10 +943,13 @@ export class LogisticaService {
       throw new BadRequestException('Nevera no encontrada');
     }
 
-    // Cambiar estado a Activa (2)
+    // Cambiar estado a Activa (2) y registrar hora de último surtido
     await this.databaseService.nEVERAS.update({
       where: { id_nevera },
-      data: { id_estado_nevera: 2 }
+      data: {
+        id_estado_nevera: 2,
+        hora_ultimo_surtido: new Date()
+      }
     });
 
     return {
