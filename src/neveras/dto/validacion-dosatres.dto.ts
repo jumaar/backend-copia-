@@ -18,6 +18,10 @@ export class ValidacionDosaTresDto {
   @IsNotEmpty()
   timestamp: number;
 
+  @IsOptionalValidator()
+  @IsNumber()
+  id_nevera?: number;
+
   @ValidateNested({ each: true })
   @ArrayNotEmpty()
   @Type(() => PendingPackageDto)

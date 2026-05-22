@@ -82,7 +82,13 @@ export class NeverasController {
 @Patch('validacionDosaTres')
 @UseGuards(JwtAuthGuard)
 async validacionDosaTres(@Body() dto: ValidacionDosaTresDto, @Req() req: any) {
-  const idNevera = req.user.id_nevera;
+  const idNevera = dto.id_nevera ?? req.user.id_nevera;
+  if (!idNevera) {
+    throw new HttpException(
+      { success: false, error: 'id_nevera es requerido', code: 'ID_NEVERA_REQUERIDO' },
+      HttpStatus.BAD_REQUEST,
+    );
+  }
   return this.neverasService.validacionDosaTres(idNevera, dto);
 }
 
