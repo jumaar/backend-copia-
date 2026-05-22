@@ -1,10 +1,11 @@
-import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { CreateLogisticaDto } from './dto/create-logistica.dto';
 import { UpdateLogisticaDto } from './dto/update-logistica.dto';
 import { CuentasDto } from './dto/cuentas.dto';
 import { ConsolidacionCuentasDto } from './dto/consolidacion-cuentas.dto';
 import { LiquidacionNeveraDto } from './dto/liquidacion-nevera.dto';
+import { DecincoaseisDto } from './dto/decincoaseis.dto';
 import { UMBRAL_VENCIDO, UMBRAL_PARA_CAMBIO } from '../common/config/constants';
 
 @Injectable()
@@ -898,37 +899,8 @@ export class LogisticaService {
       data: { id_estado_nevera: 5 }
     });
 
-    // Obtener stock_nevera activo para esta nevera
-    const stock = await this.databaseService.sTOCK_NEVERA.findMany({
-      where: {
-        id_nevera,
-        activo: true
-      },
-      include: {
-        producto: {
-          select: {
-            id_producto: true,
-            nombre_producto: true,
-            peso_nominal_g: true
-          }
-        }
-      }
-    });
-
-    // Formatear respuesta
-    const stockFormateado = stock.map(item => ({
-      id_nevera: item.id_nevera,
-      id_producto: item.id_producto,
-      nombre_producto: item.producto.nombre_producto,
-      peso_nominal_g: item.producto.peso_nominal_g,
-      stock_ideal_final: item.stock_ideal_final,
-      stock_en_tiempo_real: item.stock_en_tiempo_real,
-      calificacion_surtido: item.calificacion_surtido
-    }));
-
     return {
       message: 'Surtido iniciado, estado de nevera cambiado a Surtiendo',
-      stock_nevera: stockFormateado
     };
   }
 
@@ -1530,6 +1502,153 @@ export class LogisticaService {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new BadRequestException(`Error al consolidar pendientes de nevera: ${errorMessage}`);
     }
+  }
+
+  async decincoaseis(idUsuario: number, dto: DecincoaseisDto) {
+    const { timestamp, pending_packages } = dto;
+
+    const usuarioLogistica = await this.databaseService.lOGISTICA.findFirst({
+      where: { id_usuario: idUsuario },
+      select: { id_logistica: true },
+    });
+
+    if (!usuarioLogistica) {
+      throw new BadRequestException('Usuario no tiene logística asociada');
+    }
+
+    const idLogistica = usuarioLogistica.id_logistica;
+    const fechaAhora = new Date();
+
+    const empaquesValidos: any[] = [];
+    const empaquesInvalidos: any[] = [];
+
+    for (const packageData of pending_packages) {
+      const { epc, id_empaque } = packageData;
+
+      let empaque;
+      if (epc) {
+        empaque = await this.databaseService.eMPAQUES.findUnique({
+          where: { EPC_id: epc },
+          include: {
+            producto: {
+              select: {
+                id_producto: true,
+                nombre_producto: true,
+              },
+            },
+          },
+        });
+      } else if (id_empaque) {
+        empaque = await this.databaseService.eMPAQUES.findUnique({
+          where: { id_empaque: id_empaque },
+          include: {
+            producto: {
+              select: {
+                id_producto: true,
+                nombre_producto: true,
+              },
+            },
+          },
+        });
+      }
+
+      if (!empaque) {
+        empaquesInvalidos.push({
+          epc: epc || null,
+          id_empaque: id_empaque || null,
+          error: `Empaque no encontrado: ${epc || id_empaque}`,
+        });
+      } else if (empaque.id_estado_empaque !== 5) {
+        empaquesInvalidos.push({
+          epc: epc || null,
+          id_empaque: id_empaque || null,
+          error: `Empaque no está en estado 5 (para cambio), estado actual: ${empaque.id_estado_empaque}`,
+        });
+      } else {
+        empaquesValidos.push({
+          empaque,
+          epc: epc || null,
+          id_empaque: id_empaque || null,
+        });
+      }
+    }
+
+    if (empaquesValidos.length === 0) {
+      throw new HttpException(
+        {
+          success: false,
+          error: 'Ningún empaque pudo ser procesado',
+          empaques_no_procesados: empaquesInvalidos,
+          code: 'NO_EMPAQUES_VALIDOS',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    let empaquesActualizados: any[] = [];
+
+    empaquesActualizados = await this.databaseService.$transaction(
+      async (prisma) => {
+        const resultados: any[] = [];
+
+        for (const packageData of empaquesValidos) {
+          const { empaque, epc, id_empaque } = packageData;
+
+          const empaqueActualizado = await prisma.eMPAQUES.update({
+            where: { id_empaque: empaque.id_empaque },
+            data: {
+              id_estado_empaque: 6,
+              id_logistica: idLogistica,
+              hora_para_cambio_5: fechaAhora,
+            },
+            include: {
+              producto: {
+                select: {
+                  id_producto: true,
+                  nombre_producto: true,
+                },
+              },
+            },
+          });
+
+          if (empaque.id_nevera && empaque.id_producto) {
+            await prisma.sTOCK_NEVERA.updateMany({
+              where: {
+                id_nevera: empaque.id_nevera,
+                id_producto: empaque.id_producto,
+              },
+              data: { mensaje_sistema: null },
+            });
+          }
+
+          resultados.push({
+            id_empaque: empaqueActualizado.id_empaque,
+            epc: empaqueActualizado.EPC_id,
+            peso_exacto_g: empaqueActualizado.peso_exacto_g,
+            id_producto: empaqueActualizado.producto.id_producto,
+            nombre_producto: empaqueActualizado.producto.nombre_producto,
+            nuevo_estado: empaqueActualizado.id_estado_empaque,
+            id_logistica: empaqueActualizado.id_logistica,
+            hora_para_cambio_5: empaqueActualizado.hora_para_cambio_5,
+          });
+        }
+
+        return resultados;
+      },
+    );
+
+    const success = true;
+    const message =
+      empaquesInvalidos.length === 0
+        ? 'Cambio de estado 5 a 6 completado exitosamente'
+        : `Se procesaron ${empaquesValidos.length} empaques válidos, ${empaquesInvalidos.length} no pudieron procesarse`;
+
+    return {
+      success,
+      message,
+      empaques_procesados: empaquesActualizados,
+      empaques_no_procesados: empaquesInvalidos,
+    };
   }
 
   private async _ejecutarLiquidacion(

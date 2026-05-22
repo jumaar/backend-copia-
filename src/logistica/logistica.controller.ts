@@ -5,6 +5,7 @@ import { UpdateLogisticaDto } from './dto/update-logistica.dto';
 import { CuentasDto } from './dto/cuentas.dto';
 import { ConsolidacionCuentasDto } from './dto/consolidacion-cuentas.dto';
 import { LiquidacionNeveraDto } from './dto/liquidacion-nevera.dto';
+import { DecincoaseisDto } from './dto/decincoaseis.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -106,6 +107,13 @@ export class LogisticaController {
       idUsuarioLogistico,
       liquidacionDto,
     );
+  }
+
+  @Patch('decincoaseis')
+  @Roles(2, 4)
+  async decincoaseis(@Body() dto: DecincoaseisDto, @Req() req: any) {
+    const id_usuario = req.user.id_usuario;
+    return this.logisticaService.decincoaseis(id_usuario, dto);
   }
 
 }
