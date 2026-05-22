@@ -98,10 +98,10 @@ async validacionDosaTres(@Body() dto: ValidacionDosaTresDto, @Req() req: any) {
  }
 
  /**
-  * PATCH /api/neveras/inventario
-  * Endpoint para procesar el inventario de empaques, cambiando su estado de 3 a 4.
-  * Recibe una lista de empaques con id_empaque, epc y fecha_venta.
-  * Verifica que los empaques estén en estado 3 y pertenezcan a la nevera autenticada.
+   * PATCH /api/neveras/inventario
+   * Endpoint para procesar el inventario de empaques, cambiando su estado de 3 o 5 a 4.
+   * Recibe una lista de empaques con id_empaque, epc y fecha_venta.
+   * Verifica que los empaques estén en estado 3 o 5 y pertenezcan a la nevera autenticada.
   */
  @Patch('inventario')
  @UseGuards(JwtAuthGuard)

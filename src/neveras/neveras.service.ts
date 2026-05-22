@@ -1038,7 +1038,7 @@ export class NeverasService {
   }
 
   /**
-   * Endpoint para procesar inventario de empaques en nevera, cambiando estado de 3 a 4
+   * Endpoint para procesar inventario de empaques en nevera, cambiando estado de 3 o 5 a 4
    * POST /api/neveras/inventario
    */
   async procesarInventario(idNevera: number, dto: InventarioDto) {
@@ -1096,11 +1096,11 @@ export class NeverasService {
           epc,
           error: `Empaque no pertenece a la nevera ${idNevera}`,
         });
-      } else if (empaque.id_estado_empaque !== 3) {
+      } else if (empaque.id_estado_empaque !== 3 && empaque.id_estado_empaque !== 5) {
         empaquesInvalidos.push({
           id_empaque,
           epc,
-          error: `Empaque no está en estado 3 (estado actual: ${empaque.id_estado_empaque})`,
+          error: `Empaque no está en estado 3 ni 5 (estado actual: ${empaque.id_estado_empaque})`,
         });
       } else {
         empaquesValidos.push({
