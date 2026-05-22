@@ -708,7 +708,7 @@ export class NeverasService {
         });
       }
 
-      // Verificar que el empaque exista y esté en estado 2 (en logística) o 4 (pendiente pago, devolución)
+      // Verificar que el empaque exista y esté en estado 2 (en logística), 4 (pendiente pago, devolución) o 5 (para cambio)
       if (!empaque) {
         empaquesInvalidos.push({
           epc: epc || null,
@@ -718,7 +718,8 @@ export class NeverasService {
         });
       } else if (
         empaque.id_estado_empaque !== 2 &&
-        empaque.id_estado_empaque !== 4
+        empaque.id_estado_empaque !== 4 &&
+        empaque.id_estado_empaque !== 5
       ) {
         empaquesInvalidos.push({
           epc: epc || null,
@@ -776,8 +777,8 @@ export class NeverasService {
               id_estado_empaque: 3, // Estado 3: en nevera
             };
 
-            // Solo setear hora_en_nevera_3 si no venía de estado 4 (ya estaba en nevera)
-            if (estado_original !== 4) {
+            // Solo setear hora_en_nevera_3 si viene de estado 2 (entrando por primera vez a la nevera)
+            if (estado_original === 2) {
               updateData.hora_en_nevera_3 = fechaTimestamp;
             }
 
