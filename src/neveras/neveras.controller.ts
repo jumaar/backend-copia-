@@ -73,10 +73,11 @@ export class NeverasController {
  /**
    * PATCH /api/neveras/validacionDosaTres
    * Endpoint para validar empaques que entran a una nevera desde logística (estado 2),
-   * devolución (estado 4) o para cambio (estado 5).
+   * devolución (estado 4), para cambio (estado 5) o logística prioridad (estado 6).
    * Este endpoint actualiza el estado del empaque a "EN NEVERA" (estado 3),
    * lo que dispara el trigger 'update_stock_nevera' que automáticamente incrementa
    * el campo 'stock_en_tiempo_real' en la tabla STOCK_NEVERA para el producto correspondiente.
+   * Para estado 6, también registra fridge_id_final y hora_surtido_final_6.
    */
 @Patch('validacionDosaTres')
 @UseGuards(JwtAuthGuard)

@@ -708,7 +708,7 @@ export class NeverasService {
         });
       }
 
-      // Verificar que el empaque exista y esté en estado 2 (en logística), 4 (pendiente pago, devolución) o 5 (para cambio)
+      // Verificar que el empaque exista y esté en estado 2 (en logística), 4 (pendiente pago, devolución), 5 (para cambio) o 6 (logística prioridad)
       if (!empaque) {
         empaquesInvalidos.push({
           epc: epc || null,
@@ -719,7 +719,8 @@ export class NeverasService {
       } else if (
         empaque.id_estado_empaque !== 2 &&
         empaque.id_estado_empaque !== 4 &&
-        empaque.id_estado_empaque !== 5
+        empaque.id_estado_empaque !== 5 &&
+        empaque.id_estado_empaque !== 6
       ) {
         empaquesInvalidos.push({
           epc: epc || null,
@@ -785,6 +786,12 @@ export class NeverasService {
             // Si el empaque venía en estado 4, limpiar hora_pendiente_pago_4
             if (estado_original === 4) {
               updateData.hora_pendiente_pago_4 = null;
+            }
+
+            // Si el empaque venía en estado 6 (logística prioridad), registrar finalización
+            if (estado_original === 6) {
+              updateData.hora_surtido_final_6 = fechaTimestamp;
+              updateData.fridge_id_final = idNevera;
             }
 
             // Actualizar el empaque
