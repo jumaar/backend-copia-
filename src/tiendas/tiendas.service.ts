@@ -2,6 +2,7 @@ import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { CreateTiendaDto } from './dto/create-tienda.dto';
 import { UpdateTiendaDto } from './dto/update-tienda.dto';
 import { DatabaseService } from '../database/database.service';
+import { UMBRAL_PARA_CAMBIO, UMBRAL_VENCIDO } from '../common/config/constants';
 
 @Injectable()
 export class TiendasService {
@@ -772,6 +773,70 @@ export class TiendasService {
     ).length;
     const productosSinStock = totalProductos - productosConStockInfo;
 
+    // Obtener empaques en estado 5 (para cambio) de esta nevera
+    const empaquesEstado5 = await this.databaseService.eMPAQUES.findMany({
+      where: {
+        id_nevera: id_nevera,
+        id_estado_empaque: 5,
+      },
+      select: {
+        id_empaque: true,
+        EPC_id: true,
+        peso_exacto_g: true,
+        fecha_empaque_1: true,
+        fecha_vencimiento: true,
+        producto: {
+          select: {
+            id_producto: true,
+            dias_vencimiento: true,
+          },
+        },
+      },
+    });
+
+    const ahora = new Date();
+    const paraCambio: {
+      id_empaque: number;
+      epc: string;
+      peso_exacto_g: number;
+      id_producto: number;
+      fecha_vencimiento: string;
+      porcentaje_vida: number;
+    }[] = [];
+    const vencidos: {
+      id_empaque: number;
+      epc: string;
+      peso_exacto_g: number;
+      id_producto: number;
+      fecha_vencimiento: string;
+      porcentaje_vida: number;
+    }[] = [];
+
+    for (const empaque of empaquesEstado5) {
+      const diasVida = empaque.producto.dias_vencimiento;
+      const inicio = new Date(empaque.fecha_empaque_1);
+      const diasTranscurridos =
+        (ahora.getTime() - inicio.getTime()) / (1000 * 60 * 60 * 24);
+      const porcentaje = Math.round(
+        (diasTranscurridos / diasVida) * 100 * 100,
+      ) / 100;
+
+      const item = {
+        id_empaque: empaque.id_empaque,
+        epc: empaque.EPC_id,
+        peso_exacto_g: Number(empaque.peso_exacto_g),
+        id_producto: empaque.producto.id_producto,
+        fecha_vencimiento: empaque.fecha_vencimiento.toISOString(),
+        porcentaje_vida: porcentaje,
+      };
+
+      if (porcentaje >= UMBRAL_VENCIDO) {
+        vencidos.push(item);
+      } else {
+        paraCambio.push(item);
+      }
+    }
+
     return {
       nevera: {
         id_nevera: nevera.id_nevera,
@@ -784,6 +849,10 @@ export class TiendasService {
         productos_sin_stock: productosSinStock,
       },
       productos: productosConStock,
+      para_cambio_5: {
+        para_cambio: paraCambio,
+        vencidos: vencidos,
+      },
     };
   }
 
