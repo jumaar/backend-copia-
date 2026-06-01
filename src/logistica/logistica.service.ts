@@ -80,9 +80,6 @@ export class LogisticaService {
       return acc;
     }, {});
 
-    // Convertir objeto a array para la respuesta
-    const resultado = Object.values(productosAgrupados);
-
     // Obtener la última hora de calificación de surtido de toda la tabla STOCK_NEVERA
     let ultimaHoraCalificacion: string | null = null;
 
@@ -257,10 +254,78 @@ export class LogisticaService {
     const paraCambio = agruparPorCiudadNevera(empaquesParaCambioRaw);
     const vencidos = agruparPorCiudadNevera(empaquesVencidosRaw);
 
+    // ═══════════════════════════════════════════════════════════════
+    // EMPAQUES EN ESTADO 6 (LOGÍSTICA PRIORIDAD)
+    // Se agregan dentro de cada producto en productosAgrupados como
+    // empaques_estado_6 → { logistica_prioridad, vencidos }
+    // ═══════════════════════════════════════════════════════════════
+
+    const empaquesEstado6 = await this.databaseService.eMPAQUES.findMany({
+      where: {
+        id_estado_empaque: 6,
+        id_logistica: usuarioLogistica.id_logistica,
+      },
+      include: {
+        producto: {
+          select: {
+            id_producto: true,
+            nombre_producto: true,
+            peso_nominal_g: true,
+            dias_vencimiento: true,
+          },
+        },
+      },
+    });
+
+    for (const e of empaquesEstado6) {
+      const productoId = e.id_producto;
+
+      if (!productosAgrupados[productoId]) {
+        productosAgrupados[productoId] = {
+          id_producto: productoId,
+          nombre_producto: e.producto.nombre_producto,
+          peso_nominal: e.producto.peso_nominal_g,
+          empaques: [],
+        };
+      }
+
+      if (!productosAgrupados[productoId].empaques_estado_6) {
+        productosAgrupados[productoId].empaques_estado_6 = {
+          logistica_prioridad: [],
+          vencidos: [],
+        };
+      }
+
+      const diasVida = e.producto.dias_vencimiento;
+      const fechaEmpaque = new Date(e.fecha_empaque_1);
+      const msTranscurridos = ahora.getTime() - fechaEmpaque.getTime();
+      const diasTranscurridos = msTranscurridos / (1000 * 60 * 60 * 24);
+      const porcentaje =
+        diasVida > 0
+          ? Math.round((diasTranscurridos / diasVida) * 100 * 100) / 100
+          : 0;
+
+      const empaqueLimpio = {
+        id_empaque: e.id_empaque,
+        peso_exacto_g: e.peso_exacto_g,
+        EPC_id: e.EPC_id,
+        porcentaje_transcurrido: porcentaje,
+      };
+
+      if (porcentaje >= UMBRAL_VENCIDO) {
+        productosAgrupados[productoId].empaques_estado_6.vencidos.push(empaqueLimpio);
+      } else {
+        productosAgrupados[productoId].empaques_estado_6.logistica_prioridad.push(empaqueLimpio);
+      }
+    }
+
+    // Convertir objeto a array para la respuesta (después de agregar estado 6)
+    const resultado = Object.values(productosAgrupados);
+
     return {
       productos_por_logistica: resultado,
       total_productos_diferentes: resultado.length,
-      total_empaques: empaques.length,
+      total_empaques: empaques.length + empaquesEstado6.length,
       id_logistica_usuario: usuarioLogistica.id_logistica,
       ultima_hora_calificacion: ultimaHoraCalificacion,
       para_cambio: paraCambio,
