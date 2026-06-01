@@ -21,7 +21,7 @@ export class Empaque {
   hora_en_nevera_3: Date | null;
   hora_pendiente_pago_4: Date | null;
   hora_para_cambio_5: Date | null;
-  fridge_id_final: number | null;
+  id_nevera_anterior: number | null;
   hora_surtido_final_6: Date | null;
   fecha_finalizacion_7_8: Date | null;
   estado_lote: number;

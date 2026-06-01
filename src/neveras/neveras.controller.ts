@@ -77,7 +77,7 @@ export class NeverasController {
    * Este endpoint actualiza el estado del empaque a "EN NEVERA" (estado 3),
    * lo que dispara el trigger 'update_stock_nevera' que automáticamente incrementa
    * el campo 'stock_en_tiempo_real' en la tabla STOCK_NEVERA para el producto correspondiente.
-   * Para estado 6, también registra fridge_id_final y hora_surtido_final_6.
+   * Para estado 6, también registra id_nevera_anterior y hora_surtido_final_6.
    */
 @Patch('validacionDosaTres')
 @UseGuards(JwtAuthGuard)

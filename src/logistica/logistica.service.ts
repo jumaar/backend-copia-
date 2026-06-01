@@ -583,7 +583,9 @@ export class LogisticaService {
         }
 
         if (e.id_estado_empaque === 3 && pct >= UMBRAL_PARA_CAMBIO) {
-          idsParaCambio.push(e.id_empaque);
+          if (pct >= UMBRAL_VENCIDO || e.id_nevera_anterior === null) {
+            idsParaCambio.push(e.id_empaque);
+          }
         }
       }
 

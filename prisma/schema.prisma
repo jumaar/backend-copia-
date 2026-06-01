@@ -180,7 +180,7 @@ model EMPAQUES {
   hora_en_nevera_3       DateTime?
   hora_pendiente_pago_4  DateTime?
   hora_para_cambio_5     DateTime?
-  fridge_id_final        Int?
+  id_nevera_anterior     Int?
   hora_surtido_final_6   DateTime?
   fecha_finalizacion_7_8 DateTime?
   id_estado_empaque      Int

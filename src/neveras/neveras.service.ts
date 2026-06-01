@@ -240,7 +240,9 @@ export class NeverasService {
         }
 
         if (empaque.id_estado_empaque === 3 && porcentaje >= UMBRAL_PARA_CAMBIO) {
-          idsParaCambio.push(empaque.id_empaque);
+          if (porcentaje >= UMBRAL_VENCIDO || empaque.id_nevera_anterior === null) {
+            idsParaCambio.push(empaque.id_empaque);
+          }
         }
       }
 
@@ -788,10 +790,10 @@ export class NeverasService {
               updateData.hora_pendiente_pago_4 = null;
             }
 
-            // Si el empaque venía en estado 6 (logística prioridad), registrar finalización
+            // Si el empaque venía en estado 6 (logística prioridad), registrar la nevera anterior y finalización
             if (estado_original === 6) {
+              updateData.id_nevera_anterior = empaque.id_nevera;
               updateData.hora_surtido_final_6 = fechaTimestamp;
-              updateData.fridge_id_final = idNevera;
             }
 
             // Actualizar el empaque
