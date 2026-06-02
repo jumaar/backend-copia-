@@ -670,8 +670,8 @@ export class LogisticaService {
 
     let usuariosPermitidos: number[] = [id_usuario]; // Incluir al propio usuario
 
-    if (usuario.id_rol === 2) {
-      // Rol 2: obtener todos sus descendientes
+    if (usuario.id_rol === 1 || usuario.id_rol === 2) {
+      // Rol 1 (admin) y Rol 2: obtener todos sus descendientes
       const descendientes = await this.obtenerDescendientes(id_usuario);
       usuariosPermitidos.push(...descendientes);
     } else if (usuario.id_rol === 4) {

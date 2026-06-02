@@ -32,9 +32,9 @@ export class LogisticaController {
   }
 
   @Get('surtir')
-  @Roles(2, 4)
+  @Roles(1, 2, 4)
   getNeverasActivas(@Req() req: any) {
-    const id_usuario = req.user.id_usuario; // Obtener id_usuario del JWT
+    const id_usuario = req.user.id_usuario;
     return this.logisticaService.getNeverasActivas(id_usuario);
   }
 
