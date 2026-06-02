@@ -1,28 +1,11 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, Logger } from '@nestjs/common';
-import { Request } from 'express';
-import { User } from '../auth/entities/user.entity';
-
-interface RequestWithUser extends Request {
-  user: {
-    id_usuario: number;
-    roleId: number;
- };
-}
-
-interface RequestWithEstacion extends Request {
-  user: {
-    sub: string;
-    type: string;
-    frigorificoId: number;
-  };
-}
-
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req, Logger, Query } from '@nestjs/common';
 import { FrigorificoService } from './frigorifico.service';
 import { CreateFrigorificoDto } from './dto/create-frigorifico.dto';
 import { UpdateFrigorificoDto } from './dto/update-frigorifico.dto';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { HerenciaGuard, Herencia } from '../herencia';
 
 @Controller('api/frigorifico')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -33,146 +16,131 @@ export class FrigorificoController {
 
   @Get()
   @Roles(1, 2, 3)
-  findAll(@Req() req: RequestWithUser) {
-    const user = req.user;
-    return this.frigorificoService.findAll(user.id_usuario);
+  findAll(@Req() req: any) {
+    return this.frigorificoService.findAll(req.user.id_usuario);
   }
-  
+
   @Post()
   @Roles(3)
-  create(@Req() req: RequestWithUser, @Body() createFrigorificoDto: CreateFrigorificoDto) {
+  create(@Req() req: any, @Body() createFrigorificoDto: CreateFrigorificoDto) {
     return this.frigorificoService.create(req.user.id_usuario, createFrigorificoDto);
   }
 
   @Patch()
   @Roles(3)
-  update(@Req() req: RequestWithUser, @Body() updateFrigorificoDto: UpdateFrigorificoDto) {
+  update(@Req() req: any, @Body() updateFrigorificoDto: UpdateFrigorificoDto) {
     return this.frigorificoService.update(req.user.id_usuario, updateFrigorificoDto);
   }
 
   @Delete()
   @Roles(3)
-  remove(@Req() req: RequestWithUser, @Body() body: { id_frigorifico: number }) {
+  remove(@Req() req: any, @Body() body: { id_frigorifico: number }) {
     return this.frigorificoService.remove(req.user.id_usuario, body.id_frigorifico);
   }
 
   @Post('productos')
   @Roles(1, 2)
-  async createProducto(@Req() req: RequestWithUser, @Body() createProductoDto: any) {
+  async createProducto(@Req() req: any, @Body() createProductoDto: any) {
     return this.frigorificoService.createProducto(createProductoDto, req.user.id_usuario);
   }
 
   @Get('productos')
   @Roles(1, 2, 3, 4)
-  async findAllProductos(@Req() req: RequestWithUser) {
+  async findAllProductos(@Req() req: any) {
     return this.frigorificoService.findAllProductos(req.user.id_usuario);
   }
 
   @Patch('productos/:id')
   @Roles(1, 2)
-  async updateProducto(@Req() req: RequestWithUser, @Param('id') id: string, @Body() updateProductoDto: any) {
+  async updateProducto(@Req() req: any, @Param('id') id: string, @Body() updateProductoDto: any) {
     return this.frigorificoService.updateProducto(+id, updateProductoDto, req.user.id_usuario);
   }
 
   @Delete('productos/:id')
   @Roles(1, 2)
-  async removeProducto(@Req() req: RequestWithUser, @Param('id') id: string) {
+  async removeProducto(@Req() req: any, @Param('id') id: string) {
     return this.frigorificoService.removeProducto(+id, req.user.id_usuario);
   }
 
   @Post('estacion/:frigorificoId')
   @Roles(3)
-  createEstacion(@Param('frigorificoId') frigorificoId: string, @Req() req: RequestWithUser) {
+  createEstacion(@Param('frigorificoId') frigorificoId: string, @Req() req: any) {
     return this.frigorificoService.createEstacion(+frigorificoId, req.user.id_usuario);
   }
 
   @Delete('estacion/:estacionId')
   @Roles(3)
-  deleteEstacion(@Param('estacionId') estacionId: string, @Req() req: RequestWithUser) {
+  deleteEstacion(@Param('estacionId') estacionId: string, @Req() req: any) {
     return this.frigorificoService.deleteEstacion(estacionId, req.user.id_usuario);
   }
 
- @Get('estacion/:estacionId')
- @UseGuards(JwtAuthGuard)
- getHistorialEstacion(@Param('estacionId') estacionId: string, @Req() req: RequestWithEstacion) {
-   // Verificar que el token es de tipo estación
-   if (req.user.type !== 'estacion') {
-     throw new Error('Acceso denegado: Token no es de tipo estación');
-   }
+  @Get('estacion/:estacionId')
+  @UseGuards(JwtAuthGuard)
+  getHistorialEstacion(@Param('estacionId') estacionId: string, @Req() req: any) {
+    if (req.user.type !== 'estacion') {
+      throw new Error('Acceso denegado: Token no es de tipo estación');
+    }
+    if (req.user.sub !== estacionId) {
+      throw new Error('Acceso denegado: La estación no coincide con el token');
+    }
+    return this.frigorificoService.getHistorialEstacion(estacionId);
+  }
 
-   // Verificar que el id de la estación en el parámetro coincide con el del token
-   if (req.user.sub !== estacionId) {
-     throw new Error('Acceso denegado: La estación no coincide con el token');
-   }
+  @Delete('estacion/:estacionId/empaque/:epc')
+  @UseGuards(JwtAuthGuard)
+  deleteEmpaqueByEpc(
+    @Param('estacionId') estacionId: string,
+    @Param('epc') epc: string,
+    @Req() req: any,
+  ) {
+    if (req.user?.type === 'estacion') {
+      if (req.user.sub !== estacionId) {
+        throw new Error('Acceso denegado: La estación no coincide con el token');
+      }
+    } else if (req.user?.roleId) {
+      if (req.user.roleId !== 3) {
+        throw new Error('Acceso denegado: Se requiere rol de frigorífico');
+      }
+    } else {
+      throw new Error('Acceso denegado: Token inválido');
+    }
+    return this.frigorificoService.deleteEmpaqueByEpc(estacionId, epc, req.user?.id_usuario);
+  }
 
-   return this.frigorificoService.getHistorialEstacion(estacionId);
- }
+  @Get('gestion')
+  @UseGuards(HerenciaGuard)
+  @Roles(2, 3, 4)
+  @Herencia({ tipo: 'resolver', scope: 'hermanos', entidad: 'usuario' })
+  getGestionFrigorifico(@Query('id_usuario') id_usuario: string, @Req() req: any) {
+    const requesterId = req.user.id_usuario;
+    const requesterRole = req.user.roleId;
 
- @Delete('estacion/:estacionId/empaque/:epc')
- @UseGuards(JwtAuthGuard)
- deleteEmpaqueByEpc(
-   @Param('estacionId') estacionId: string,
-   @Param('epc') epc: string,
-   @Req() req: RequestWithUser | RequestWithEstacion
- ) {
+    if (requesterRole === 3) {
+      return this.frigorificoService.getGestionFrigorifico(requesterId);
+    }
 
-   // Verificar permisos según el tipo de token
-   if ('type' in req.user && req.user.type === 'estacion') {
-     // Token de estación: verificar que coincide con la estación del parámetro
-     if (req.user.sub !== estacionId) {
-       throw new Error('Acceso denegado: La estación no coincide con el token');
-     }
-   } else if ('roleId' in req.user) {
-     // Token de usuario: verificar que tiene rol 3 y que la estación pertenece a sus frigoríficos
-     if (req.user.roleId !== 3) {
-       throw new Error('Acceso denegado: Se requiere rol de frigorífico');
-     }
+    const targetId = Number(id_usuario);
+    if (!targetId) {
+      throw new Error('Se requiere el parámetro id_usuario para usuarios con rol 2 o 4');
+    }
 
-     // Verificar que la estación pertenece a un frigorífico del usuario
-     // Esta verificación se hará en el servicio
-   } else {
-     throw new Error('Acceso denegado: Token inválido');
-   }
+    return this.frigorificoService.getGestionFrigorifico(targetId);
+  }
 
-   return this.frigorificoService.deleteEmpaqueByEpc(estacionId, epc, 'roleId' in req.user ? req.user.id_usuario : undefined);
- }
+  @Get('hermanos')
+  @UseGuards(HerenciaGuard)
+  @Roles(2, 4)
+  @Herencia({ tipo: 'resolver', scope: 'hermanos', entidad: 'usuario' })
+  getHermanosFrigorifico(@Req() req: any) {
+    return this.frigorificoService.getHermanosFrigorificoPorScope(req.user.id_usuario, req.accessibleUserIds);
+  }
 
- @Get('gestion')
- @Roles(2, 3, 4)
- getGestionFrigorifico(@Req() req: RequestWithUser) {
-   const { id_usuario } = req.query; // Parámetro opcional para roles 2 y 4
-   const requesterId = req.user.id_usuario;
-   const requesterRole = req.user.roleId;
-   
-   // Si es rol 3, devuelve su propia información
-   if (requesterRole === 3) {
-     return this.frigorificoService.getGestionFrigorifico(requesterId);
-   }
-   
-   // Si es rol 2 o 4, puede solicitar información de un rol 3 específico
-   if (requesterRole === 2 || requesterRole === 4) {
-     if (!id_usuario) {
-       throw new Error('Se requiere el parámetro id_usuario para usuarios con rol 2 o 4');
-     }
-     return this.frigorificoService.getGestionFrigorificoPorUsuario(+id_usuario, requesterId, requesterRole);
-   }
-   
-   throw new Error('Rol no autorizado para esta operación');
- }
-
- @Get('hermanos')
- @Roles(2, 4)
- getHermanosFrigorifico(@Req() req: RequestWithUser) {
-   const requesterId = req.user.id_usuario;
-   const requesterRole = req.user.roleId;
-   
-   return this.frigorificoService.getHermanosFrigorifico(requesterId, requesterRole);
- }
-
- @Post('empaques/cambiar-estado')
- @Roles(4)
- async cambiarEstadoEmpaques(@Req() req: RequestWithUser, @Body() body: { id_estacion: string, id_producto: number, id_logistica: number }) {
-   const { id_estacion, id_producto, id_logistica } = body;
-   return this.frigorificoService.cambiarEstadoEmpaques(id_estacion, id_producto, id_logistica, req.user.id_usuario);
- }
+  @Post('empaques/cambiar-estado')
+  @UseGuards(HerenciaGuard)
+  @Roles(4)
+  @Herencia({ tipo: 'resolver', scope: 'hermanos', entidad: 'usuario' })
+  async cambiarEstadoEmpaques(@Req() req: any, @Body() body: { id_estacion: string; id_producto: number; id_logistica: number }) {
+    const { id_estacion, id_producto, id_logistica } = body;
+    return this.frigorificoService.cambiarEstadoEmpaques(id_estacion, id_producto, id_logistica, req.user.id_usuario, req.accessibleUserIds);
+  }
 }

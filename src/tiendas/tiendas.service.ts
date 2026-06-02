@@ -8,99 +8,6 @@ import { UMBRAL_PARA_CAMBIO, UMBRAL_VENCIDO } from '../common/config/constants';
 export class TiendasService {
   constructor(private readonly databaseService: DatabaseService) {}
 
-  /**
-   * Verifica si un usuario tiene permisos para acceder a una nevera
-   * Jerarquía: Rol 1 → Rol 2 → Rol 4 → Rol 5
-   * @param rolUsuario Rol del usuario actual
-   * @param idUsuarioActual ID del usuario actual
-   * @param idUsuarioTienda ID del usuario propietario de la tienda
-   * @param idNevera ID de la nevera a verificar
-   * @returns boolean - true si tiene permiso, false si no
-   */
-  private async verificarPermisoNevera(
-    rolUsuario: number,
-    idUsuarioActual: number,
-    idUsuarioTienda: number,
-    idNevera: number,
-  ): Promise<boolean> {
-    switch (rolUsuario) {
-      case 1: // Super Admin - puede ver todo
-        return true;
-
-      case 2: // Admin - solo puede ver lo creado por sus "hijos" (rol 4) y "nietos" (rol 5)
-        // Verificar si el usuario actual es creador directo del usuario de la tienda (hijo directo)
-        const esHijoDirecto =
-          await this.databaseService.tOKEN_REGISTRO.findFirst({
-            where: {
-              id_usuario_creador: idUsuarioActual,
-              id_usuario_nuevo: idUsuarioTienda,
-            },
-          });
-
-        if (esHijoDirecto) return true;
-
-        // Verificar si es un "nieto" (usuario rol 5 creado por un rol 4 que fue creado por el admin actual)
-        if (idUsuarioTienda) {
-          const usuarioTienda = await this.databaseService.uSUARIOS.findUnique({
-            where: { id_usuario: idUsuarioTienda },
-            select: { id_rol: true },
-          });
-
-          if (usuarioTienda?.id_rol === 5) {
-            // Encontrar quién creó este rol 5
-            const quienCreoElRol5 =
-              await this.databaseService.tOKEN_REGISTRO.findFirst({
-                where: {
-                  id_usuario_nuevo: idUsuarioTienda,
-                },
-              });
-
-            if (quienCreoElRol5) {
-              // Verificar si quien lo creó es un rol 4
-              const supervisor = await this.databaseService.uSUARIOS.findUnique(
-                {
-                  where: { id_usuario: quienCreoElRol5.id_usuario_creador },
-                  select: { id_rol: true },
-                },
-              );
-
-              if (supervisor?.id_rol === 4) {
-                // Verificar si ese supervisor (rol 4) fue creado por el admin actual
-                const supervisorEsHijoDelAdmin =
-                  await this.databaseService.tOKEN_REGISTRO.findFirst({
-                    where: {
-                      id_usuario_creador: idUsuarioActual,
-                      id_usuario_nuevo: quienCreoElRol5.id_usuario_creador,
-                    },
-                  });
-
-                return !!supervisorEsHijoDelAdmin;
-              }
-            }
-          }
-        }
-
-        return false;
-
-      case 4: // Supervisor - puede ver tiendas de sus "hijos" (rol 5)
-        // Verificar si el usuario actual es creador del usuario propietario de la tienda
-        const relacionSupervisor =
-          await this.databaseService.tOKEN_REGISTRO.findFirst({
-            where: {
-              id_usuario_creador: idUsuarioActual,
-              id_usuario_nuevo: idUsuarioTienda,
-            },
-          });
-        return !!relacionSupervisor;
-
-      case 5: // Cliente final - solo sus propias tiendas/neveras
-        return idUsuarioActual === idUsuarioTienda;
-
-      default:
-        return false;
-    }
-  }
-
   private async verificarPendientesPagoNevera(id_nevera: number, id_usuario_tienda: number): Promise<boolean> {
     const [empaquesPendientes, transaccionesPendientes] = await Promise.all([
       this.databaseService.eMPAQUES.count({
@@ -647,26 +554,6 @@ export class TiendasService {
       );
     }
 
-    // VERIFICACIÓN DE PERMISOS según rol
-    const tienePermiso = await this.verificarPermisoNevera(
-      usuarioActual.id_rol,
-      usuarioActual.id_usuario,
-      nevera.tienda.id_usuario,
-      id_nevera,
-    );
-
-    if (!tienePermiso) {
-      throw new HttpException(
-        {
-          status: HttpStatus.FORBIDDEN,
-          error: 'Acceso denegado',
-          message: 'No tienes permisos para acceder a esta nevera.',
-          code: 'ACCESS_DENIED',
-        },
-        HttpStatus.FORBIDDEN,
-      );
-    }
-
     // Obtener todos los productos
     const todosLosProductos = await this.databaseService.pRODUCTOS.findMany({
       select: {
@@ -908,26 +795,6 @@ export class TiendasService {
       );
     }
 
-    // VERIFICACIÓN DE PERMISOS según rol
-    const tienePermiso = await this.verificarPermisoNevera(
-      usuarioActual.id_rol,
-      usuarioActual.id_usuario,
-      nevera.tienda.id_usuario,
-      id_nevera,
-    );
-
-    if (!tienePermiso) {
-      throw new HttpException(
-        {
-          status: HttpStatus.FORBIDDEN,
-          error: 'Acceso denegado',
-          message: 'No tienes permisos para modificar esta nevera.',
-          code: 'ACCESS_DENIED',
-        },
-        HttpStatus.FORBIDDEN,
-      );
-    }
-
     const results: any[] = [];
     const errors: any[] = [];
 
@@ -1065,235 +932,13 @@ export class TiendasService {
     };
   }
 
-  async getTiendasSobrinas(id_usuario: number, rol_usuario: number) {
+  async getTiendasSobrinas(id_usuario: number, rol_usuario: number, accessibleUserIds: number[]) {
     try {
-      if (rol_usuario !== 4 && rol_usuario !== 2 && rol_usuario !== 5 && rol_usuario !== 1) {
-        throw new Error(
-          'Acceso denegado: Solo usuarios con rol 1, 2, 4 o 5 pueden acceder a esta función',
-        );
-      }
-
-      if (rol_usuario === 1) {
-        const usuariosTiendaConTiendas =
-          await this.databaseService.uSUARIOS.findMany({
-            where: {
-              id_rol: 5,
-              activo: true,
-            },
-            select: {
-              id_usuario: true,
-              nombre_usuario: true,
-              apellido_usuario: true,
-              email: true,
-              celular: true,
-              tiendas: {
-                include: {
-                  ciudad: {
-                    select: {
-                      nombre_ciudad: true,
-                      departamento: {
-                        select: {
-                          nombre_departamento: true,
-                        },
-                      },
-                    },
-                  },
-                  neveras: {
-                    select: {
-                      id_nevera: true,
-                      id_estado_nevera: true,
-                    },
-                  },
-                },
-              },
-            },
-          });
-
-const resultadoUsuariosTienda = await Promise.all(
-          usuariosTiendaConTiendas.map(async (usuarioTienda) => ({
-            id_usuario: usuarioTienda.id_usuario,
-            nombre_usuario: usuarioTienda.nombre_usuario,
-            apellido_usuario: usuarioTienda.apellido_usuario,
-            email: usuarioTienda.email,
-            celular: usuarioTienda.celular,
-            tiendas: await Promise.all(
-              usuarioTienda.tiendas.map(async (tienda) => ({
-                id_tienda: tienda.id_tienda,
-                nombre_tienda: tienda.nombre_tienda,
-                direccion: tienda.direccion,
-                ciudad: tienda.ciudad.nombre_ciudad,
-                departamento: tienda.ciudad.departamento.nombre_departamento,
-                neveras: await Promise.all(
-                  tienda.neveras.map(async (nevera) => ({
-                    id_nevera: nevera.id_nevera,
-                    id_estado_nevera: nevera.id_estado_nevera,
-                    pendientes_pago: await this.verificarPendientesPagoNevera(nevera.id_nevera, usuarioTienda.id_usuario),
-                  })),
-                ),
-              })),
-            ),
-          })),
-        );
-
-        // Obtener todas las ciudades disponibles
-        const ciudades = await this.databaseService.cIUDAD.findMany({
-          include: {
-            departamento: {
-              select: {
-                nombre_departamento: true,
-              },
-            },
-          },
-          orderBy: [
-            { departamento: { nombre_departamento: 'asc' } },
-            { nombre_ciudad: 'asc' },
-          ],
-        });
-
-        return {
-          usuarios_tienda: resultadoUsuariosTienda,
-          ciudades_disponibles: ciudades.map((ciudad) => ({
-            id_ciudad: ciudad.id_ciudad,
-            nombre_ciudad: ciudad.nombre_ciudad,
-            departamento: ciudad.departamento.nombre_departamento,
-          })),
-        };
-      } else if (rol_usuario === 4) {
-        const tiendaTokens = await this.databaseService.tOKEN_REGISTRO.findMany(
-          {
-            where: {
-              id_usuario_creador: id_usuario, // El logístico actual (ID 6) como creador
-              id_rol_nuevo_usuario: 5, // Rol de tienda
-            },
-            select: {
-              id_usuario_nuevo: true,
-            },
-          },
-        );
-
-        const tiendaUsuarioIds = tiendaTokens
-          .map((t) => t.id_usuario_nuevo)
-          .filter((id) => id !== null);
-
-        if (tiendaUsuarioIds.length === 0) {
-          // Devolver estructura vacía pero válida
-          const ciudades = await this.databaseService.cIUDAD.findMany({
-            include: {
-              departamento: {
-                select: {
-                  nombre_departamento: true,
-                },
-              },
-            },
-            orderBy: [
-              { departamento: { nombre_departamento: 'asc' } },
-              { nombre_ciudad: 'asc' },
-            ],
-          });
-
-          return {
-            usuarios_tienda: [],
-            ciudades_disponibles: ciudades.map((ciudad) => ({
-              id_ciudad: ciudad.id_ciudad,
-              nombre_ciudad: ciudad.nombre_ciudad,
-              departamento: ciudad.departamento.nombre_departamento,
-            })),
-          };
-        }
-
-        // Obtener información de los usuarios con rol 5 (usuarios tienda) y sus tiendas en una sola consulta
-        const usuariosTiendaConTiendas =
-          await this.databaseService.uSUARIOS.findMany({
-            where: {
-              id_usuario: {
-                in: tiendaUsuarioIds,
-              },
-              activo: true, // Solo usuarios activos
-            },
-            select: {
-              id_usuario: true,
-              nombre_usuario: true,
-              apellido_usuario: true,
-              email: true,
-              celular: true,
-              tiendas: {
-                include: {
-                  ciudad: {
-                    select: {
-                      nombre_ciudad: true,
-                      departamento: {
-                        select: {
-                          nombre_departamento: true,
-                        },
-                      },
-                    },
-                  },
-                  neveras: {
-                    select: {
-                      id_nevera: true,
-                      id_estado_nevera: true,
-                    },
-                  },
-                },
-              },
-            },
-          });
-
-        // Transformar los resultados y agregar información de pendientes de pago
-        const resultadoUsuariosTienda = await Promise.all(
-          usuariosTiendaConTiendas.map(async (usuarioTienda) => ({
-            id_usuario: usuarioTienda.id_usuario,
-            nombre_usuario: usuarioTienda.nombre_usuario,
-            apellido_usuario: usuarioTienda.apellido_usuario,
-            email: usuarioTienda.email,
-            celular: usuarioTienda.celular,
-tiendas: await Promise.all(
-              usuarioTienda.tiendas.map(async (tienda) => ({
-                id_tienda: tienda.id_tienda,
-                nombre_tienda: tienda.nombre_tienda,
-                direccion: tienda.direccion,
-                ciudad: tienda.ciudad.nombre_ciudad,
-                departamento: tienda.ciudad.departamento.nombre_departamento,
-                neveras: await Promise.all(
-                  tienda.neveras.map(async (nevera) => ({
-                    id_nevera: nevera.id_nevera,
-                    id_estado_nevera: nevera.id_estado_nevera,
-                    pendientes_pago: await this.verificarPendientesPagoNevera(nevera.id_nevera, usuarioTienda.id_usuario),
-                  })),
-                ),
-              })),
-            ),
-          })),
-        );
-
-        // Obtener todas las ciudades disponibles
-        const ciudades = await this.databaseService.cIUDAD.findMany({
-          include: {
-            departamento: {
-              select: {
-                nombre_departamento: true,
-              },
-            },
-          },
-          orderBy: [
-            { departamento: { nombre_departamento: 'asc' } },
-            { nombre_ciudad: 'asc' },
-          ],
-        });
-
-        return {
-          usuarios_tienda: resultadoUsuariosTienda,
-          ciudades_disponibles: ciudades.map((ciudad) => ({
-            id_ciudad: ciudad.id_ciudad,
-            nombre_ciudad: ciudad.nombre_ciudad,
-            departamento: ciudad.departamento.nombre_departamento,
-          })),
-        };
-      } else if (rol_usuario === 5) {
-        // Para rol 5 (tienda), devolver su propia información
-        const usuarioTienda = await this.databaseService.uSUARIOS.findUnique({
+      const usuariosTiendaConTiendas =
+        await this.databaseService.uSUARIOS.findMany({
           where: {
-            id_usuario: id_usuario,
+            id_usuario: { in: accessibleUserIds },
+            id_rol: 5,
             activo: true,
           },
           select: {
@@ -1306,7 +951,6 @@ tiendas: await Promise.all(
               include: {
                 ciudad: {
                   select: {
-                    id_ciudad: true,
                     nombre_ciudad: true,
                     departamento: {
                       select: {
@@ -1326,33 +970,8 @@ tiendas: await Promise.all(
           },
         });
 
-        if (!usuarioTienda) {
-          throw new HttpException(
-            {
-              status: HttpStatus.NOT_FOUND,
-              error: 'Usuario no encontrado',
-              message: 'El usuario no existe o no está activo.',
-              code: 'USER_NOT_FOUND',
-            },
-            HttpStatus.NOT_FOUND,
-          );
-        }
-
-        // Para usuarios rol 5, extraer las ciudades únicas donde tienen tiendas
-        const ciudadesTiendaUsuario = new Map();
-        usuarioTienda.tiendas.forEach((tienda) => {
-          const id_ciudad = tienda.ciudad.id_ciudad;
-          if (!ciudadesTiendaUsuario.has(id_ciudad)) {
-            ciudadesTiendaUsuario.set(id_ciudad, {
-              id_ciudad: tienda.ciudad.id_ciudad,
-              nombre_ciudad: tienda.ciudad.nombre_ciudad,
-              departamento: tienda.ciudad.departamento.nombre_departamento,
-            });
-          }
-        });
-
-        // Transformar los resultados y agregar información de pendientes de pago
-        const resultadoUsuarioTienda = {
+      const resultadoUsuariosTienda = await Promise.all(
+        usuariosTiendaConTiendas.map(async (usuarioTienda) => ({
           id_usuario: usuarioTienda.id_usuario,
           nombre_usuario: usuarioTienda.nombre_usuario,
           apellido_usuario: usuarioTienda.apellido_usuario,
@@ -1365,7 +984,7 @@ tiendas: await Promise.all(
               direccion: tienda.direccion,
               ciudad: tienda.ciudad.nombre_ciudad,
               departamento: tienda.ciudad.departamento.nombre_departamento,
-neveras: await Promise.all(
+              neveras: await Promise.all(
                 tienda.neveras.map(async (nevera) => ({
                   id_nevera: nevera.id_nevera,
                   id_estado_nevera: nevera.id_estado_nevera,
@@ -1374,16 +993,31 @@ neveras: await Promise.all(
               ),
             })),
           ),
-        };
+        })),
+      );
 
-        // Convertir el Map a array de ciudades disponibles
-        const ciudadesDisponibles = Array.from(ciudadesTiendaUsuario.values());
+      const ciudades = await this.databaseService.cIUDAD.findMany({
+        include: {
+          departamento: {
+            select: {
+              nombre_departamento: true,
+            },
+          },
+        },
+        orderBy: [
+          { departamento: { nombre_departamento: 'asc' } },
+          { nombre_ciudad: 'asc' },
+        ],
+      });
 
-        return {
-          usuarios_tienda: [resultadoUsuarioTienda],
-          ciudades_disponibles: ciudadesDisponibles,
-        };
-      }
+      return {
+        usuarios_tienda: resultadoUsuariosTienda,
+        ciudades_disponibles: ciudades.map((ciudad) => ({
+          id_ciudad: ciudad.id_ciudad,
+          nombre_ciudad: ciudad.nombre_ciudad,
+          departamento: ciudad.departamento.nombre_departamento,
+        })),
+      };
     } catch (error) {
       console.error('ERROR en getTiendasSobrinas:', error);
       throw error;

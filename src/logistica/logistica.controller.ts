@@ -1,7 +1,5 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, Req } from '@nestjs/common';
 import { LogisticaService } from './logistica.service';
-import { CreateLogisticaDto } from './dto/create-logistica.dto';
-import { UpdateLogisticaDto } from './dto/update-logistica.dto';
 import { CuentasDto } from './dto/cuentas.dto';
 import { ConsolidacionCuentasDto } from './dto/consolidacion-cuentas.dto';
 import { LiquidacionNeveraDto } from './dto/liquidacion-nevera.dto';
@@ -9,6 +7,7 @@ import { DecincoaseisDto } from './dto/decincoaseis.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { HerenciaGuard, Herencia } from '../herencia';
 
 @Controller('api/logistica')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -16,7 +15,9 @@ export class LogisticaController {
   constructor(private readonly logisticaService: LogisticaService) {}
 
   @Get()
+  @UseGuards(HerenciaGuard)
   @Roles(1, 2, 4)
+  @Herencia({ tipo: 'resolver', scope: 'descendientes', entidad: 'usuario' })
   getProductosPorLogistica(
     @Req() req: any,
     @Query('id_usuario') idUsuarioParam?: string,
@@ -28,14 +29,17 @@ export class LogisticaController {
       id_usuario_jwt,
       id_rol_jwt,
       idUsuarioTarget,
+      req.accessibleUserIds,
     );
   }
 
   @Get('surtir')
+  @UseGuards(HerenciaGuard)
   @Roles(1, 2, 4)
+  @Herencia({ tipo: 'resolver', scope: 'descendientes', entidad: 'usuario' })
   getNeverasActivas(@Req() req: any) {
     const id_usuario = req.user.id_usuario;
-    return this.logisticaService.getNeverasActivas(id_usuario);
+    return this.logisticaService.getNeverasActivas(id_usuario, req.accessibleUserIds);
   }
 
   @Get('cuentas')
@@ -45,24 +49,24 @@ export class LogisticaController {
   }
 
   @Post('cuentas')
-  @Roles(2, 4) // Solo roles 2 y 4 pueden consolidar cuentas
+  @Roles(2, 4)
   consolidarCuentas(
     @Query('id_usuario') id_usuario: number,
     @Body() consolidacionDto: ConsolidacionCuentasDto,
-    @Req() req: any
+    @Req() req: any,
   ) {
-    const id_usuario_credenciales = req.user.id_usuario; // Usuario del JWT
+    const id_usuario_credenciales = req.user.id_usuario;
     return this.logisticaService.consolidarCuentas(
       Number(id_usuario),
       Number(id_usuario_credenciales),
-      consolidacionDto
+      consolidacionDto,
     );
   }
 
   @Patch('surtir/:id_nevera')
   @Roles(2, 4)
   iniciarSurtido(@Param('id_nevera') id_nevera: string, @Req() req: any) {
-    const id_usuario = req.user.id_usuario; // Obtener id_usuario del JWT
+    const id_usuario = req.user.id_usuario;
     return this.logisticaService.iniciarSurtido(Number(id_nevera), id_usuario);
   }
 
@@ -124,5 +128,4 @@ export class LogisticaController {
     const id_usuario = req.user.id_usuario;
     return this.logisticaService.decincoaseis(id_usuario, dto);
   }
-
 }

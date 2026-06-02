@@ -37,12 +37,11 @@ export class GestionUsuariosService {
     return formattedUser;
   }
 
-  async findAll(user: { id_usuario: number; roleId: number }) {
+  async findAll(user: { id_usuario: number; roleId: number }, accessibleUserIds: number[]) {
     const userRole = user.roleId;
-    this.logger.debug(`Iniciando findAll para el usuario ID: ${user.id_usuario} con Rol ID: ${userRole}`);
+    this.logger.debug(`Iniciando findAll para el usuario ID: ${user.id_usuario} con Rol ID: ${userRole}, scope=${accessibleUserIds.length} usuarios`);
 
-    // Incluir logisticas para el usuario actual si es rol 4
-    const includeRelations = { rol: true };
+    const includeRelations: any = { rol: true };
     if (userRole === 4) {
       includeRelations['logisticas'] = true;
     }
@@ -61,8 +60,8 @@ export class GestionUsuariosService {
       throw error;
     }
 
-    // Vista simple para roles no jerárquicos
-    if (userRole === 3 || userRole === 5) { // Frigorifico o Tienda
+    // Roles sin vista jerárquica
+    if (userRole === 3 || userRole === 5) {
       return {
         usuario_actual: this.formatUser(currentUser),
         jerarquia: [],
@@ -70,103 +69,16 @@ export class GestionUsuariosService {
       };
     }
 
-    // Vista especial para usuarios de logística (rol 4)
-    if (userRole === 4) {
-      // Obtener usuarios tienda creados por este usuario logística
-      const tiendaUsers = await this.databaseService.tOKEN_REGISTRO.findMany({
-        where: {
-          id_usuario_creador: user.id_usuario,
-          es_usado: true,
-          id_usuario_nuevo: { not: null },
-          id_rol_nuevo_usuario: 5, // Rol tienda
-          nuevo_usuario: { email: { not: { endsWith: '@borrado.com' } } },
-        },
-        include: {
-          nuevo_usuario: {
-            include: {
-              rol: true,
-              tiendas: {
-                include: {
-                  ciudad: {
-                    include: {
-                      departamento: true
-                    }
-                  },
-                  neveras: {
-                    select: {
-                      id_nevera: true,
-                      id_estado_nevera: true
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-      });
-
-      // Formatear las tiendas creadas
-      const tiendasCreadas = tiendaUsers
-        .map(token => token.nuevo_usuario)
-        .filter(user => user !== null)
-        .map(tiendaUser => ({
-          id_usuario: tiendaUser.id_usuario,
-          nombre_completo: `${tiendaUser.nombre_usuario || ''} ${tiendaUser.apellido_usuario || ''}`.trim(),
-          celular: tiendaUser.celular,
-          rol: tiendaUser.rol?.nombre_rol,
-          activo: tiendaUser.activo,
-          tiendas_creadas: tiendaUser.tiendas.map(tienda => ({
-            id_tienda: tienda.id_tienda,
-            nombre_tienda: tienda.nombre_tienda,
-            direccion: tienda.direccion,
-            ciudad: tienda.ciudad.nombre_ciudad,
-            departamento: tienda.ciudad.departamento.nombre_departamento,
-            neveras: tienda.neveras.map(nevera => ({
-              id_nevera: nevera.id_nevera,
-              estado: nevera.id_estado_nevera
-            }))
-          }))
-        }));
-
-      // Obtener tokens disponibles
-      const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
-        where: { id_usuario_creador: user.id_usuario, es_usado: false, expira_en: { gte: new Date() } },
-        select: {
-          token: true,
-          expira_en: true,
-          rol_nuevo_usuario: { select: { nombre_rol: true } },
-        },
-      });
-
-      return {
-        usuario_actual: this.formatUser(currentUser),
-        tiendas_creadas: tiendasCreadas,
-        tokens,
-      };
-    }
-
-    // Vista jerárquica para Super Admin, Admin
-    const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
-      where: { id_usuario_creador: user.id_usuario, es_usado: false, expira_en: { gte: new Date() } },
-      select: {
-        token: true,
-        expira_en: true,
-        rol_nuevo_usuario: { select: { nombre_rol: true } },
-      },
-    });
-
     // Función recursiva para construir el árbol de descendientes
+    // Usa accessibleUserIds como filtro máximo para no exceder el scope
     const getDescendants = async (creatorId: number) => {
-      const includeDescRelations = { rol: true };
-      if (userRole === 4) {
-        includeDescRelations['logisticas'] = true;
-      }
+      const includeDescRelations: any = { rol: true };
 
       const createdTokens = await this.databaseService.tOKEN_REGISTRO.findMany({
         where: {
           id_usuario_creador: creatorId,
           es_usado: true,
-          id_usuario_nuevo: { not: null },
+          id_usuario_nuevo: { not: null, in: accessibleUserIds },
           nuevo_usuario: { email: { not: { endsWith: '@borrado.com' } } },
         },
         include: { nuevo_usuario: { include: includeDescRelations } },
@@ -189,6 +101,71 @@ export class GestionUsuariosService {
         }),
       );
     };
+
+    // Vista para Logística (rol 4): tiendas creadas directamente
+    if (userRole === 4) {
+      const tiendaUsers = await this.databaseService.tOKEN_REGISTRO.findMany({
+        where: {
+          id_usuario_creador: user.id_usuario,
+          es_usado: true,
+          id_usuario_nuevo: { not: null, in: accessibleUserIds },
+          id_rol_nuevo_usuario: 5,
+          nuevo_usuario: { email: { not: { endsWith: '@borrado.com' } } },
+        },
+        include: {
+          nuevo_usuario: {
+            include: {
+              rol: true,
+              tiendas: {
+                include: {
+                  ciudad: { include: { departamento: true } },
+                  neveras: { select: { id_nevera: true, id_estado_nevera: true } }
+                }
+              }
+            }
+          }
+        },
+      });
+
+      const tiendasCreadas = tiendaUsers
+        .map(token => token.nuevo_usuario)
+        .filter(u => u !== null)
+        .map(tiendaUser => ({
+          id_usuario: tiendaUser.id_usuario,
+          nombre_completo: `${tiendaUser.nombre_usuario || ''} ${tiendaUser.apellido_usuario || ''}`.trim(),
+          celular: tiendaUser.celular,
+          rol: tiendaUser.rol?.nombre_rol,
+          activo: tiendaUser.activo,
+          tiendas_creadas: tiendaUser.tiendas.map(tienda => ({
+            id_tienda: tienda.id_tienda,
+            nombre_tienda: tienda.nombre_tienda,
+            direccion: tienda.direccion,
+            ciudad: tienda.ciudad.nombre_ciudad,
+            departamento: tienda.ciudad.departamento.nombre_departamento,
+            neveras: tienda.neveras.map(nevera => ({
+              id_nevera: nevera.id_nevera,
+              estado: nevera.id_estado_nevera
+            }))
+          }))
+        }));
+
+      const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
+        where: { id_usuario_creador: user.id_usuario, es_usado: false, expira_en: { gte: new Date() } },
+        select: { token: true, expira_en: true, rol_nuevo_usuario: { select: { nombre_rol: true } } },
+      });
+
+      return {
+        usuario_actual: this.formatUser(currentUser),
+        tiendas_creadas: tiendasCreadas,
+        tokens,
+      };
+    }
+
+    // Vista jerárquica para Super Admin, Admin (rol 1 y 2)
+    const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
+      where: { id_usuario_creador: user.id_usuario, es_usado: false, expira_en: { gte: new Date() } },
+      select: { token: true, expira_en: true, rol_nuevo_usuario: { select: { nombre_rol: true } } },
+    });
 
     const hierarchy = await getDescendants(user.id_usuario);
 
@@ -345,15 +322,10 @@ export class GestionUsuariosService {
       throw new ForbiddenException('No puedes eliminar tu propia cuenta.');
     }
 
-    // Verificar permisos de eliminación
-    if (remover.roleId === 2) {
-      const tokenLink = await this.databaseService.tOKEN_REGISTRO.findFirst({
-        where: { id_usuario_nuevo: id, id_usuario_creador: remover.id },
-      });
-      if (!tokenLink) {
-        throw new ForbiddenException('No tienes permiso para eliminar a este usuario.');
-      }
-    } else if (remover.roleId === 4) {
+    // La verificación de jerarquía (que el target está en el scope del usuario)
+    // es manejada por HerenciaGuard con @Herencia({ tipo: 'verificar', scope: 'hijos' })
+
+    if (remover.roleId === 4) {
       // Verificar si el usuario a eliminar es de rol 5 (tienda)
       const usuarioAEliminar = await this.databaseService.uSUARIOS.findUnique({
         where: { id_usuario: id },

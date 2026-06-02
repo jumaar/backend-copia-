@@ -12,22 +12,6 @@ import { UMBRAL_VENCIDO, UMBRAL_PARA_CAMBIO } from '../common/config/constants';
 export class LogisticaService {
   constructor(private readonly databaseService: DatabaseService) {}
 
-  private async obtenerDescendientes(idCreador: number): Promise<number[]> {
-    const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
-      where: { id_usuario_creador: idCreador },
-      select: { id_usuario_nuevo: true },
-    });
-    const directos = tokens
-      .filter((t) => t.id_usuario_nuevo !== null)
-      .map((t) => t.id_usuario_nuevo!);
-    let todos = [...directos];
-    for (const d of directos) {
-      const sub = await this.obtenerDescendientes(d);
-      todos.push(...sub);
-    }
-    return todos;
-  }
-
   create(createLogisticaDto: CreateLogisticaDto) {
     return 'This action adds a new logistica';
   }
@@ -44,18 +28,18 @@ export class LogisticaService {
     id_usuario: number,
     id_rol: number,
     idUsuarioTarget?: number,
+    accessibleUserIds?: number[],
   ) {
+    const idsAccesibles = accessibleUserIds || [id_usuario];
+
     // ═══════════════════════════════════════════════════════════════
     // CASO ADMIN (rol 1 o 2) SIN target: devolver lista de usuarios
     // logística que son sus descendientes
     // ═══════════════════════════════════════════════════════════════
     if ((id_rol === 1 || id_rol === 2) && !idUsuarioTarget) {
-      const descendientes = await this.obtenerDescendientes(id_usuario);
-      const todosIds = [id_usuario, ...descendientes];
-
       const usuariosLogistica = await this.databaseService.uSUARIOS.findMany({
         where: {
-          id_usuario: { in: todosIds },
+          id_usuario: { in: idsAccesibles },
           id_rol: 4,
           activo: true,
         },
@@ -75,11 +59,10 @@ export class LogisticaService {
 
     // ═══════════════════════════════════════════════════════════════
     // VALIDACIÓN: Admin con target → verificar que el target sea
-    // descendiente (o él mismo)
+    // accesible en la jerarquía
     // ═══════════════════════════════════════════════════════════════
     if (idUsuarioTarget && (id_rol === 1 || id_rol === 2)) {
-      const descendientes = await this.obtenerDescendientes(id_usuario);
-      if (idUsuarioTarget !== id_usuario && !descendientes.includes(idUsuarioTarget)) {
+      if (idUsuarioTarget !== id_usuario && !idsAccesibles.includes(idUsuarioTarget)) {
         throw new ForbiddenException('No tienes acceso a este usuario logístico');
       }
     }
@@ -171,14 +154,7 @@ export class LogisticaService {
       select: { id_rol: true },
     });
 
-    let usuariosPermitidos: number[] = [idUsuarioEfectivo];
-    if (usuario && (usuario.id_rol === 1 || usuario.id_rol === 2)) {
-      const descendientes = await this.obtenerDescendientes(idUsuarioEfectivo);
-      usuariosPermitidos.push(...descendientes);
-    } else if (usuario && usuario.id_rol === 4) {
-      const descendientes = await this.obtenerDescendientes(idUsuarioEfectivo);
-      usuariosPermitidos.push(...descendientes);
-    }
+    let usuariosPermitidos: number[] = idsAccesibles;
 
     const empaquesEstado5 = await this.databaseService.eMPAQUES.findMany({
       where: {
@@ -592,7 +568,9 @@ export class LogisticaService {
       }
     };
   }
-  async getNeverasActivas(id_usuario: number) {
+  async getNeverasActivas(id_usuario: number, accessibleUserIds?: number[]) {
+    const idsAccesibles = accessibleUserIds || [id_usuario];
+
     // FASE 0: Escanea empaques en estado 3 y 5, cambia a estado 5 los ≥75%
     // que aun esten en estado 3, y setea mensaje_sistema para ambos.
     const empaquesScan = await this.databaseService.eMPAQUES.findMany({
@@ -655,40 +633,9 @@ export class LogisticaService {
       }
     }
 
-    // Obtener el rol del usuario
-    const usuario = await this.databaseService.uSUARIOS.findUnique({
-      where: { id_usuario: id_usuario },
-      select: { id_rol: true }
-    });
-
-    if (!usuario) {
-      return {
-        error: 'Usuario no encontrado',
-        neveras_activas: []
-      };
-    }
-
-    let usuariosPermitidos: number[] = [id_usuario]; // Incluir al propio usuario
-
-    if (usuario.id_rol === 1 || usuario.id_rol === 2) {
-      // Rol 1 (admin) y Rol 2: obtener todos sus descendientes
-      const descendientes = await this.obtenerDescendientes(id_usuario);
-      usuariosPermitidos.push(...descendientes);
-    } else if (usuario.id_rol === 4) {
-      // Rol 4: obtener todos sus descendientes (si tiene)
-      const descendientes = await this.obtenerDescendientes(id_usuario);
-      usuariosPermitidos.push(...descendientes);
-    } else {
-      // Otros roles no tienen acceso
-      return {
-        error: 'Rol no autorizado para esta operación',
-        neveras_activas: []
-      };
-    }
-
-    // Obtener tiendas de los usuarios permitidos
+    // Obtener tiendas de los usuarios accesibles (ya resueltos por el guard)
     const tiendas = await this.databaseService.tIENDAS.findMany({
-      where: { id_usuario: { in: usuariosPermitidos } },
+      where: { id_usuario: { in: idsAccesibles } },
       select: { id_tienda: true }
     });
 

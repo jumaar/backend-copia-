@@ -1237,120 +1237,6 @@ export class FrigorificoService {
     };
   }
 
-  async getGestionFrigorificoPorUsuario(
-    id_usuario: number,
-    requesterId: number,
-    requesterRole: number,
-  ) {
-    // Verificar que el usuario solicitado existe y es de rol 3
-    const usuarioSolicitado = await this.databaseService.uSUARIOS.findUnique({
-      where: { id_usuario: id_usuario },
-      include: {
-        rol: {
-          select: {
-            nombre_rol: true,
-          },
-        },
-      },
-    });
-
-    if (!usuarioSolicitado) {
-      throw new HttpException(
-        {
-          status: HttpStatus.NOT_FOUND,
-          error: 'Usuario no encontrado',
-          message: 'El usuario solicitado no existe.',
-          code: 'USER_NOT_FOUND',
-        },
-        HttpStatus.NOT_FOUND,
-      );
-    }
-
-    if (usuarioSolicitado.id_rol !== 3) {
-      throw new HttpException(
-        {
-          status: HttpStatus.FORBIDDEN,
-          error: 'Acceso denegado',
-          message: 'El usuario solicitado no es un frigorífico.',
-          code: 'NOT_FRIGORIFICO',
-        },
-        HttpStatus.FORBIDDEN,
-      );
-    }
-
-    // Verificar que el solicitante tiene permisos (rol 2 o 4)
-    if (requesterRole !== 2 && requesterRole !== 4) {
-      throw new HttpException(
-        {
-          status: HttpStatus.FORBIDDEN,
-          error: 'Acceso denegado',
-          message: 'No tienes permisos para acceder a esta información.',
-          code: 'PERMISSION_DENIED',
-        },
-        HttpStatus.FORBIDDEN,
-      );
-    }
-
-    // Determinar el admin según el rol del solicitante
-    let adminId: number;
-
-    if (requesterRole === 2) {
-      // Si el solicitante es un admin (rol 2), él mismo es el admin
-      adminId = requesterId;
-    } else {
-      // Para rol 4, buscar su creador
-      const tokenCreator = await this.databaseService.tOKEN_REGISTRO.findFirst({
-        where: {
-          id_usuario_nuevo: requesterId,
-        },
-        select: {
-          id_usuario_creador: true,
-        },
-      });
-
-      if (!tokenCreator || !tokenCreator.id_usuario_creador) {
-        throw new HttpException(
-          {
-            status: HttpStatus.FORBIDDEN,
-            error: 'Acceso denegado',
-            message:
-              'No se pudo determinar el administrador que creó este usuario.',
-            code: 'HIERARCHY_ERROR',
-          },
-          HttpStatus.FORBIDDEN,
-        );
-      }
-
-      adminId = tokenCreator.id_usuario_creador;
-    }
-
-    // Verificar que el usuario solicitado fue creado por el mismo admin
-    const tokenSolicitado = await this.databaseService.tOKEN_REGISTRO.findFirst(
-      {
-        where: {
-          id_usuario_nuevo: id_usuario,
-          id_usuario_creador: adminId,
-        },
-      },
-    );
-
-    if (!tokenSolicitado) {
-      throw new HttpException(
-        {
-          status: HttpStatus.FORBIDDEN,
-          error: 'Acceso denegado',
-          message:
-            'No tienes permisos para ver la información de este frigorífico.',
-          code: 'PERMISSION_DENIED',
-        },
-        HttpStatus.FORBIDDEN,
-      );
-    }
-
-    // Si se permite el acceso, devolver la información del frigorífico
-    return this.getGestionFrigorifico(id_usuario);
-  }
-
   // Método para generar checksum de empaques y prevenir race conditions
   private async generarChecksumEmpaques(
     id_estacion: string,
@@ -1390,6 +1276,7 @@ export class FrigorificoService {
     id_producto: number,
     id_logistica: number,
     id_usuario: number,
+    accessibleUserIds: number[],
   ) {
     const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -1416,39 +1303,20 @@ export class FrigorificoService {
       );
     }
 
-    // Verificar jerarquía del admin
-    const adminId = await this.obtenerAdminId(usuario.id_usuario);
-
-    if (!adminId) {
-      this.logger.error(
-        `❌ JERARQUÍA ERROR - No se pudo determinar el admin para usuario ${id_usuario}`,
-      );
-      throw new HttpException(
-        {
-          status: HttpStatus.FORBIDDEN,
-          error: 'Acceso denegado',
-          message: 'No se pudo determinar la jerarquía del usuario.',
-          code: 'HIERARCHY_ERROR',
-        },
-        HttpStatus.FORBIDDEN,
-      );
-    }
-
-    // Verificar que la estación pertenece a un frigorífico del mismo admin
+    // Verificar que la estación pertenece a un frigorífico hermano (mismo admin)
+    // accessibleUserIds ya contiene los hermanos resueltos por HerenciaGuard
     const estacion = await this.databaseService.eSTACIONES.findFirst({
       where: {
         id_estacion: id_estacion,
         frigorifico: {
-          id_usuario: {
-            in: await this.obtenerUsuariosPorAdmin(adminId, 3),
-          },
+          id_usuario: { in: accessibleUserIds },
         },
       },
     });
 
     if (!estacion) {
       this.logger.error(
-        `❌ ESTACIÓN NO ENCONTRADA - Estación ${id_estacion} no pertenece a admin ${adminId}`,
+        `❌ ESTACIÓN NO ENCONTRADA - Estación ${id_estacion} no pertenece a un frigorífico accesible`,
       );
       throw new HttpException(
         {
@@ -1644,60 +1512,12 @@ export class FrigorificoService {
     return idUsuario;
   }
 
-  // Función auxiliar para obtener el ID del admin de un usuario
-  private async obtenerAdminId(userId: number): Promise<number | null> {
-    const token = await this.databaseService.tOKEN_REGISTRO.findFirst({
-      where: {
-        id_usuario_nuevo: userId,
-      },
-      select: {
-        id_usuario_creador: true,
-      },
-    });
-
-    return token?.id_usuario_creador || null;
-  }
-
-  // Función auxiliar para obtener usuarios por admin y rol
-  private async obtenerUsuariosPorAdmin(
-    adminId: number,
-    roleId: number,
-  ): Promise<number[]> {
-    const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
-      where: {
-        id_usuario_creador: adminId,
-        id_rol_nuevo_usuario: roleId,
-      },
-      select: {
-        id_usuario_nuevo: true,
-      },
-    });
-
-    return tokens
-      .map((t) => t.id_usuario_nuevo)
-      .filter((id) => id !== null) as number[];
-  }
-
-  async getHermanosFrigorifico(requesterId: number, requesterRole: number) {
-    // Verificar que el solicitante tiene permisos (rol 2 o 4)
-    if (requesterRole !== 2 && requesterRole !== 4) {
-      throw new HttpException(
-        {
-          status: HttpStatus.FORBIDDEN,
-          error: 'Acceso denegado',
-          message: 'No tienes permisos para acceder a esta información.',
-          code: 'PERMISSION_DENIED',
-        },
-        HttpStatus.FORBIDDEN,
-      );
-    }
-
-    // Obtener información del usuario solicitante
+  async getHermanosFrigorificoPorScope(requesterId: number, accessibleUserIds: number[]) {
     const usuarioSolicitante = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario: requesterId },
       include: {
         rol: true,
-        logisticas: true, // Incluir datos de logística si existen
+        logisticas: true,
       },
     });
 
@@ -1713,65 +1533,11 @@ export class FrigorificoService {
       );
     }
 
-    // Inicializar el ID del admin
-    let adminId: number;
-
-    // Si el solicitante es un admin (rol 2), él mismo es el admin
-    if (requesterRole === 2) {
-      adminId = requesterId;
-    }
-    // Si el solicitante es logística (rol 4), buscar su creador (que debe ser un admin)
-    else {
-      // Para rol 4
-      const tokenCreator = await this.databaseService.tOKEN_REGISTRO.findFirst({
-        where: {
-          id_usuario_nuevo: requesterId,
-        },
-        select: {
-          id_usuario_creador: true,
-        },
-      });
-
-      if (!tokenCreator || !tokenCreator.id_usuario_creador) {
-        throw new HttpException(
-          {
-            status: HttpStatus.INTERNAL_SERVER_ERROR,
-            error: 'Error de relación jerárquica',
-            message:
-              'No se pudo determinar el administrador que creó este usuario.',
-            code: 'HIERARCHY_ERROR',
-          },
-          HttpStatus.INTERNAL_SERVER_ERROR,
-        );
-      }
-
-      adminId = tokenCreator.id_usuario_creador;
-    }
-
-    // Buscar todos los usuarios con rol 3 que fueron creados por este admin
-    // Esto incluirá usuarios de tipo Frigorífico
-    const tokensFrigorificos =
-      await this.databaseService.tOKEN_REGISTRO.findMany({
-        where: {
-          id_usuario_creador: adminId,
-          id_rol_nuevo_usuario: 3, // Rol de frigorífico
-        },
-        select: {
-          id_usuario_nuevo: true,
-        },
-      });
-
-    const hermanosIds = tokensFrigorificos
-      .map((t) => t.id_usuario_nuevo)
-      .filter((id) => id !== null);
-
-    // Obtener información detallada de cada frigorífico
     const hermanos = await this.databaseService.uSUARIOS.findMany({
       where: {
-        id_usuario: {
-          in: hermanosIds,
-        },
-        activo: true, // Solo usuarios activos
+        id_usuario: { in: accessibleUserIds },
+        id_rol: 3,
+        activo: true,
       },
       select: {
         id_usuario: true,
@@ -1782,10 +1548,9 @@ export class FrigorificoService {
       },
     });
 
-    // Si es un usuario de logística, obtener los datos de logística
     let logisticaData: any = null;
     if (
-      requesterRole === 4 &&
+      usuarioSolicitante.rol?.id_rol === 4 &&
       usuarioSolicitante.logisticas &&
       usuarioSolicitante.logisticas.length > 0
     ) {
@@ -1798,7 +1563,7 @@ export class FrigorificoService {
 
     return {
       logistica: logisticaData,
-      hermanos: hermanos,
+      hermanos,
     };
   }
 
