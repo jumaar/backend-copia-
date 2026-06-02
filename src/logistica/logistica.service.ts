@@ -6,6 +6,7 @@ import { CuentasDto } from './dto/cuentas.dto';
 import { ConsolidacionCuentasDto } from './dto/consolidacion-cuentas.dto';
 import { LiquidacionNeveraDto } from './dto/liquidacion-nevera.dto';
 import { DecincoaseisDto } from './dto/decincoaseis.dto';
+import { SeisasieteDto } from './dto/seisasiete.dto';
 import { UMBRAL_VENCIDO, UMBRAL_PARA_CAMBIO } from '../common/config/constants';
 
 @Injectable()
@@ -1687,6 +1688,41 @@ export class LogisticaService {
       message,
       empaques_procesados: empaquesActualizados,
       empaques_no_procesados: empaquesInvalidos,
+    };
+  }
+
+  async seisasiete(dto: SeisasieteDto) {
+    const { id_empaque } = dto;
+
+    const empaque = await this.databaseService.eMPAQUES.findUnique({
+      where: { id_empaque },
+    });
+
+    if (!empaque) {
+      throw new BadRequestException(`Empaque ${id_empaque} no encontrado`);
+    }
+
+    if (empaque.id_estado_empaque !== 6) {
+      throw new BadRequestException(
+        `El empaque ${id_empaque} no está en estado 6 (estado actual: ${empaque.id_estado_empaque})`,
+      );
+    }
+
+    const fechaAhora = new Date();
+
+    await this.databaseService.eMPAQUES.update({
+      where: { id_empaque },
+      data: {
+        id_estado_empaque: 7,
+        fecha_finalizacion_7_8: fechaAhora,
+      },
+    });
+
+    return {
+      message: `Empaque ${id_empaque} dado de baja exitosamente`,
+      id_empaque,
+      estado_anterior: 6,
+      estado_nuevo: 7,
     };
   }
 
