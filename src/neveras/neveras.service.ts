@@ -6,7 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ValidacionDosaTresDto } from './dto/validacion-dosatres.dto';
 import { InventarioDto } from './dto/inventario.dto';
 import { EmpaqueValidado } from './interfaces/empaque.interface';
-import { UMBRAL_PARA_CAMBIO, UMBRAL_VENCIDO } from '../common/config/constants';
+import { UMBRAL_PARA_CAMBIO, UMBRAL_VENCIDO, STOCK_MINIMO_BAJA_POR_VENCIMIENTO } from '../common/config/constants';
 
 @Injectable()
 export class NeverasService {
@@ -103,100 +103,22 @@ export class NeverasService {
     };
   }
 
-  /**
-   * Endpoint principal de surtido de neveras
-   * GET /api/neveras/surtir?id_ciudad=1,3
-   */
-  async surtirNeveras(idCiudadesParam: string, idUsuario: number) {
-    const horaCalificacion = new Date();
-
-    if (!idCiudadesParam || idCiudadesParam.trim() === '') {
-      throw new HttpException(
-        {
-          success: false,
-          error: 'El parámetro id_ciudad es requerido',
-          code: 'MISSING_CIUDAD_PARAM',
-        },
-        HttpStatus.BAD_REQUEST,
-      );
+  // ═══════════════════════════════════════════════════════════════
+  // HELPER: Escaneo de vencimiento (Fase 0 compartida)
+  // Escanea empaques en estado 3 y 5 de neveras activas,
+  // marca estado 3→5 si ≥UMBRAL_PARA_CAMBIO, y setea
+  // mensaje_sistema con alertas de vencimiento.
+  // ═══════════════════════════════════════════════════════════════
+  private async escanearVencimientos(idsNeveras?: number[]) {
+    const whereNevera: any = { id_estado_nevera: 2 };
+    if (idsNeveras && idsNeveras.length > 0) {
+      whereNevera.id_nevera = { in: idsNeveras };
     }
 
-    // Parsear ciudades
-    const idCiudades = idCiudadesParam
-      .split(',')
-      .map((id) => parseInt(id.trim()))
-      .filter((id) => !isNaN(id));
-
-    if (idCiudades.length === 0) {
-      throw new HttpException(
-        {
-          success: false,
-          error: 'Debe proporcionar al menos un id_ciudad válido',
-          code: 'INVALID_CIUDAD_IDS',
-        },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    // FASE 1: RECOLECCIÓN DE DATOS
-
-    // 1.1 Obtener neveras activas de las ciudades
-    const neverasActivas = await this.databaseService.nEVERAS.findMany({
-      where: {
-        id_estado_nevera: 2, // Activas
-        tienda: {
-          ciudad: {
-            id_ciudad: { in: idCiudades },
-          },
-        },
-      },
-      select: {
-        id_nevera: true,
-        tienda: {
-          select: {
-            id_tienda: true,
-            nombre_tienda: true,
-            ciudad: {
-              select: {
-                id_ciudad: true,
-                nombre_ciudad: true,
-              },
-            },
-          },
-        },
-      },
-    });
-
-    if (neverasActivas.length === 0) {
-      throw new HttpException(
-        {
-          success: false,
-          error:
-            'No hay neveras disponibles para surtir en las ciudades seleccionadas',
-          code: 'NO_NEVERAS_DISPONIBLES',
-        },
-        HttpStatus.NOT_FOUND,
-      );
-    }
-
-    const idsNeveras = neverasActivas.map((n) => n.id_nevera);
-
-    // ═══════════════════════════════════════════════════════════════
-    // FASE 0: ESCANEO DE VENCIMIENTO — Tasks 1 & 4
-    // Escanea empaques en estado 3 (EN NEVERA) de TODAS las neveras
-    // activas del sistema y los marca como estado 5 (PARA CAMBIO)
-    // si superan el UMBRAL_PARA_CAMBIO de su vida util.
-    // Ambos umbrales (≥UMBRAL_PARA_CAMBIO y ≥UMBRAL_VENCIDO) van a estado 5.
-    // El trigger de BD 'update_stock_nevera' se encarga de mantener
-    // stock_en_tiempo_real contando estado 3 + 5.
-    // Aqui solo seteamos mensaje_sistema con alertas de vencimiento.
-    // ═══════════════════════════════════════════════════════════════
     const empaquesEnNeveras = await this.databaseService.eMPAQUES.findMany({
       where: {
         id_estado_empaque: { in: [3, 5] },
-        nevera: {
-          id_estado_nevera: 2,
-        },
+        nevera: whereNevera,
       },
       include: {
         producto: {
@@ -205,75 +127,130 @@ export class NeverasService {
       },
     });
 
-    if (empaquesEnNeveras.length > 0) {
-      const ahora = new Date();
-      const idsParaCambio: number[] = [];
-      const mensajesPorNeveraProducto = new Map<
-        string,
-        { proximos: boolean; vencidos: boolean; idNevera: number; idProducto: number }
-      >();
+    if (empaquesEnNeveras.length === 0) return;
 
-      for (const empaque of empaquesEnNeveras) {
-        const diasVida = empaque.producto.dias_vencimiento;
-        if (!diasVida || diasVida <= 0) continue;
+    const ahora = new Date();
+    const idsParaCambio: number[] = [];
+    const mensajesPorNeveraProducto = new Map<
+      string,
+      { proximos: boolean; vencidos: boolean; idNevera: number; idProducto: number }
+    >();
 
-        const msTranscurridos =
-          ahora.getTime() - new Date(empaque.fecha_empaque_1).getTime();
-        const diasTranscurridos = msTranscurridos / (1000 * 60 * 60 * 24);
-        const porcentaje = (diasTranscurridos / diasVida) * 100;
+    for (const empaque of empaquesEnNeveras) {
+      const diasVida = empaque.producto.dias_vencimiento;
+      if (!diasVida || diasVida <= 0) continue;
 
-        const key = `${empaque.id_nevera}_${empaque.id_producto}`;
-        if (!mensajesPorNeveraProducto.has(key)) {
-          mensajesPorNeveraProducto.set(key, {
-            proximos: false,
-            vencidos: false,
-            idNevera: empaque.id_nevera ?? 0,
-            idProducto: empaque.id_producto,
-          });
-        }
-        const m = mensajesPorNeveraProducto.get(key)!;
+      const msTranscurridos =
+        ahora.getTime() - new Date(empaque.fecha_empaque_1).getTime();
+      const diasTranscurridos = msTranscurridos / (1000 * 60 * 60 * 24);
+      const porcentaje = (diasTranscurridos / diasVida) * 100;
 
-        if (porcentaje >= UMBRAL_VENCIDO) {
-          m.vencidos = true;
-        } else if (porcentaje >= UMBRAL_PARA_CAMBIO) {
-          m.proximos = true;
-        }
+      const key = `${empaque.id_nevera}_${empaque.id_producto}`;
+      if (!mensajesPorNeveraProducto.has(key)) {
+        mensajesPorNeveraProducto.set(key, {
+          proximos: false,
+          vencidos: false,
+          idNevera: empaque.id_nevera ?? 0,
+          idProducto: empaque.id_producto,
+        });
+      }
+      const m = mensajesPorNeveraProducto.get(key)!;
 
-        if (empaque.id_estado_empaque === 3 && porcentaje >= UMBRAL_PARA_CAMBIO) {
-          if (porcentaje >= UMBRAL_VENCIDO || empaque.id_nevera_anterior === null) {
-            idsParaCambio.push(empaque.id_empaque);
-          }
-        }
+      if (porcentaje >= UMBRAL_VENCIDO) {
+        m.vencidos = true;
+      } else if (porcentaje >= UMBRAL_PARA_CAMBIO) {
+        m.proximos = true;
       }
 
-      if (idsParaCambio.length > 0) {
-        await this.databaseService.eMPAQUES.updateMany({
-          where: { id_empaque: { in: idsParaCambio } },
-          data: { id_estado_empaque: 5 },
-        });
-        this.logger.log(
-          `Fase 0: ${idsParaCambio.length} empaques marcados PARA CAMBIO`,
-        );
-      }
-
-      for (const [, m] of mensajesPorNeveraProducto) {
-        if (!m.idNevera) continue;
-        const partes: string[] = [];
-        if (m.proximos) partes.push('De este producto hay empaques proximos a vencer');
-        if (m.vencidos) partes.push('Alerta: de este producto hay empaques vencidos');
-
-        await this.databaseService.sTOCK_NEVERA.updateMany({
-          where: { id_nevera: m.idNevera, id_producto: m.idProducto },
-          data: { mensaje_sistema: partes.length > 0 ? partes.join(', ') : null },
-        });
+      if (empaque.id_estado_empaque === 3 && porcentaje >= UMBRAL_PARA_CAMBIO) {
+        if (porcentaje >= UMBRAL_VENCIDO || empaque.id_nevera_anterior === null) {
+          idsParaCambio.push(empaque.id_empaque);
+        }
       }
     }
 
-    // 1.2 Obtener STOCK_NEVERA de esas neveras (filtrar activo=false)
-    const stockExistente = await this.databaseService.sTOCK_NEVERA.findMany({
+    if (idsParaCambio.length > 0) {
+      await this.databaseService.eMPAQUES.updateMany({
+        where: { id_empaque: { in: idsParaCambio } },
+        data: { id_estado_empaque: 5 },
+      });
+      this.logger.log(
+        `Escaneo vencimiento: ${idsParaCambio.length} empaques marcados PARA CAMBIO`,
+      );
+    }
+
+    for (const [, m] of mensajesPorNeveraProducto) {
+      if (!m.idNevera) continue;
+      const partes: string[] = [];
+      if (m.proximos) partes.push('De este producto hay empaques proximos a vencer');
+      if (m.vencidos) partes.push('Alerta: de este producto hay empaques vencidos');
+
+      await this.databaseService.sTOCK_NEVERA.updateMany({
+        where: { id_nevera: m.idNevera, id_producto: m.idProducto },
+        data: { mensaje_sistema: partes.length > 0 ? partes.join(', ') : null },
+      });
+    }
+  }
+
+  /**
+   * ENDPOINT A: Calificación global de neveras
+   * POST /api/neveras/calificacion
+   * Ejecuta: Fase 0 (vencimiento) + Fase 2 (crear STOCK_NEVERA) + Fase 3 (calificación ALTA/MEDIA/BAJA)
+   * para TODAS las neveras activas accesibles por herencia. Sin filtro de ciudad.
+   * NO hace distribución de empaques — eso lo hace el endpoint de surtir.
+   */
+  async ejecutarCalificacion(
+    idUsuario: number,
+    accessibleUserIds: number[],
+  ) {
+    const horaCalificacion = new Date();
+
+    // ─── FASE 1: Obtener neveras activas accesibles por herencia ───
+    const neverasActivas = await this.databaseService.nEVERAS.findMany({
       where: {
-        id_nevera: { in: idsNeveras },
+        id_estado_nevera: 2,
+        tienda: { id_usuario: { in: accessibleUserIds } },
       },
+      select: {
+        id_nevera: true,
+        tienda: {
+          select: {
+            id_tienda: true,
+            nombre_tienda: true,
+            ciudad: {
+              select: { id_ciudad: true, nombre_ciudad: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (neverasActivas.length === 0) {
+      return {
+        success: true,
+        message: 'No hay neveras accesibles para calibrar',
+        hora_calificacion: horaCalificacion.toISOString(),
+        resumen: {
+          neveras_procesadas: 0,
+          productos_procesados: 0,
+          empaques_en_para_cambio: 0,
+        },
+      };
+    }
+
+    const idsNeveras = neverasActivas.map((n) => n.id_nevera);
+
+    // ─── FASE 0: Escaneo de vencimiento ───
+    await this.escanearVencimientos(idsNeveras);
+
+    // ─── Obtener todos los productos ───
+    const todosLosProductos = await this.databaseService.pRODUCTOS.findMany({
+      select: { id_producto: true },
+    });
+
+    // ─── Obtener STOCK_NEVERA existente ───
+    const stockExistente = await this.databaseService.sTOCK_NEVERA.findMany({
+      where: { id_nevera: { in: idsNeveras } },
       select: {
         id: true,
         id_nevera: true,
@@ -281,80 +258,24 @@ export class NeverasService {
         stock_en_tiempo_real: true,
         venta_semanal: true,
         calificacion_surtido: true,
-        stock_minimo: true,
-        stock_maximo: true,
-        stock_ideal_final: true,
         activo: true,
       },
     });
 
-    // 1.3 Obtener productos en logística del usuario
-    const usuarioLogistica = await this.databaseService.lOGISTICA.findFirst({
-      where: { id_usuario: idUsuario },
-      select: { id_logistica: true },
-    });
-
-    if (!usuarioLogistica) {
-      throw new HttpException(
-        {
-          success: false,
-          error: 'Usuario no tiene logística asociada',
-          code: 'NO_LOGISTICA',
-        },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    const productosEnLogistica = await this.databaseService.eMPAQUES.groupBy({
-      by: ['id_producto'],
-      where: {
-        id_estado_empaque: 2, // En logística
-        id_logistica: usuarioLogistica.id_logistica,
-      },
-      _count: {
-        id_empaque: true,
-      },
-    });
-
-    if (productosEnLogistica.length === 0) {
-      throw new HttpException(
-        {
-          success: false,
-          error: 'No hay productos en logística para surtir',
-          code: 'NO_PRODUCTOS_LOGISTICA',
-        },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
-    // Convertir a formato más manejable
-    const productosLogistica = productosEnLogistica.map((p) => ({
-      id_producto: p.id_producto,
-      cantidad: p._count.id_empaque,
-    }));
-
-    // LOOP: Iterar por cada producto en logística
-    for (const productoLog of productosLogistica) {
-      const { id_producto, cantidad: cantidadLogistica } = productoLog;
-
-      // FASE 2: VERIFICACIÓN Y CREACIÓN DE REGISTROS
-
-      // 2.1 Para cada nevera, verificar si existe registro
-      for (const nevera of neverasActivas) {
-        const stockExistenteNevera = stockExistente.find(
+    // ─── FASE 2: Verificar y crear STOCK_NEVERA faltantes ───
+    for (const nevera of neverasActivas) {
+      for (const producto of todosLosProductos) {
+        const existente = stockExistente.find(
           (s) =>
-            s.id_nevera === nevera.id_nevera && s.id_producto === id_producto,
+            s.id_nevera === nevera.id_nevera &&
+            s.id_producto === producto.id_producto,
         );
 
-        // Verificar si el registro existe y está activo
-        const stockActivo = stockExistenteNevera && stockExistenteNevera.activo;
-
-        if (!stockExistenteNevera) {
-          // NO existe → CREAR registro con calificación MEDIA
+        if (!existente) {
           await this.databaseService.sTOCK_NEVERA.create({
             data: {
               id_nevera: nevera.id_nevera,
-              id_producto: id_producto,
+              id_producto: producto.id_producto,
               stock_en_tiempo_real: 0,
               venta_semanal: 0,
               calificacion_surtido: 'MEDIA',
@@ -365,53 +286,48 @@ export class NeverasService {
               hora_calificacion: horaCalificacion,
             },
           });
-        } else if (stockExistenteNevera.activo) {
-          // SI existe y está activo → ACTUALIZAR hora_calificacion
+        } else if (existente.activo) {
           await this.databaseService.sTOCK_NEVERA.update({
-            where: { id: stockExistenteNevera.id },
-            data: {
-              hora_calificacion: horaCalificacion,
-            },
+            where: { id: existente.id },
+            data: { hora_calificacion: horaCalificacion },
           });
         }
       }
+    }
 
-      // Refrescar stock después de crear nuevos registros (solo activos)
-      const stockProducto = await this.databaseService.sTOCK_NEVERA.findMany({
-        where: {
-          id_nevera: { in: idsNeveras },
-          id_producto: id_producto,
-          activo: true,
-        },
-        select: {
-          id: true,
-          id_nevera: true,
-          id_producto: true,
-          stock_en_tiempo_real: true,
-          venta_semanal: true,
-          calificacion_surtido: true,
-          stock_minimo: true,
-          stock_maximo: true,
-        },
-      });
+    // Refrescar stock después de crear nuevos
+    const stockActualizado = await this.databaseService.sTOCK_NEVERA.findMany({
+      where: {
+        id_nevera: { in: idsNeveras },
+        activo: true,
+      },
+      select: {
+        id: true,
+        id_nevera: true,
+        id_producto: true,
+        stock_en_tiempo_real: true,
+        venta_semanal: true,
+        calificacion_surtido: true,
+      },
+    });
 
-      // 2.2 Clasificar neveras: NUEVO vs RESURTIDO
-      const neverasNuevas = stockProducto.filter(
-        (s) => s.stock_en_tiempo_real === 0 && s.venta_semanal === 0,
+    // ─── FASE 3: Calificación por producto ───
+    const productosIds = todosLosProductos.map((p) => p.id_producto);
+    let productosProcesados = 0;
+
+    for (const idProducto of productosIds) {
+      const stockProducto = stockActualizado.filter(
+        (s) => s.id_producto === idProducto,
       );
       const neverasResurtido = stockProducto.filter(
         (s) => s.venta_semanal > 0 || s.stock_en_tiempo_real > 0,
       );
 
-      // FASE 3: CALIFICACIÓN DE NEVERAS RESURTIDO
-
       if (neverasResurtido.length > 0) {
-        // 3.1 Ordenar por venta_semanal
         const neverasOrdenadas = [...neverasResurtido].sort(
           (a, b) => a.venta_semanal - b.venta_semanal,
         );
 
-        // 3.2 Calcular valores de corte
         const ventaMaxima = Math.max(
           ...neverasResurtido.map((n) => n.venta_semanal),
         );
@@ -419,7 +335,6 @@ export class NeverasService {
         const BAJA_corte = MEDIA_corte * 0.5;
         const ALTA_corte = MEDIA_corte * 1.5;
 
-        // 3.3 y 3.4 Asignar calificación y UPDATE
         for (const stock of neverasOrdenadas) {
           let calificacion: string;
           if (stock.venta_semanal < BAJA_corte) {
@@ -439,9 +354,8 @@ export class NeverasService {
           });
         }
 
-        // 3.5 UPDATE PRODUCTOS con valores de corte
         await this.databaseService.pRODUCTOS.update({
-          where: { id_producto: id_producto },
+          where: { id_producto: idProducto },
           data: {
             media: MEDIA_corte,
             baja: BAJA_corte,
@@ -450,115 +364,568 @@ export class NeverasService {
         });
       }
 
-      // FASE 4: Neveras nuevas ya tienen MEDIA desde fase 2
-      // No se requiere acción adicional
+      productosProcesados++;
+    }
 
-      // CHECKPOINT: Calificaciones listas
+    // ─── FASE 4: Forzar BAJA en productos con empaques envejecidos ───
+    // Si el escaneo de vencimiento (Fase 0) encontró empaques ≥75% o ≥100% vida en una nevera
+    // para un producto, significa que ese producto no rota bien en esa nevera.
+    // Se fuerza BAJA solo para ESTE producto en ESTA nevera. No afecta otros productos de la misma nevera.
+    // Los empaques envejecidos se redistribuyen a neveras ALTA para este producto.
+    const stocksConAlertas = await this.databaseService.sTOCK_NEVERA.findMany({
+      where: {
+        id_nevera: { in: idsNeveras },
+        mensaje_sistema: { not: null },
+        activo: true,
+      },
+      select: {
+        id: true,
+        id_nevera: true,
+        id_producto: true,
+        mensaje_sistema: true,
+      },
+    });
 
-      // FASE 5: DISTRIBUCIÓN DE PRODUCTOS
+    let productosDegradadosABaja = 0;
+    for (const stock of stocksConAlertas) {
+      await this.databaseService.sTOCK_NEVERA.update({
+        where: { id: stock.id },
+        data: {
+          calificacion_surtido: 'BAJA',
+          stock_ideal_final: STOCK_MINIMO_BAJA_POR_VENCIMIENTO,
+          stock_minimo: STOCK_MINIMO_BAJA_POR_VENCIMIENTO,
+          hora_calificacion: horaCalificacion,
+          mensaje_sistema: stock.mensaje_sistema
+            ? stock.mensaje_sistema + ' | Calificación forzada a BAJA por empaques envejecidos'
+            : 'Calificación forzada a BAJA por empaques envejecidos',
+        },
+      });
+      productosDegradadosABaja++;
+    }
 
-      // Refrescar stock con calificaciones actualizadas
-      const stockActualizado = await this.databaseService.sTOCK_NEVERA.findMany(
+    if (productosDegradadosABaja > 0) {
+      this.logger.log(
+        `Fase 4: ${productosDegradadosABaja} registros STOCK_NEVERA forzados a BAJA por empaques envejecidos`,
+      );
+    }
+
+
+    // ─── Contar empaques marcados para cambio en este escaneo ───
+    const empaquesParaCambioCount = await this.databaseService.eMPAQUES.count({
+      where: {
+        id_estado_empaque: 5,
+        id_nevera: { in: idsNeveras },
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Calificación procesada exitosamente',
+      hora_calificacion: horaCalificacion.toISOString(),
+      resumen: {
+        neveras_procesadas: neverasActivas.length,
+        productos_procesados: productosProcesados,
+        empaques_en_para_cambio: empaquesParaCambioCount,
+        productos_degradados_a_baja: productosDegradadosABaja,
+      },
+    };
+  }
+
+  /**
+   * ENDPOINT B: Surtido por nevera
+   * GET /api/neveras/surtir?id_nevera=X&id_ciudad=Y&dias_excluir=Z
+   *
+   * Calcula dinámicamente la distribución de empaques disponibles
+   * en logística (estado 2 + estado 6 prioritarios) entre las neveras
+   * competidoras de la misma ciudad, y devuelve exactamente qué debe
+   * surtir el usuario en la nevera objetivo.
+   *
+   * @param idNevera       ID de la nevera objetivo
+   * @param idCiudad       ID de la ciudad (para scope de competidoras)
+   * @param diasExcluir    Días hacia atrás para excluir neveras ya surtidas.
+   *                       0 o null = incluir TODAS (incluso las surtidas hoy).
+   * @param idUsuario      ID del usuario autenticado
+   * @param accessibleUserIds  IDs de usuarios accesibles por herencia
+   */
+  async surtirNevera(
+    idNevera: number,
+    idCiudad: string | null,
+    diasExcluir: number,
+    idUsuario: number,
+    accessibleUserIds: number[],
+  ) {
+    if (!idNevera || isNaN(idNevera)) {
+      throw new HttpException(
         {
-          where: {
-            id_nevera: { in: idsNeveras },
-            id_producto: id_producto,
-            activo: true,
-          },
+          success: false,
+          error: 'El parámetro id_nevera es requerido',
+          code: 'MISSING_NEVERA_PARAM',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    // Parsear ciudades: null/undefined/"" = todas, "4" = una, "1,3" = varias
+    let idsCiudades: number[] | null = null;
+    if (idCiudad && idCiudad.trim() !== '') {
+      idsCiudades = idCiudad
+        .split(',')
+        .map((id) => parseInt(id.trim()))
+        .filter((id) => !isNaN(id));
+    }
+
+    // ─── Verificar que la nevera existe y es accesible ───
+    const nevera = await this.databaseService.nEVERAS.findUnique({
+      where: { id_nevera: idNevera },
+      include: {
+        tienda: {
           select: {
-            id: true,
-            id_nevera: true,
-            stock_en_tiempo_real: true,
-            calificacion_surtido: true,
+            id_tienda: true,
+            nombre_tienda: true,
+            id_usuario: true,
+            ciudad: { select: { id_ciudad: true, nombre_ciudad: true } },
           },
         },
+      },
+    });
+
+    if (!nevera) {
+      throw new HttpException(
+        {
+          success: false,
+          error: 'Nevera no encontrada',
+          code: 'NEVERA_NOT_FOUND',
+        },
+        HttpStatus.NOT_FOUND,
       );
+    }
 
-      // 5.1 Calcular totales
-      const stockRealTotal = stockActualizado.reduce(
-        (sum, s) => sum + s.stock_en_tiempo_real,
-        0,
+    if (!accessibleUserIds.includes(nevera.tienda.id_usuario)) {
+      throw new HttpException(
+        {
+          success: false,
+          error: 'No tienes acceso a esta nevera',
+          code: 'NEVERA_FORBIDDEN',
+        },
+        HttpStatus.FORBIDDEN,
       );
-      const totalDisponible = cantidadLogistica + stockRealTotal;
+    }
 
-      const N_alta = stockActualizado.filter(
-        (s) => s.calificacion_surtido === 'ALTA',
-      ).length;
-      const N_media = stockActualizado.filter(
-        (s) => s.calificacion_surtido === 'MEDIA',
-      ).length;
-      const N_baja = stockActualizado.filter(
-        (s) => s.calificacion_surtido === 'BAJA',
-      ).length;
+    // ─── Obtener logística del usuario ───
+    const usuarioLogistica = await this.databaseService.lOGISTICA.findFirst({
+      where: { id_usuario: idUsuario },
+      select: { id_logistica: true },
+    });
 
-      const pesoTotal = 2 * N_alta + 1 * N_media + 0.5 * N_baja;
+    if (!usuarioLogistica) {
+      throw new HttpException(
+        {
+          success: false,
+          error: 'Usuario no tiene logística asociada',
+          code: 'NO_LOGISTICA',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
 
-      // 5.2 Calcular asignación con FLOOR
-      const MEDIA_asig = Math.floor(totalDisponible / pesoTotal);
-      const BAJA_asig = Math.floor(MEDIA_asig * 0.5);
-      const ALTA_asig = Math.floor(MEDIA_asig * 2);
+    const idLogistica = usuarioLogistica.id_logistica;
 
-      // 5.3 Calcular distribución inicial y sobrante
-      const totalAsignado =
-        ALTA_asig * N_alta + MEDIA_asig * N_media + BAJA_asig * N_baja;
-      let sobrante = totalDisponible - totalAsignado;
+    // ─── Obtener empaques en logística (estado 2) ───
+    const empaquesEstado2 = await this.databaseService.eMPAQUES.groupBy({
+      by: ['id_producto'],
+      where: {
+        id_estado_empaque: 2,
+        id_logistica: idLogistica,
+      },
+      _count: { id_empaque: true },
+    });
 
-      // 5.4 Repartir sobrante a neveras MEDIA
-      const neverasMedia = stockActualizado
-        .filter((s) => s.calificacion_surtido === 'MEDIA')
-        .sort((a, b) => a.stock_en_tiempo_real - b.stock_en_tiempo_real);
+    // ─── Obtener empaques prioritarios (estado 6) con % de vida ───
+    const empaquesEstado6Raw = await this.databaseService.eMPAQUES.findMany({
+      where: {
+        id_estado_empaque: 6,
+        id_logistica: idLogistica,
+      },
+      include: {
+        producto: { select: { dias_vencimiento: true } },
+      },
+    });
 
-      // Crear mapa de asignación extra por nevera
-      const asignacionExtra: Map<number, number> = new Map();
-      for (const n of stockActualizado) {
-        asignacionExtra.set(n.id, 0);
+    const ahora = new Date();
+    const empaquesPrioritariosPorProducto = new Map<number, number>();
+    let totalPrioritarios = 0;
+
+    for (const e of empaquesEstado6Raw) {
+      const diasVida = e.producto.dias_vencimiento;
+      if (!diasVida || diasVida <= 0) continue;
+      const diasTranscurridos =
+        (ahora.getTime() - new Date(e.fecha_empaque_1).getTime()) /
+        (1000 * 60 * 60 * 24);
+      const porcentaje = (diasTranscurridos / diasVida) * 100;
+
+      if (porcentaje >= UMBRAL_PARA_CAMBIO && porcentaje < UMBRAL_VENCIDO) {
+        empaquesPrioritariosPorProducto.set(
+          e.id_producto,
+          (empaquesPrioritariosPorProducto.get(e.id_producto) || 0) + 1,
+        );
+        totalPrioritarios++;
       }
+    }
 
-      // Distribuir sobrante
-      let indice = 0;
-      while (sobrante > 0 && neverasMedia.length > 0) {
-        const neveraActual = neverasMedia[indice % neverasMedia.length];
-        const extraActual = asignacionExtra.get(neveraActual.id) || 0;
-        asignacionExtra.set(neveraActual.id, extraActual + 1);
-        sobrante--;
-        indice++;
-      }
+    // ─── Armar mapa de disponibilidad total por producto ───
+    const disponibilidadPorProducto = new Map<number, number>();
+    for (const p of empaquesEstado2) {
+      disponibilidadPorProducto.set(p.id_producto, p._count.id_empaque);
+    }
+    for (const [idProd, cant] of empaquesPrioritariosPorProducto) {
+      disponibilidadPorProducto.set(
+        idProd,
+        (disponibilidadPorProducto.get(idProd) || 0) + cant,
+      );
+    }
 
-      // 5.5, 5.6, 5.7 Actualizar cada registro de STOCK_NEVERA
-      for (const stock of stockActualizado) {
-        let asignacion: number;
+    // ─── Obtener neveras competidoras ───
+    const filtroFechaLimite = new Date();
+    let fechaLimite: Date | null = null;
+    if (diasExcluir && diasExcluir > 0) {
+      filtroFechaLimite.setDate(filtroFechaLimite.getDate() - diasExcluir);
+      fechaLimite = filtroFechaLimite;
+    }
 
-        if (stock.calificacion_surtido === 'ALTA') {
-          asignacion = ALTA_asig;
-        } else if (stock.calificacion_surtido === 'MEDIA') {
-          asignacion = MEDIA_asig + (asignacionExtra.get(stock.id) || 0);
-        } else {
-          asignacion = BAJA_asig;
-        }
+    const tiendaWhere: any = {
+      id_usuario: { in: accessibleUserIds },
+    };
+    if (idsCiudades && idsCiudades.length > 0) {
+      tiendaWhere.ciudad = { id_ciudad: { in: idsCiudades } };
+    }
 
-        const stockMinimo = Math.floor(asignacion * 0.25);
+    const neverasCompetidoras = await this.databaseService.nEVERAS.findMany({
+      where: {
+        id_estado_nevera: 2,
+        tienda: tiendaWhere,
+        ...(fechaLimite
+          ? {
+              OR: [
+                { hora_ultimo_surtido: null },
+                { hora_ultimo_surtido: { lt: fechaLimite } },
+              ],
+            }
+          : {}),
+      },
+      select: {
+        id_nevera: true,
+        tienda: { select: { nombre_tienda: true } },
+      },
+    });
 
-        await this.databaseService.sTOCK_NEVERA.update({
-          where: { id: stock.id },
-          data: {
-            stock_ideal_final: asignacion,
-            stock_maximo: asignacion,
-            stock_minimo: stockMinimo,
+    let neverasExcluidasPorSurtido = 0;
+    if (diasExcluir && diasExcluir > 0) {
+      const todasNeveras = await this.databaseService.nEVERAS.findMany({
+        where: {
+          id_estado_nevera: 2,
+          tienda: tiendaWhere,
+        },
+        select: { id_nevera: true },
+      });
+      neverasExcluidasPorSurtido =
+        todasNeveras.length - neverasCompetidoras.length;
+    }
+
+    const idsCompetidoras = neverasCompetidoras.map((n) => n.id_nevera);
+
+    // ─── Obtener STOCK_NEVERA de la nevera target ───
+    const stockTarget = await this.databaseService.sTOCK_NEVERA.findMany({
+      where: { id_nevera: idNevera, activo: true },
+      include: {
+        producto: {
+          select: {
+            id_producto: true,
+            nombre_producto: true,
+            descripcion_producto: true,
+            peso_nominal_g: true,
           },
+        },
+      },
+    });
+
+    // ─── Obtener STOCK_NEVERA de todas las competidoras ───
+    const stockCompetidoras = await this.databaseService.sTOCK_NEVERA.findMany({
+      where: { id_nevera: { in: idsCompetidoras }, activo: true },
+      select: {
+        id: true,
+        id_nevera: true,
+        id_producto: true,
+        stock_en_tiempo_real: true,
+        calificacion_surtido: true,
+      },
+    });
+
+    // ─── Obtener TODOS los productos ───
+    const todosLosProductos = await this.databaseService.pRODUCTOS.findMany({
+      select: {
+        id_producto: true,
+        nombre_producto: true,
+        descripcion_producto: true,
+        peso_nominal_g: true,
+      },
+      orderBy: { nombre_producto: 'asc' },
+    });
+
+    // ─── Crear mapa de stock target ───
+    const stockTargetMap = new Map<number, any>();
+    for (const s of stockTarget) {
+      stockTargetMap.set(s.id_producto, s);
+    }
+
+    // ─── Para cada producto, calcular distribución y cantidad a surtir ───
+    const productosConSurtido: any[] = [];
+
+    for (const producto of todosLosProductos) {
+      const stockInfo = stockTargetMap.get(producto.id_producto);
+      const disponibleLogistica =
+        disponibilidadPorProducto.get(producto.id_producto) || 0;
+
+      // Datos del STOCK_NEVERA de esta nevera para este producto
+      const stockActual = stockInfo?.stock_en_tiempo_real ?? 0;
+      const calificacion = stockInfo?.calificacion_surtido ?? 'MEDIA';
+      const ventaSemanal = stockInfo?.venta_semanal ?? 0;
+
+      // Neveras competidoras para este producto (incluyendo la target)
+      const stocksParaProducto = stockCompetidoras.filter(
+        (s) => s.id_producto === producto.id_producto,
+      );
+
+      // Agregar la nevera target a la distribución si tiene registro
+      const targetStockRecord = stockCompetidoras.find(
+        (s) =>
+          s.id_nevera === idNevera && s.id_producto === producto.id_producto,
+      );
+      const todosLosStocks = [...stocksParaProducto];
+      if (!targetStockRecord && stockInfo) {
+        todosLosStocks.push({
+          id: stockInfo.id,
+          id_nevera: idNevera,
+          id_producto: producto.id_producto,
+          stock_en_tiempo_real: stockActual,
+          calificacion_surtido: calificacion,
+        });
+      }
+
+      let stockIdealFinal = 0;
+      let cantidadASurtir = 0;
+      const prioritariosDisponibles =
+        empaquesPrioritariosPorProducto.get(producto.id_producto) || 0;
+
+      if (disponibleLogistica > 0 && todosLosStocks.length > 0) {
+        // ─── Distribuir entre neveras ───
+        const N_alta = todosLosStocks.filter(
+          (s) => s.calificacion_surtido === 'ALTA',
+        ).length;
+        const N_media = todosLosStocks.filter(
+          (s) => s.calificacion_surtido === 'MEDIA',
+        ).length;
+        const N_baja = todosLosStocks.filter(
+          (s) => s.calificacion_surtido === 'BAJA',
+        ).length;
+
+        const pesoTotal = 2 * N_alta + 1 * N_media + 0.5 * N_baja;
+
+        if (pesoTotal > 0) {
+          // ─── Distribuir el stock TOTAL del sistema (neveras + camión) ───
+          // En vez de repartir solo lo del camión, se considera el stock que
+          // YA está en las neveras para que las neveras vacías reciban más
+          // proporción que las que ya están bien surtidas.
+          const stockRealTotal = todosLosStocks.reduce(
+            (sum, s) => sum + s.stock_en_tiempo_real,
+            0,
+          );
+          const totalSistema = disponibleLogistica + stockRealTotal;
+          const MEDIA_asig = Math.round(totalSistema / pesoTotal);
+          const BAJA_asig = Math.round(MEDIA_asig * 0.5);
+          const ALTA_asig = Math.round(MEDIA_asig * 2);
+
+          const totalAsignado =
+            ALTA_asig * N_alta + MEDIA_asig * N_media + BAJA_asig * N_baja;
+          let sobrante = totalSistema - totalAsignado;
+          const neverasPriorizadas = [
+            ...todosLosStocks.filter((s) => s.calificacion_surtido === 'ALTA'),
+            ...todosLosStocks.filter((s) => s.calificacion_surtido === 'MEDIA'),
+            ...todosLosStocks.filter((s) => s.calificacion_surtido === 'BAJA'),
+          ];
+
+          const asignacionExtra = new Map<number, number>();
+          for (const s of todosLosStocks) {
+            asignacionExtra.set(s.id_nevera, 0);
+          }
+
+          let indice = 0;
+          while (sobrante > 0 && neverasPriorizadas.length > 0) {
+            const n = neverasPriorizadas[indice % neverasPriorizadas.length];
+            asignacionExtra.set(
+              n.id_nevera,
+              (asignacionExtra.get(n.id_nevera) || 0) + 1,
+            );
+            sobrante--;
+            indice++;
+          }
+
+          // ─── Empaques prioritarios van PRIMERO a neveras ALTA ───
+
+          // Calcular asignación para la nevera target
+          if (calificacion === 'ALTA') {
+            stockIdealFinal = ALTA_asig + (asignacionExtra.get(idNevera) || 0);
+          } else if (calificacion === 'MEDIA') {
+            stockIdealFinal = MEDIA_asig + (asignacionExtra.get(idNevera) || 0);
+          } else {
+            stockIdealFinal = BAJA_asig + (asignacionExtra.get(idNevera) || 0);
+          }
+
+          // cantidad_a_surtir = lo que falta para llegar al ideal (sin exceder lo disponible)
+          const faltante = Math.max(0, stockIdealFinal - stockActual);
+          cantidadASurtir = Math.min(faltante, disponibleLogistica);
+
+          // ─── Persistir stock_ideal_final en STOCK_NEVERA de la target ───
+          if (stockInfo) {
+            await this.databaseService.sTOCK_NEVERA.update({
+              where: { id: stockInfo.id },
+              data: { stock_ideal_final: stockIdealFinal },
+            });
+          }
+        }
+      }
+
+      // ─── Construir respuesta del producto ───
+      if (stockInfo) {
+        productosConSurtido.push({
+          id_producto: producto.id_producto,
+          nombre_producto: producto.nombre_producto,
+          descripcion_producto: producto.descripcion_producto,
+          peso_nominal_g: producto.peso_nominal_g,
+          tiene_stock: stockActual > 0,
+          id_stock: stockInfo.id,
+          stock_minimo: stockInfo.stock_minimo,
+          stock_maximo: stockInfo.stock_maximo,
+          venta_semanal: ventaSemanal,
+          stock_ideal_final: stockIdealFinal,
+          calificacion_surtido: calificacion,
+          mensaje_sistema: stockInfo.mensaje_sistema,
+          stock_en_tiempo_real: stockActual,
+          activo: stockInfo.activo,
+          cantidad_a_surtir: cantidadASurtir,
+          empaques_disponibles_logistica: disponibleLogistica,
+          empaques_prioritarios_asignados: Math.min(
+            prioritariosDisponibles,
+            cantidadASurtir,
+          ),
+        });
+      } else {
+        productosConSurtido.push({
+          id_producto: producto.id_producto,
+          nombre_producto: producto.nombre_producto,
+          descripcion_producto: producto.descripcion_producto,
+          peso_nominal_g: producto.peso_nominal_g,
+          tiene_stock: false,
+          id_stock: null,
+          stock_minimo: 0,
+          stock_maximo: 0,
+          venta_semanal: 0,
+          stock_ideal_final: 0,
+          calificacion_surtido: 'Sin configurar',
+          mensaje_sistema: 'Producto no disponible en esta nevera',
+          stock_en_tiempo_real: 0,
+          activo: true,
+          cantidad_a_surtir: 0,
+          empaques_disponibles_logistica: disponibleLogistica,
+          empaques_prioritarios_asignados: 0,
         });
       }
     }
 
-    // FIN LOOP
+    // ─── Obtener empaques estado 5 (para cambio) de esta nevera ───
+    const empaquesEstado5 = await this.databaseService.eMPAQUES.findMany({
+      where: { id_nevera: idNevera, id_estado_empaque: 5 },
+      select: {
+        id_empaque: true,
+        EPC_id: true,
+        peso_exacto_g: true,
+        fecha_empaque_1: true,
+        fecha_vencimiento: true,
+        producto: {
+          select: { id_producto: true, dias_vencimiento: true },
+        },
+      },
+    });
+
+    const paraCambio: any[] = [];
+    const vencidos: any[] = [];
+
+    for (const empaque of empaquesEstado5) {
+      const diasVida = empaque.producto.dias_vencimiento;
+      const inicio = new Date(empaque.fecha_empaque_1);
+      const diasTranscurridos =
+        (ahora.getTime() - inicio.getTime()) / (1000 * 60 * 60 * 24);
+      const porcentaje =
+        diasVida > 0
+          ? Math.round((diasTranscurridos / diasVida) * 100 * 100) / 100
+          : 0;
+
+      const item = {
+        id_empaque: empaque.id_empaque,
+        epc: empaque.EPC_id,
+        peso_exacto_g: Number(empaque.peso_exacto_g),
+        id_producto: empaque.producto.id_producto,
+        fecha_vencimiento: empaque.fecha_vencimiento.toISOString(),
+        porcentaje_vida: porcentaje,
+      };
+
+      if (porcentaje >= UMBRAL_VENCIDO) {
+        vencidos.push(item);
+      } else {
+        paraCambio.push(item);
+      }
+    }
+
+    // ─── Estadísticas ───
+    const totalProductos = todosLosProductos.length;
+    const productosConStock = productosConSurtido.filter(
+      (p) => p.stock_en_tiempo_real > 0,
+    ).length;
+    const productosSinStock = totalProductos - productosConStock;
 
     return {
       success: true,
-      message: 'Surtido procesado exitosamente',
-      hora_calificacion: horaCalificacion.toISOString(),
-      resumen: {
-        ciudades_procesadas: idCiudades,
-        neveras_procesadas: neverasActivas.length,
-        productos_procesados: productosLogistica.length,
+      nevera: {
+        id_nevera: nevera.id_nevera,
+        id_tienda: nevera.tienda.id_tienda,
+        nombre_tienda: nevera.tienda.nombre_tienda,
+        hora_ultimo_surtido: nevera.hora_ultimo_surtido?.toISOString() ?? null,
+      },
+      estadisticas: {
+        total_productos: totalProductos,
+        productos_con_stock: productosConStock,
+        productos_sin_stock: productosSinStock,
+      },
+      productos: productosConSurtido,
+      para_cambio_5: {
+        para_cambio: paraCambio,
+        vencidos: vencidos,
+      },
+      resumen_logistica: {
+        id_logistica: idLogistica,
+        total_empaques_estado_2: empaquesEstado2.reduce(
+          (sum, p) => sum + p._count.id_empaque,
+          0,
+        ),
+        total_empaques_prioritarios_estado_6: totalPrioritarios,
+        neveras_competidoras_consideradas: neverasCompetidoras.length,
+        neveras_excluidas_por_surtido_reciente: neverasExcluidasPorSurtido,
+        parametros: {
+          dias_excluir: diasExcluir ?? 0,
+          modo:
+            !diasExcluir || diasExcluir === 0
+              ? 'incluir_todas'
+              : 'excluir_recientes',
+        },
       },
     };
   }

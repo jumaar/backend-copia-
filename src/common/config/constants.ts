@@ -5,3 +5,6 @@
  */
 export const UMBRAL_PARA_CAMBIO = 75;  // ≥75% vida util → estado 5 (PARA CAMBIO)
 export const UMBRAL_VENCIDO = 100;     // ≥100% vida util → vencido
+
+/** Stock mínimo que se asigna a neveras donde el producto tiene empaques envejecidos (estado 5). */
+export const STOCK_MINIMO_BAJA_POR_VENCIMIENTO = 1;

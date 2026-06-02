@@ -20,6 +20,7 @@ import { UpdateNeveraDto } from './dto/update-nevera.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { HerenciaGuard, Herencia } from '../herencia';
 import { ValidacionDosaTresDto } from './dto/validacion-dosatres.dto';
 import { InventarioDto } from './dto/inventario.dto';
 
@@ -30,12 +31,54 @@ export class NeverasController {
   constructor(private readonly neverasService: NeverasService) {}
 
 
-  @Get('surtir')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(4)
-  async surtirNeveras(@Query('id_ciudad') idCiudad: string, @Req() req: any) {
+  /**
+   * POST /api/neveras/calificacion
+   * Endpoint GLOBAL — no requiere parámetros.
+   * Ejecuta: escaneo de vencimiento (empaques >75% → PARA CAMBIO) +
+   * creación de STOCK_NEVERA faltantes + calificación ALTA/MEDIA/BAJA
+   * para todas las neveras activas accesibles por herencia.
+   */
+  @Post('calificacion')
+  @UseGuards(JwtAuthGuard, RolesGuard, HerenciaGuard)
+  @Roles(1, 2, 4)
+  @Herencia({ tipo: 'resolver', scope: 'descendientes', entidad: 'usuario' })
+  async ejecutarCalificacion(@Req() req: any) {
     const idUsuario = req.user.id_usuario;
-    return this.neverasService.surtirNeveras(idCiudad, idUsuario);
+    return this.neverasService.ejecutarCalificacion(
+      idUsuario,
+      req.accessibleUserIds,
+    );
+  }
+
+  /**
+   * GET /api/neveras/surtir?id_nevera=X&id_ciudad=1,3&dias_excluir=Z
+   * Calcula la cantidad a surtir en una nevera específica considerando:
+   * - Empaques en logística del usuario (estado 2 + estado 6 prioritarios)
+   * - Calificación de la nevera (ALTA/MEDIA/BAJA, previamente calculada por /calificacion)
+   * - Neveras competidoras (excluyendo surtidas recientemente según dias_excluir)
+   * - Herencia: solo neveras de tiendas en la jerarquía del usuario
+   *
+   * id_ciudad = opcional. Si no se envía: TODAS las ciudades. "4": una sola. "1,3,4": varias.
+   * dias_excluir = 0 o no enviado: incluye TODAS las neveras, incluso las surtidas hoy.
+   */
+  @Get('surtir')
+  @UseGuards(JwtAuthGuard, RolesGuard, HerenciaGuard)
+  @Roles(1, 2, 4)
+  @Herencia({ tipo: 'verificar', scope: 'descendientes', entidad: 'nevera', paramKey: 'id_nevera' })
+  async surtirNevera(
+    @Query('id_nevera') idNevera: string,
+    @Req() req: any,
+    @Query('id_ciudad') idCiudad?: string,
+    @Query('dias_excluir') diasExcluir?: string,
+  ) {
+    const idUsuario = req.user.id_usuario;
+    return this.neverasService.surtirNevera(
+      Number(idNevera),
+      idCiudad || null,
+      diasExcluir ? Number(diasExcluir) : 0,
+      idUsuario,
+      req.accessibleUserIds,
+    );
   }
 
   /**
