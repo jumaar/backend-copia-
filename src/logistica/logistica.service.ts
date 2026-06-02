@@ -12,6 +12,22 @@ import { UMBRAL_VENCIDO, UMBRAL_PARA_CAMBIO } from '../common/config/constants';
 export class LogisticaService {
   constructor(private readonly databaseService: DatabaseService) {}
 
+  private async obtenerDescendientes(idCreador: number): Promise<number[]> {
+    const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
+      where: { id_usuario_creador: idCreador },
+      select: { id_usuario_nuevo: true },
+    });
+    const directos = tokens
+      .filter((t) => t.id_usuario_nuevo !== null)
+      .map((t) => t.id_usuario_nuevo!);
+    let todos = [...directos];
+    for (const d of directos) {
+      const sub = await this.obtenerDescendientes(d);
+      todos.push(...sub);
+    }
+    return todos;
+  }
+
   create(createLogisticaDto: CreateLogisticaDto) {
     return 'This action adds a new logistica';
   }
@@ -24,13 +40,61 @@ export class LogisticaService {
     return `This action returns a #${id}`;
   }
 
-  async getProductosPorLogistica(id_usuario: number) {
-    // Obtener el id_logistica del usuario autenticado
+  async getProductosPorLogistica(
+    id_usuario: number,
+    id_rol: number,
+    idUsuarioTarget?: number,
+  ) {
+    // ═══════════════════════════════════════════════════════════════
+    // CASO ADMIN (rol 1 o 2) SIN target: devolver lista de usuarios
+    // logística que son sus descendientes
+    // ═══════════════════════════════════════════════════════════════
+    if ((id_rol === 1 || id_rol === 2) && !idUsuarioTarget) {
+      const descendientes = await this.obtenerDescendientes(id_usuario);
+      const todosIds = [id_usuario, ...descendientes];
+
+      const usuariosLogistica = await this.databaseService.uSUARIOS.findMany({
+        where: {
+          id_usuario: { in: todosIds },
+          id_rol: 4,
+          activo: true,
+        },
+        select: {
+          id_usuario: true,
+          nombre_usuario: true,
+          apellido_usuario: true,
+          email: true,
+          celular: true,
+        },
+      });
+
+      return {
+        usuarios_logistica: usuariosLogistica,
+      };
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // VALIDACIÓN: Admin con target → verificar que el target sea
+    // descendiente (o él mismo)
+    // ═══════════════════════════════════════════════════════════════
+    if (idUsuarioTarget && (id_rol === 1 || id_rol === 2)) {
+      const descendientes = await this.obtenerDescendientes(id_usuario);
+      if (idUsuarioTarget !== id_usuario && !descendientes.includes(idUsuarioTarget)) {
+        throw new ForbiddenException('No tienes acceso a este usuario logístico');
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // Determinar el id_usuario efectivo para la consulta
+    // ═══════════════════════════════════════════════════════════════
+    const idUsuarioEfectivo = idUsuarioTarget ?? id_usuario;
+
+    // Obtener el id_logistica del usuario objetivo
     const usuarioLogistica = await this.databaseService.lOGISTICA.findFirst({
-      where: { id_usuario: id_usuario },
+      where: { id_usuario: idUsuarioEfectivo },
       select: { id_logistica: true }
     });
-    
+
     if (!usuarioLogistica) {
       return {
         error: 'Usuario no tiene logística asociada',
@@ -103,34 +167,16 @@ export class LogisticaService {
     // ═══════════════════════════════════════════════════════════════
 
     const usuario = await this.databaseService.uSUARIOS.findUnique({
-      where: { id_usuario },
+      where: { id_usuario: idUsuarioEfectivo },
       select: { id_rol: true },
     });
 
-    const obtenerDescendientes = async (
-      idCreador: number,
-    ): Promise<number[]> => {
-      const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
-        where: { id_usuario_creador: idCreador },
-        select: { id_usuario_nuevo: true },
-      });
-      const directos = tokens
-        .filter((t) => t.id_usuario_nuevo !== null)
-        .map((t) => t.id_usuario_nuevo!);
-      let todos = [...directos];
-      for (const d of directos) {
-        const sub = await obtenerDescendientes(d);
-        todos.push(...sub);
-      }
-      return todos;
-    };
-
-    let usuariosPermitidos: number[] = [id_usuario];
+    let usuariosPermitidos: number[] = [idUsuarioEfectivo];
     if (usuario && (usuario.id_rol === 1 || usuario.id_rol === 2)) {
-      const descendientes = await obtenerDescendientes(id_usuario);
+      const descendientes = await this.obtenerDescendientes(idUsuarioEfectivo);
       usuariosPermitidos.push(...descendientes);
     } else if (usuario && usuario.id_rol === 4) {
-      const descendientes = await obtenerDescendientes(id_usuario);
+      const descendientes = await this.obtenerDescendientes(idUsuarioEfectivo);
       usuariosPermitidos.push(...descendientes);
     }
 
@@ -622,36 +668,15 @@ export class LogisticaService {
       };
     }
 
-    // Función recursiva para obtener todos los descendientes
-    const obtenerDescendientes = async (id_creador: number): Promise<number[]> => {
-      const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
-        where: { id_usuario_creador: id_creador },
-        select: { id_usuario_nuevo: true }
-      });
-
-      const descendientesDirectos = tokens
-        .filter(token => token.id_usuario_nuevo !== null)
-        .map(token => token.id_usuario_nuevo!);
-
-      let todosDescendientes = [...descendientesDirectos];
-
-      for (const descendiente of descendientesDirectos) {
-        const subDescendientes = await obtenerDescendientes(descendiente);
-        todosDescendientes.push(...subDescendientes);
-      }
-
-      return todosDescendientes;
-    };
-
     let usuariosPermitidos: number[] = [id_usuario]; // Incluir al propio usuario
 
     if (usuario.id_rol === 2) {
       // Rol 2: obtener todos sus descendientes
-      const descendientes = await obtenerDescendientes(id_usuario);
+      const descendientes = await this.obtenerDescendientes(id_usuario);
       usuariosPermitidos.push(...descendientes);
     } else if (usuario.id_rol === 4) {
       // Rol 4: obtener todos sus descendientes (si tiene)
-      const descendientes = await obtenerDescendientes(id_usuario);
+      const descendientes = await this.obtenerDescendientes(id_usuario);
       usuariosPermitidos.push(...descendientes);
     } else {
       // Otros roles no tienen acceso

@@ -17,9 +17,18 @@ export class LogisticaController {
 
   @Get()
   @Roles(1, 2, 4)
-  getProductosPorLogistica(@Req() req: any) {
-    const id_usuario = req.user.id_usuario; // Obtener id_usuario del JWT
-    return this.logisticaService.getProductosPorLogistica(id_usuario);
+  getProductosPorLogistica(
+    @Req() req: any,
+    @Query('id_usuario') idUsuarioParam?: string,
+  ) {
+    const id_usuario_jwt = req.user.id_usuario;
+    const id_rol_jwt = req.user.roleId;
+    const idUsuarioTarget = idUsuarioParam ? Number(idUsuarioParam) : undefined;
+    return this.logisticaService.getProductosPorLogistica(
+      id_usuario_jwt,
+      id_rol_jwt,
+      idUsuarioTarget,
+    );
   }
 
   @Get('surtir')
