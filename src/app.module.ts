@@ -13,6 +13,7 @@ import { GestionUsuariosModule } from './gestion-usuarios/gestion-usuarios.modul
 import { HerenciaModule } from './herencia/herencia.module';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { EmpaquesModule } from './empaques/empaques.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { APP_GUARD } from '@nestjs/core';
     RegistrationTokensModule,
     GestionUsuariosModule,
     HerenciaModule,
+    EmpaquesModule,
   ],
   providers: [
     {
