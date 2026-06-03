@@ -258,6 +258,7 @@ export class NeverasService {
         stock_en_tiempo_real: true,
         venta_semanal: true,
         calificacion_surtido: true,
+        stock_ideal_final: true,
         activo: true,
       },
     });
@@ -308,6 +309,7 @@ export class NeverasService {
         stock_en_tiempo_real: true,
         venta_semanal: true,
         calificacion_surtido: true,
+        stock_ideal_final: true,
       },
     });
 
@@ -331,6 +333,12 @@ export class NeverasService {
         const ventaMaxima = Math.max(
           ...neverasResurtido.map((n) => n.venta_semanal),
         );
+
+        if (ventaMaxima <= 0) {
+          productosProcesados++;
+          continue;
+        }
+
         const MEDIA_corte = ventaMaxima / 2;
         const BAJA_corte = MEDIA_corte * 0.5;
         const ALTA_corte = MEDIA_corte * 1.5;
@@ -657,6 +665,7 @@ export class NeverasService {
         id_producto: true,
         stock_en_tiempo_real: true,
         calificacion_surtido: true,
+        stock_ideal_final: true,
       },
     });
 
@@ -676,6 +685,51 @@ export class NeverasService {
     for (const s of stockTarget) {
       stockTargetMap.set(s.id_producto, s);
     }
+
+    // ─── Obtener empaques estado 5 (para cambio) de esta nevera ───
+    const empaquesEstado5 = await this.databaseService.eMPAQUES.findMany({
+      where: { id_nevera: idNevera, id_estado_empaque: 5 },
+      select: {
+        id_empaque: true,
+        EPC_id: true,
+        peso_exacto_g: true,
+        fecha_empaque_1: true,
+        fecha_vencimiento: true,
+        producto: {
+          select: { id_producto: true, dias_vencimiento: true },
+        },
+      },
+    });
+
+    const paraCambio: any[] = [];
+    const vencidos: any[] = [];
+
+    for (const empaque of empaquesEstado5) {
+      const diasVida = empaque.producto.dias_vencimiento;
+      const inicio = new Date(empaque.fecha_empaque_1);
+      const diasTranscurridos =
+        (ahora.getTime() - inicio.getTime()) / (1000 * 60 * 60 * 24);
+      const porcentaje =
+        diasVida > 0
+          ? Math.round((diasTranscurridos / diasVida) * 100 * 100) / 100
+          : 0;
+
+      const item = {
+        id_empaque: empaque.id_empaque,
+        epc: empaque.EPC_id,
+        peso_exacto_g: Number(empaque.peso_exacto_g),
+        id_producto: empaque.producto.id_producto,
+        fecha_vencimiento: empaque.fecha_vencimiento.toISOString(),
+        porcentaje_vida: porcentaje,
+      };
+
+      if (porcentaje >= UMBRAL_VENCIDO) {
+        vencidos.push(item);
+      } else {
+        paraCambio.push(item);
+      }
+    }
+
 
     // ─── Para cada producto, calcular distribución y cantidad a surtir ───
     const productosConSurtido: any[] = [];
@@ -708,6 +762,7 @@ export class NeverasService {
           id_producto: producto.id_producto,
           stock_en_tiempo_real: stockActual,
           calificacion_surtido: calificacion,
+          stock_ideal_final: stockInfo.stock_ideal_final,
         });
       }
 
@@ -736,7 +791,12 @@ export class NeverasService {
           // YA está en las neveras para que las neveras vacías reciban más
           // proporción que las que ya están bien surtidas.
           const stockRealTotal = todosLosStocks.reduce(
-            (sum, s) => sum + s.stock_en_tiempo_real,
+            (sum, s) => {
+              if (s.calificacion_surtido === 'BAJA') {
+                return sum + Math.min(s.stock_en_tiempo_real, (s as any).stock_ideal_final || 1);
+              }
+              return sum + s.stock_en_tiempo_real;
+            },
             0,
           );
           const totalSistema = disponibleLogistica + stockRealTotal;
@@ -783,6 +843,24 @@ export class NeverasService {
           // cantidad_a_surtir = lo que falta para llegar al ideal (sin exceder lo disponible)
           const faltante = Math.max(0, stockIdealFinal - stockActual);
           cantidadASurtir = Math.min(faltante, disponibleLogistica);
+
+          // ─── Empaques prioritarios (estado 6, 75-100%): ALTA → MEDIA (si no hay ALTA) ───
+          if (prioritariosDisponibles > 0) {
+            const hayAltaEnCompetidoras = todosLosStocks.some(
+              (s) => s.calificacion_surtido === 'ALTA',
+            );
+            const recibePrioritarios =
+              calificacion === 'ALTA' ||
+              (calificacion === 'MEDIA' && !hayAltaEnCompetidoras);
+            if (recibePrioritarios) {
+              const extraPrioritarios = Math.min(
+                prioritariosDisponibles,
+                disponibleLogistica - cantidadASurtir,
+              );
+              cantidadASurtir += extraPrioritarios;
+            }
+          }
+
 
           // ─── Persistir stock_ideal_final en STOCK_NEVERA de la target ───
           if (stockInfo) {
@@ -838,50 +916,6 @@ export class NeverasService {
           empaques_disponibles_logistica: disponibleLogistica,
           empaques_prioritarios_asignados: 0,
         });
-      }
-    }
-
-    // ─── Obtener empaques estado 5 (para cambio) de esta nevera ───
-    const empaquesEstado5 = await this.databaseService.eMPAQUES.findMany({
-      where: { id_nevera: idNevera, id_estado_empaque: 5 },
-      select: {
-        id_empaque: true,
-        EPC_id: true,
-        peso_exacto_g: true,
-        fecha_empaque_1: true,
-        fecha_vencimiento: true,
-        producto: {
-          select: { id_producto: true, dias_vencimiento: true },
-        },
-      },
-    });
-
-    const paraCambio: any[] = [];
-    const vencidos: any[] = [];
-
-    for (const empaque of empaquesEstado5) {
-      const diasVida = empaque.producto.dias_vencimiento;
-      const inicio = new Date(empaque.fecha_empaque_1);
-      const diasTranscurridos =
-        (ahora.getTime() - inicio.getTime()) / (1000 * 60 * 60 * 24);
-      const porcentaje =
-        diasVida > 0
-          ? Math.round((diasTranscurridos / diasVida) * 100 * 100) / 100
-          : 0;
-
-      const item = {
-        id_empaque: empaque.id_empaque,
-        epc: empaque.EPC_id,
-        peso_exacto_g: Number(empaque.peso_exacto_g),
-        id_producto: empaque.producto.id_producto,
-        fecha_vencimiento: empaque.fecha_vencimiento.toISOString(),
-        porcentaje_vida: porcentaje,
-      };
-
-      if (porcentaje >= UMBRAL_VENCIDO) {
-        vencidos.push(item);
-      } else {
-        paraCambio.push(item);
       }
     }
 
