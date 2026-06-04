@@ -149,6 +149,56 @@ export class GestionUsuariosService {
           }))
         }));
 
+      const sobrinasTokens = await this.databaseService.tOKEN_REGISTRO.findMany({
+        where: {
+          id_usuario_creador: { not: user.id_usuario },
+          es_usado: true,
+          id_usuario_nuevo: { not: null, in: accessibleUserIds },
+          id_rol_nuevo_usuario: 5,
+          nuevo_usuario: { email: { not: { endsWith: '@borrado.com' } } },
+        },
+        include: {
+          creador: { select: { nombre_usuario: true, apellido_usuario: true } },
+          nuevo_usuario: {
+            include: {
+              rol: true,
+              tiendas: {
+                include: {
+                  ciudad: { include: { departamento: true } },
+                  neveras: { select: { id_nevera: true, id_estado_nevera: true } }
+                }
+              }
+            }
+          }
+        },
+      });
+
+      const sobrinas = sobrinasTokens
+        .map(token => {
+          if (!token.nuevo_usuario) return null;
+          const creador = token.creador;
+          return {
+            id_usuario: token.nuevo_usuario.id_usuario,
+            nombre_completo: `${token.nuevo_usuario.nombre_usuario || ''} ${token.nuevo_usuario.apellido_usuario || ''}`.trim(),
+            celular: token.nuevo_usuario.celular,
+            rol: token.nuevo_usuario.rol?.nombre_rol,
+            activo: token.nuevo_usuario.activo,
+            creado_por: creador ? `${creador.nombre_usuario || ''} ${creador.apellido_usuario || ''}`.trim() : 'Desconocido',
+            tiendas_creadas: token.nuevo_usuario.tiendas.map(tienda => ({
+              id_tienda: tienda.id_tienda,
+              nombre_tienda: tienda.nombre_tienda,
+              direccion: tienda.direccion,
+              ciudad: tienda.ciudad.nombre_ciudad,
+              departamento: tienda.ciudad.departamento.nombre_departamento,
+              neveras: tienda.neveras.map(nevera => ({
+                id_nevera: nevera.id_nevera,
+                estado: nevera.id_estado_nevera
+              }))
+            }))
+          };
+        })
+        .filter(Boolean);
+
       const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
         where: { id_usuario_creador: user.id_usuario, es_usado: false, expira_en: { gte: new Date() } },
         select: { token: true, expira_en: true, rol_nuevo_usuario: { select: { nombre_rol: true } } },
@@ -157,6 +207,7 @@ export class GestionUsuariosService {
       return {
         usuario_actual: this.formatUser(currentUser),
         tiendas_creadas: tiendasCreadas,
+        sobrinas,
         tokens,
       };
     }

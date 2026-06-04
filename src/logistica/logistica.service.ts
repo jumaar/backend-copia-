@@ -7,6 +7,8 @@ import { ConsolidacionCuentasDto } from './dto/consolidacion-cuentas.dto';
 import { LiquidacionNeveraDto } from './dto/liquidacion-nevera.dto';
 import { DecincoaseisDto } from './dto/decincoaseis.dto';
 import { SeisasieteDto } from './dto/seisasiete.dto';
+import { ResumenFinancieroDto } from './dto/resumen-financiero.dto';
+import { ConsolidarAdminDto } from './dto/consolidar-admin.dto';
 import { UMBRAL_VENCIDO, UMBRAL_PARA_CAMBIO } from '../common/config/constants';
 
 @Injectable()
@@ -897,6 +899,454 @@ export class LogisticaService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new BadRequestException(`Error al consolidar cuentas: ${errorMessage}`);
+    }
+  }
+
+  async getHermanosLogisticaPorScope(requesterId: number, requesterRole: number, accessibleUserIds: number[]) {
+    const hermanos = await this.databaseService.uSUARIOS.findMany({
+      where: {
+        id_usuario: { in: accessibleUserIds },
+        id_rol: 4,
+        activo: true,
+      },
+      select: {
+        id_usuario: true,
+        nombre_usuario: true,
+        apellido_usuario: true,
+        email: true,
+        celular: true,
+        logisticas: {
+          select: {
+            id_logistica: true,
+            nombre_empresa: true,
+            placa_vehiculo: true,
+          },
+        },
+      },
+    });
+
+    let adminData: any = null;
+    if (requesterRole === 2) {
+      const admin = await this.databaseService.uSUARIOS.findUnique({
+        where: { id_usuario: requesterId },
+        select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true },
+      });
+      adminData = admin;
+    }
+
+    return {
+      admin: adminData,
+      cantidad_logisticas: hermanos.length,
+      logisticas: hermanos.map(h => ({
+        id_usuario: h.id_usuario,
+        nombre_usuario: h.nombre_usuario,
+        apellido_usuario: h.apellido_usuario,
+        email: h.email,
+        celular: h.celular,
+        empresas: h.logisticas.map(l => ({
+          id_logistica: l.id_logistica,
+          nombre_empresa: l.nombre_empresa,
+          placa_vehiculo: l.placa_vehiculo,
+        })),
+      })),
+    };
+  }
+
+  async getResumenFinanciero(idUsuarioLogistica: number, idRol: number, dto: ResumenFinancieroDto) {
+    const ahora = new Date();
+    const mes = dto.mes || (ahora.getMonth() + 1);
+    const ano = dto.ano || ahora.getFullYear();
+    const fechaInicio = new Date(ano, mes - 1, 1);
+    const fechaFin = new Date(ano, mes, 0, 23, 59, 59, 999);
+
+    const usuarioLogistica = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario: idUsuarioLogistica },
+      select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true, id_rol: true },
+    });
+
+    if (!usuarioLogistica || usuarioLogistica.id_rol !== 4) {
+      throw new BadRequestException('Usuario logística no encontrado');
+    }
+
+    const adminPadre = await this.databaseService.tOKEN_REGISTRO.findFirst({
+      where: { id_usuario_nuevo: idUsuarioLogistica, id_rol_nuevo_usuario: 4 },
+      select: {
+        creador: {
+          select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true, id_rol: true },
+        },
+      },
+    });
+
+    const adminId = adminPadre?.creador?.id_usuario ?? null;
+    const adminNombre = adminPadre?.creador
+      ? `${adminPadre.creador.nombre_usuario} ${adminPadre.creador.apellido_usuario}`
+      : 'Admin no encontrado';
+
+    const todasLasTransacciones: any[] = [];
+
+    const transaccionesLogistica = await this.databaseService.tRANSACCIONES.findMany({
+      where: {
+        id_usuario: idUsuarioLogistica,
+        id_tipo_transaccion: { in: [4, 5] },
+        hora_transaccion: { gte: fechaInicio, lte: fechaFin },
+      },
+      include: {
+        estadoTransaccion: { select: { id_estado_transaccion: true, nombre_estado: true } },
+        tipoTransaccion: { select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true } },
+        transaccionRel: {
+          select: {
+            id_transaccion: true,
+            nota_opcional: true,
+            monto: true,
+            usuario: { select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true, id_rol: true } },
+          },
+        },
+      },
+      orderBy: { hora_transaccion: 'desc' },
+    });
+
+    todasLasTransacciones.push(...transaccionesLogistica);
+
+    if (adminId) {
+      const transaccionesAdminVinculadas = await this.databaseService.tRANSACCIONES.findMany({
+        where: {
+          id_usuario: adminId,
+          id_tipo_transaccion: { in: [4, 5] },
+          hora_transaccion: { gte: fechaInicio, lte: fechaFin },
+          transaccionRel: { id_usuario: idUsuarioLogistica },
+        },
+        include: {
+          estadoTransaccion: { select: { id_estado_transaccion: true, nombre_estado: true } },
+          tipoTransaccion: { select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true } },
+          transaccionRel: {
+            select: {
+              id_transaccion: true,
+              nota_opcional: true,
+              monto: true,
+              usuario: { select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true, id_rol: true } },
+            },
+          },
+        },
+        orderBy: { hora_transaccion: 'desc' },
+      });
+
+      const idsExistentes = new Set(todasLasTransacciones.map(t => t.id_transaccion));
+      for (const tx of transaccionesAdminVinculadas) {
+        if (!idsExistentes.has(tx.id_transaccion)) {
+          todasLasTransacciones.push(tx);
+        }
+      }
+    }
+
+    todasLasTransacciones.sort(
+      (a, b) => new Date(b.hora_transaccion).getTime() - new Date(a.hora_transaccion).getTime(),
+    );
+
+    let totalIngresos = 0;
+    let totalEgresos = 0;
+
+    const transaccionesFormateadas = todasLasTransacciones.map(tx => {
+      const monto = parseFloat(tx.monto.toString());
+      const tipo = tx.tipoTransaccion.nombre_codigo;
+      const esUsuarioLogistica = tx.id_usuario === idUsuarioLogistica;
+
+      if (esUsuarioLogistica) {
+        if (tipo === 'dinero_recibido' && monto > 0) totalIngresos += monto;
+        if (tipo === 'dinero_entregado' && monto < 0) totalEgresos += Math.abs(monto);
+      }
+
+      const usuarioRelacionado = tx.transaccionRel?.usuario
+        ? {
+            id_usuario: tx.transaccionRel.usuario.id_usuario,
+            nombre_completo: `${tx.transaccionRel.usuario.nombre_usuario} ${tx.transaccionRel.usuario.apellido_usuario}`,
+          }
+        : null;
+
+      return {
+        id_transaccion: tx.id_transaccion,
+        id_empaque: tx.id_empaque,
+        id_transaccion_rel: tx.id_transaccion_rel,
+        monto,
+        hora_transaccion: tx.hora_transaccion,
+        nombre_tipo_transaccion: tipo,
+        nombre_estado_transaccion: tx.estadoTransaccion.nombre_estado,
+        nota_opcional: tx.nota_opcional,
+        usuario_relacionado: usuarioRelacionado,
+      };
+    });
+
+    const balanceNetoPeriodo = totalIngresos - totalEgresos;
+
+    let balanceAcumuladoHistorico = 0;
+    if (adminId) {
+      const todasHistoricasLogistica = await this.databaseService.tRANSACCIONES.findMany({
+        where: { id_usuario: idUsuarioLogistica, id_tipo_transaccion: { in: [4, 5] } },
+        select: { monto: true, id_tipo_transaccion: true },
+      });
+
+      for (const tx of todasHistoricasLogistica) {
+        const m = parseFloat(tx.monto.toString());
+        if (tx.id_tipo_transaccion === 4 && m > 0) balanceAcumuladoHistorico += m;
+        if (tx.id_tipo_transaccion === 5 && m < 0) balanceAcumuladoHistorico -= Math.abs(m);
+      }
+    }
+
+    return {
+      periodo: { mes, ano },
+      admin: { id_usuario: adminId, nombre_completo: adminNombre },
+      resumen: {
+        total_ingresos: totalIngresos,
+        total_egresos: totalEgresos,
+        balance_neto_periodo: balanceNetoPeriodo,
+        balance_acumulado_historico: balanceAcumuladoHistorico,
+      },
+      transacciones: transaccionesFormateadas,
+    };
+  }
+
+  async consolidarAdmin(
+    idUsuario: number,
+    idRol: number,
+    dto: ConsolidarAdminDto,
+  ) {
+    const { monto, nota_opcional, tipo_movimiento, id_logistica: idLogisticaParam } = dto;
+
+    let idUsuarioLogistica: number;
+    let idUsuarioAdmin: number;
+    let nombreLogistica: string;
+    let nombreAdmin: string;
+
+    if (idRol === 4) {
+      idUsuarioLogistica = idUsuario;
+
+      const userLog = await this.databaseService.uSUARIOS.findUnique({
+        where: { id_usuario: idUsuarioLogistica },
+        select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true, id_rol: true },
+      });
+
+      if (!userLog || userLog.id_rol !== 4) {
+        throw new BadRequestException('Usuario logística no encontrado');
+      }
+
+      nombreLogistica = `${userLog.nombre_usuario} ${userLog.apellido_usuario}`;
+
+      const adminPadre = await this.databaseService.tOKEN_REGISTRO.findFirst({
+        where: { id_usuario_nuevo: idUsuarioLogistica, id_rol_nuevo_usuario: 4 },
+        select: {
+          creador: {
+            select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true, id_rol: true },
+          },
+        },
+      });
+
+      if (!adminPadre?.creador) {
+        throw new BadRequestException('No se encontró el admin padre de este usuario logística');
+      }
+
+      idUsuarioAdmin = adminPadre.creador.id_usuario;
+      nombreAdmin = `${adminPadre.creador.nombre_usuario} ${adminPadre.creador.apellido_usuario}`;
+    } else if (idRol === 2) {
+      if (!idLogisticaParam) {
+        throw new BadRequestException('id_logistica es requerido cuando el admin realiza esta operación');
+      }
+
+      idUsuarioAdmin = idUsuario;
+      idUsuarioLogistica = idLogisticaParam;
+
+      const userAdmin = await this.databaseService.uSUARIOS.findUnique({
+        where: { id_usuario: idUsuarioAdmin },
+        select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true, id_rol: true },
+      });
+
+      if (!userAdmin || userAdmin.id_rol !== 2) {
+        throw new BadRequestException('Usuario admin no encontrado');
+      }
+
+      nombreAdmin = `${userAdmin.nombre_usuario} ${userAdmin.apellido_usuario}`;
+
+      const userLog = await this.databaseService.uSUARIOS.findUnique({
+        where: { id_usuario: idUsuarioLogistica },
+        select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true, id_rol: true },
+      });
+
+      if (!userLog || userLog.id_rol !== 4) {
+        throw new BadRequestException('El usuario objetivo no es un usuario logística');
+      }
+
+      nombreLogistica = `${userLog.nombre_usuario} ${userLog.apellido_usuario}`;
+
+      const esHijo = await this.databaseService.tOKEN_REGISTRO.findFirst({
+        where: {
+          id_usuario_creador: idUsuarioAdmin,
+          id_usuario_nuevo: idUsuarioLogistica,
+          id_rol_nuevo_usuario: 4,
+        },
+      });
+
+      if (!esHijo) {
+        throw new BadRequestException('El usuario logística no es hijo de este admin');
+      }
+    } else {
+      throw new BadRequestException('Rol no autorizado para esta operación');
+    }
+
+    const esIngreso = tipo_movimiento === 'ingreso';
+
+    // Validar que cada rol use solo su tipo de movimiento
+    if (idRol === 2 && !esIngreso) {
+      throw new BadRequestException('El admin solo puede registrar ingresos (tipo_movimiento: "ingreso")');
+    }
+    if (idRol === 4 && esIngreso) {
+      throw new BadRequestException('El logístico solo puede consolidar (tipo_movimiento: "consolidacion")');
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // CASO A: INGRESO — Transferencia directa admin → logística
+    // ═══════════════════════════════════════════════════════
+    if (esIngreso) {
+      const nLog = nota_opcional
+        ? `Ingreso del admin (${nombreAdmin}) - ${nota_opcional}`
+        : `Ingreso del admin (${nombreAdmin})`;
+      const nAdm = nota_opcional
+        ? `Entrega a logística (${nombreLogistica}) - ${nota_opcional}`
+        : `Entrega a logística (${nombreLogistica})`;
+
+      try {
+        const r = await this.databaseService.$transaction(async (prisma) => {
+          const txL = await prisma.tRANSACCIONES.create({
+            data: { id_empaque: null, id_usuario: idUsuarioLogistica, id_transaccion_rel: null,
+              monto, hora_transaccion: new Date(), id_tipo_transaccion: 4,
+              nota_opcional: nLog, estado_transaccion: 1, id_nevera: null },
+          });
+          const txA = await prisma.tRANSACCIONES.create({
+            data: { id_empaque: null, id_usuario: idUsuarioAdmin,
+              id_transaccion_rel: txL.id_transaccion, monto: -monto,
+              hora_transaccion: new Date(), id_tipo_transaccion: 5,
+              nota_opcional: nAdm, estado_transaccion: 1, id_nevera: null },
+          });
+          await prisma.tRANSACCIONES.update({
+            where: { id_transaccion: txL.id_transaccion },
+            data: { id_transaccion_rel: txA.id_transaccion } });
+          return { txL, txA };
+        });
+        return {
+          mensaje: 'Ingreso del admin registrado exitosamente', tipo_movimiento, monto,
+          logistica: { id_usuario: idUsuarioLogistica, nombre_completo: nombreLogistica },
+          admin: { id_usuario: idUsuarioAdmin, nombre_completo: nombreAdmin },
+          transaccion_logistica: { id: r.txL.id_transaccion, tipo: 'dinero_recibido', monto },
+          transaccion_admin:     { id: r.txA.id_transaccion, tipo: 'dinero_entregado', monto: -monto },
+        };
+      } catch (error) {
+        throw new BadRequestException(`Error al registrar ingreso: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // CASO B: CONSOLIDACIÓN — MISMO patrón que consolidarCuentas
+    //   1. Buscar pendientes entre logística y admin (estado 1, tipo 4/5)
+    //   2. Marcarlas como PAGADAS (estado 2)
+    //   3. Crear ticket_consolidado (tipo 3, estado 4)
+    //   4. Crear transacción pendiente (estado 1) para quien recibe
+    //   5. Si pago parcial, crear saldo (tipo 2, estado 1)
+    // ═══════════════════════════════════════════════════════
+
+    const pendientesL = await this.databaseService.tRANSACCIONES.findMany({
+      where: { id_usuario: idUsuarioLogistica, estado_transaccion: 1,
+               id_tipo_transaccion: { in: [4, 5] }, id_transaccion_rel: { not: null } },
+      select: { id_transaccion: true, monto: true, id_transaccion_rel: true },
+    });
+    const idsL = new Set(pendientesL.map(t => t.id_transaccion));
+
+    const pendientesA = await this.databaseService.tRANSACCIONES.findMany({
+      where: { id_usuario: idUsuarioAdmin, estado_transaccion: 1,
+               id_tipo_transaccion: { in: [4, 5] }, id_transaccion_rel: { not: null } },
+      select: { id_transaccion: true, monto: true, id_transaccion_rel: true },
+    });
+    const idsA = new Set(pendientesA.map(t => t.id_transaccion));
+
+    const vinculadasL = pendientesL.filter(t => t.id_transaccion_rel && idsA.has(t.id_transaccion_rel));
+    const vinculadasA = pendientesA.filter(t => t.id_transaccion_rel && idsL.has(t.id_transaccion_rel));
+
+    const todosIds = [...vinculadasL.map(t => t.id_transaccion), ...vinculadasA.map(t => t.id_transaccion)];
+
+    if (todosIds.length === 0) {
+      throw new BadRequestException('No hay transacciones pendientes entre ambos. Usa tipo_movimiento: "ingreso" para transferencia directa.');
+    }
+
+    let sumaRaw = 0;
+    for (const tx of vinculadasL) sumaRaw += parseFloat(tx.monto.toString());
+    for (const tx of vinculadasA) sumaRaw += parseFloat(tx.monto.toString());
+    const montoConsolidado = Math.round(Math.abs(sumaRaw));
+
+    const completo = monto === montoConsolidado;
+    const parcial = monto < montoConsolidado;
+    const sobra = monto > montoConsolidado;
+    const saldo = montoConsolidado - monto;
+
+    try {
+      const r = await this.databaseService.$transaction(async (prisma) => {
+        const ticket = await prisma.tRANSACCIONES.create({
+          data: { id_empaque: null, id_usuario: idUsuarioLogistica, id_transaccion_rel: null,
+            monto: -montoConsolidado, hora_transaccion: new Date(), id_tipo_transaccion: 3,
+            nota_opcional: `Ticket consolidado${nota_opcional ? ' - ' + nota_opcional : ''}`,
+            estado_transaccion: 4, id_nevera: null },
+        });
+
+        await prisma.tRANSACCIONES.updateMany({
+          where: { id_transaccion: { in: todosIds } },
+          data: { estado_transaccion: 2, id_transaccion_rel: ticket.id_transaccion },
+        });
+
+        const nAdm = nota_opcional
+          ? `Consolidación logística (${nombreLogistica}) - ${nota_opcional}`
+          : `Consolidación logística (${nombreLogistica})`;
+        const txA = await prisma.tRANSACCIONES.create({
+          data: { id_empaque: null, id_usuario: idUsuarioAdmin,
+            id_transaccion_rel: null, monto, hora_transaccion: new Date(),
+            id_tipo_transaccion: 4, nota_opcional: nAdm, estado_transaccion: 1, id_nevera: null },
+        });
+
+        const nLog = nota_opcional
+          ? `Pago consolidado a admin (${nombreAdmin}) - ${nota_opcional}`
+          : `Pago consolidado a admin (${nombreAdmin})`;
+        const txL = await prisma.tRANSACCIONES.create({
+          data: { id_empaque: null, id_usuario: idUsuarioLogistica,
+            id_transaccion_rel: txA.id_transaccion, monto: -monto, hora_transaccion: new Date(),
+            id_tipo_transaccion: 5, nota_opcional: nLog, estado_transaccion: 1, id_nevera: null },
+        });
+
+        await prisma.tRANSACCIONES.update({
+          where: { id_transaccion: txA.id_transaccion },
+          data: { id_transaccion_rel: txL.id_transaccion },
+        });
+
+        if (parcial || sobra) {
+          await prisma.tRANSACCIONES.create({
+            data: { id_empaque: null, id_usuario: idUsuarioLogistica,
+              id_transaccion_rel: ticket.id_transaccion, monto: saldo,
+              hora_transaccion: new Date(), id_tipo_transaccion: 2,
+              nota_opcional: `Saldo ${sobra ? 'adelantado' : 'a favor del admin'} consolidación ${ticket.id_transaccion}`,
+              estado_transaccion: 1, id_nevera: null },
+          });
+        }
+
+        return { ticket, txL, txA };
+      });
+
+      return {
+        mensaje: 'Consolidación con admin realizada exitosamente',
+        tipo_movimiento, monto, monto_consolidado: montoConsolidado,
+        transacciones_consolidadas: todosIds.length,
+        pago_completo: completo,
+        ...((parcial || sobra) && { saldo_pendiente: saldo }),
+        logistica: { id_usuario: idUsuarioLogistica, nombre_completo: nombreLogistica },
+        admin: { id_usuario: idUsuarioAdmin, nombre_completo: nombreAdmin },
+        ticket_consolidado: { id: r.ticket.id_transaccion, monto: -montoConsolidado },
+        transaccion_logistica: { id: r.txL.id_transaccion, tipo: 'dinero_entregado', monto: -monto },
+        transaccion_admin:     { id: r.txA.id_transaccion, tipo: 'dinero_recibido', monto },
+      };
+    } catch (error) {
+      throw new BadRequestException(`Error al consolidar con admin: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
