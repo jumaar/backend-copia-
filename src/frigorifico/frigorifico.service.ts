@@ -1,6 +1,7 @@
 import { Injectable, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { DatabaseService } from '../database/database.service';
+import { TransaccionesService } from '../transacciones/transacciones.service';
 import { CreateFrigorificoDto } from './dto/create-frigorifico.dto';
 import { UpdateFrigorificoDto } from './dto/update-frigorifico.dto';
 
@@ -11,6 +12,7 @@ export class FrigorificoService {
   constructor(
     private readonly databaseService: DatabaseService,
     private readonly jwtService: JwtService,
+    private readonly transaccionesService: TransaccionesService,
   ) {}
 
   async create(idUsuario: number, createFrigorificoDto: CreateFrigorificoDto) {
@@ -1400,18 +1402,15 @@ export class FrigorificoService {
 
         for (const empaque of empaquesAntes) {
           try {
-            const transaccion = await tx.tRANSACCIONES.create({
-              data: {
-                id_empaque: empaque.id_empaque,
-                id_usuario: idUsuarioExtraido,
-                monto: parseFloat(empaque.costo_frigorifico.toString()),
-                hora_transaccion: fechaActual,
-                id_tipo_transaccion: 2,
-                estado_transaccion: 1,
-                nota_opcional: `Transacción Producto ID : ${id_producto}`,
-              },
+            const idTransaccion = await this.transaccionesService.crearTransaccionEnTx(tx, {
+              id_empaque: empaque.id_empaque,
+              id_usuario: idUsuarioExtraido,
+              monto: parseFloat(empaque.costo_frigorifico.toString()),
+              id_tipo_transaccion: 2,
+              estado_transaccion: 1,
+              nota_opcional: `Transacción Producto ID : ${id_producto}`,
             });
-            transaccionesCreadas.push(transaccion);
+            transaccionesCreadas.push({ id_transaccion: idTransaccion });
             transaccionesExitosas++;
           } catch (error: unknown) {
             this.logger.error(

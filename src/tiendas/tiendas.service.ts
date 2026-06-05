@@ -2,19 +2,24 @@ import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { CreateTiendaDto } from './dto/create-tienda.dto';
 import { UpdateTiendaDto } from './dto/update-tienda.dto';
 import { DatabaseService } from '../database/database.service';
+import { TransaccionesService } from '../transacciones/transacciones.service';
 import { UMBRAL_PARA_CAMBIO, UMBRAL_VENCIDO } from '../common/config/constants';
 
 @Injectable()
 export class TiendasService {
-  constructor(private readonly databaseService: DatabaseService) {}
+  constructor(
+    private readonly databaseService: DatabaseService,
+    private readonly transaccionesService: TransaccionesService,
+  ) {}
 
   private async verificarPendientesPagoNevera(id_nevera: number, id_usuario_tienda: number): Promise<boolean> {
     const [empaquesPendientes, transaccionesPendientes] = await Promise.all([
       this.databaseService.eMPAQUES.count({
         where: { id_nevera, id_estado_empaque: 4 },
       }),
-      this.databaseService.tRANSACCIONES.count({
-        where: { id_nevera, estado_transaccion: 1, id_usuario: id_usuario_tienda },
+      this.transaccionesService.countPendientes({
+        idUsuario: id_usuario_tienda,
+        idNevera: id_nevera,
       }),
     ]);
     return empaquesPendientes > 0 || transaccionesPendientes > 0;
