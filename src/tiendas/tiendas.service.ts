@@ -1001,27 +1001,22 @@ export class TiendasService {
         })),
       );
 
-      const ciudades = await this.databaseService.cIUDAD.findMany({
-        include: {
-          departamento: {
-            select: {
-              nombre_departamento: true,
-            },
-          },
-        },
-        orderBy: [
-          { departamento: { nombre_departamento: 'asc' } },
-          { nombre_ciudad: 'asc' },
-        ],
-      });
+      const ciudadesMap = new Map<number, { id_ciudad: number; nombre_ciudad: string | null; departamento: string | null }>();
+      for (const usuario of usuariosTiendaConTiendas) {
+        for (const tienda of usuario.tiendas) {
+          if (!ciudadesMap.has(tienda.id_ciudad)) {
+            ciudadesMap.set(tienda.id_ciudad, {
+              id_ciudad: tienda.id_ciudad,
+              nombre_ciudad: tienda.ciudad.nombre_ciudad,
+              departamento: tienda.ciudad.departamento.nombre_departamento,
+            });
+          }
+        }
+      }
 
       return {
         usuarios_tienda: resultadoUsuariosTienda,
-        ciudades_disponibles: ciudades.map((ciudad) => ({
-          id_ciudad: ciudad.id_ciudad,
-          nombre_ciudad: ciudad.nombre_ciudad,
-          departamento: ciudad.departamento.nombre_departamento,
-        })),
+        ciudades_disponibles: Array.from(ciudadesMap.values()),
       };
     } catch (error) {
       console.error('ERROR en getTiendasSobrinas:', error);
