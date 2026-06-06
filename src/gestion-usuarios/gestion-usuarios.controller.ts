@@ -12,7 +12,7 @@ export class GestionUsuariosController {
 
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard, HerenciaGuard)
-  @Roles(1, 2, 3, 4, 5)
+  @Roles(1, 2, 4, 5)
   @Herencia({ tipo: 'resolver', scope: 'descendientes', entidad: 'usuario' })
   findAll(@Req() req: any) {
     return this.gestionUsuariosService.findAll({

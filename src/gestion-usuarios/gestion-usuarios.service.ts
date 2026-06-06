@@ -11,8 +11,7 @@ export class GestionUsuariosService {
 
   private formatUser(user) {
     if (!user) return null;
-    
-    // Formatear usuario base
+
     const formattedUser: any = {
       id: user.id_usuario,
       nombre_completo: `${user.nombre_usuario || ''} ${user.apellido_usuario || ''}`.trim(),
@@ -20,28 +19,45 @@ export class GestionUsuariosService {
       rol: user.rol?.nombre_rol,
       activo: user.activo,
     };
-    
-    // Si es un usuario de logística, incluir sus datos de empresa y vehículo
-    if (user.rol?.nombre_rol === 'Logistica') {
-      if (user.logisticas && user.logisticas.length > 0) {
-        formattedUser.logistica = {
-          nombre_empresa: user.logisticas[0].nombre_empresa,
-          placa_vehiculo: user.logisticas[0].placa_vehiculo
-        };
-      } else {
-        // Siempre incluir logistica como array vacío cuando no hay datos
-        formattedUser.logistica = [];
-      }
+
+    if (user.rol?.nombre_rol === 'Logistica' && user.logisticas?.length > 0) {
+      formattedUser.logistica = {
+        nombre_empresa: user.logisticas[0].nombre_empresa,
+        placa_vehiculo: user.logisticas[0].placa_vehiculo
+      };
     }
-    
+
     return formattedUser;
+  }
+
+  private buildTiendas(tiendas: any[]) {
+    if (!tiendas || tiendas.length === 0) return [];
+    return tiendas.map(tienda => ({
+      id_tienda: tienda.id_tienda,
+      nombre_tienda: tienda.nombre_tienda,
+      direccion: tienda.direccion,
+      ciudad: tienda.ciudad?.nombre_ciudad,
+      departamento: tienda.ciudad?.departamento?.nombre_departamento,
+      neveras: tienda.neveras?.map(nevera => ({
+        id_nevera: nevera.id_nevera,
+        estado: nevera.id_estado_nevera
+      })) || []
+    }));
   }
 
   async findAll(user: { id_usuario: number; roleId: number }, accessibleUserIds: number[]) {
     const userRole = user.roleId;
     this.logger.debug(`Iniciando findAll para el usuario ID: ${user.id_usuario} con Rol ID: ${userRole}, scope=${accessibleUserIds.length} usuarios`);
 
-    const includeRelations: any = { rol: true };
+    const includeRelations: any = {
+      rol: true,
+      tiendas: {
+        include: {
+          ciudad: { include: { departamento: true } },
+          neveras: { select: { id_nevera: true, id_estado_nevera: true } }
+        }
+      }
+    };
     if (userRole === 4) {
       includeRelations['logisticas'] = true;
     }
@@ -60,8 +76,8 @@ export class GestionUsuariosService {
       throw error;
     }
 
-    // Roles sin vista jerárquica
-    if (userRole === 3 || userRole === 5) {
+    // Rol Frigorífico (3): no tiene vista en esta pantalla
+    if (userRole === 3) {
       return {
         usuario_actual: this.formatUser(currentUser),
         jerarquia: [],
@@ -69,11 +85,27 @@ export class GestionUsuariosService {
       };
     }
 
-    // Función recursiva para construir el árbol de descendientes
-    // Usa accessibleUserIds como filtro máximo para no exceder el scope
-    const getDescendants = async (creatorId: number) => {
-      const includeDescRelations: any = { rol: true };
+    // Rol Tienda (5): ve sus tiendas con neveras
+    if (userRole === 5) {
+      return {
+        usuario_actual: this.formatUser(currentUser),
+        jerarquia: this.buildTiendas(currentUser.tiendas || []),
+        tokens: [],
+      };
+    }
 
+    const includeDescRelations: any = {
+      rol: true,
+      tiendas: {
+        include: {
+          ciudad: { include: { departamento: true } },
+          neveras: { select: { id_nevera: true, id_estado_nevera: true } }
+        }
+      },
+      logisticas: true,
+    };
+
+    const getDescendants = async (creatorId: number) => {
       const createdTokens = await this.databaseService.tOKEN_REGISTRO.findMany({
         where: {
           id_usuario_creador: creatorId,
@@ -90,19 +122,37 @@ export class GestionUsuariosService {
 
       return Promise.all(
         createdTokens.map(async (token) => {
-          const childUser = token.nuevo_usuario;
+          const childUser: any = token.nuevo_usuario;
           if (!childUser) return null;
 
           const descendants = await getDescendants(childUser.id_usuario);
-          return {
+
+          const node: any = {
             ...this.formatUser(childUser),
-            usuarios_creados: descendants,
           };
+
+          const tiendas = this.buildTiendas(childUser.tiendas || []);
+          if (tiendas.length > 0) {
+            node.tiendas = tiendas;
+          }
+
+          if (descendants.length > 0) {
+            node.usuarios_creados = descendants;
+          }
+
+          if (childUser.rol?.nombre_rol === 'Logistica' && childUser.logisticas?.length > 0) {
+            node.logistica = {
+              nombre_empresa: childUser.logisticas[0].nombre_empresa,
+              placa_vehiculo: childUser.logisticas[0].placa_vehiculo
+            };
+          }
+
+          return node;
         }),
       );
     };
 
-    // Vista para Logística (rol 4): tiendas creadas directamente
+    // Vista para Logística (rol 4): tiendas propias + sobrinas con neveras
     if (userRole === 4) {
       const tiendaUsers = await this.databaseService.tOKEN_REGISTRO.findMany({
         where: {
@@ -127,27 +177,24 @@ export class GestionUsuariosService {
         },
       });
 
-      const tiendasCreadas = tiendaUsers
+      const tiendasPropias = tiendaUsers
         .map(token => token.nuevo_usuario)
         .filter(u => u !== null)
-        .map(tiendaUser => ({
-          id_usuario: tiendaUser.id_usuario,
-          nombre_completo: `${tiendaUser.nombre_usuario || ''} ${tiendaUser.apellido_usuario || ''}`.trim(),
-          celular: tiendaUser.celular,
-          rol: tiendaUser.rol?.nombre_rol,
-          activo: tiendaUser.activo,
-          tiendas_creadas: tiendaUser.tiendas.map(tienda => ({
-            id_tienda: tienda.id_tienda,
-            nombre_tienda: tienda.nombre_tienda,
-            direccion: tienda.direccion,
-            ciudad: tienda.ciudad.nombre_ciudad,
-            departamento: tienda.ciudad.departamento.nombre_departamento,
-            neveras: tienda.neveras.map(nevera => ({
-              id_nevera: nevera.id_nevera,
-              estado: nevera.id_estado_nevera
-            }))
-          }))
-        }));
+        .map(tiendaUser => {
+          const node: any = {
+            tipo: 'propia',
+            id_usuario: tiendaUser.id_usuario,
+            nombre_completo: `${tiendaUser.nombre_usuario || ''} ${tiendaUser.apellido_usuario || ''}`.trim(),
+            celular: tiendaUser.celular,
+            rol: tiendaUser.rol?.nombre_rol,
+            activo: tiendaUser.activo,
+          };
+          const tiendas = this.buildTiendas(tiendaUser.tiendas || []);
+          if (tiendas.length > 0) {
+            node.tiendas = tiendas;
+          }
+          return node;
+        });
 
       const sobrinasTokens = await this.databaseService.tOKEN_REGISTRO.findMany({
         where: {
@@ -177,25 +224,20 @@ export class GestionUsuariosService {
         .map(token => {
           if (!token.nuevo_usuario) return null;
           const creador = token.creador;
-          return {
+          const node: any = {
+            tipo: 'sobrina',
             id_usuario: token.nuevo_usuario.id_usuario,
             nombre_completo: `${token.nuevo_usuario.nombre_usuario || ''} ${token.nuevo_usuario.apellido_usuario || ''}`.trim(),
             celular: token.nuevo_usuario.celular,
             rol: token.nuevo_usuario.rol?.nombre_rol,
             activo: token.nuevo_usuario.activo,
             creado_por: creador ? `${creador.nombre_usuario || ''} ${creador.apellido_usuario || ''}`.trim() : 'Desconocido',
-            tiendas_creadas: token.nuevo_usuario.tiendas.map(tienda => ({
-              id_tienda: tienda.id_tienda,
-              nombre_tienda: tienda.nombre_tienda,
-              direccion: tienda.direccion,
-              ciudad: tienda.ciudad.nombre_ciudad,
-              departamento: tienda.ciudad.departamento.nombre_departamento,
-              neveras: tienda.neveras.map(nevera => ({
-                id_nevera: nevera.id_nevera,
-                estado: nevera.id_estado_nevera
-              }))
-            }))
           };
+          const tiendas = this.buildTiendas(token.nuevo_usuario.tiendas || []);
+          if (tiendas.length > 0) {
+            node.tiendas = tiendas;
+          }
+          return node;
         })
         .filter(Boolean);
 
@@ -206,8 +248,7 @@ export class GestionUsuariosService {
 
       return {
         usuario_actual: this.formatUser(currentUser),
-        tiendas_creadas: tiendasCreadas,
-        sobrinas,
+        jerarquia: [...tiendasPropias, ...sobrinas],
         tokens,
       };
     }
