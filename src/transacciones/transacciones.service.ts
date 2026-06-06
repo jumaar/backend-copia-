@@ -118,9 +118,25 @@ export class TransaccionesService {
       let idPagoPagador: number | undefined;
       let idPagoReceptor: number | undefined;
 
+      const ticket = await tx.tRANSACCIONES.create({
+        data: {
+          id_empaque: null,
+          id_usuario: idUsuarioTicket,
+          id_transaccion_rel: null,
+          monto: -montoConsolidado,
+          hora_transaccion: new Date(),
+          id_tipo_transaccion: TIPO_TICKET_CONSOLIDADO,
+          nota_opcional: notaOpcional ?? null,
+          estado_transaccion: ESTADO_CONSOLIDADO,
+          id_nevera: idNevera ?? null,
+        },
+        select: { id_transaccion: true },
+      });
+
       if (idUsuarioReceptor) {
         idPagoReceptor = await this.crearTransaccionEnTx(tx, {
           id_usuario: idUsuarioReceptor,
+          id_transaccion_rel: ticket.id_transaccion,
           monto: montoPagado,
           id_tipo_transaccion: TIPO_DINERO_RECIBIDO,
           estado_transaccion: ESTADO_PENDIENTE,
@@ -132,7 +148,7 @@ export class TransaccionesService {
       if (idUsuarioPagador) {
         idPagoPagador = await this.crearTransaccionEnTx(tx, {
           id_usuario: idUsuarioPagador,
-          id_transaccion_rel: idPagoReceptor ?? null,
+          id_transaccion_rel: ticket.id_transaccion,
           monto: -montoPagado,
           id_tipo_transaccion: TIPO_DINERO_ENTREGADO,
           estado_transaccion: ESTADO_PENDIENTE,
@@ -146,23 +162,15 @@ export class TransaccionesService {
           where: { id_transaccion: idPagoReceptor },
           data: { id_transaccion_rel: idPagoPagador },
         });
+        await tx.tRANSACCIONES.update({
+          where: { id_transaccion: idPagoPagador },
+          data: { id_transaccion_rel: idPagoReceptor },
+        });
       }
 
-      const idTransaccionRel = idPagoReceptor ?? idPagoPagador ?? null;
-
-      const ticket = await tx.tRANSACCIONES.create({
-        data: {
-          id_empaque: null,
-          id_usuario: idUsuarioTicket,
-          id_transaccion_rel: idTransaccionRel,
-          monto: -montoConsolidado,
-          hora_transaccion: new Date(),
-          id_tipo_transaccion: TIPO_TICKET_CONSOLIDADO,
-          nota_opcional: notaOpcional ?? null,
-          estado_transaccion: ESTADO_CONSOLIDADO,
-          id_nevera: idNevera ?? null,
-        },
-        select: { id_transaccion: true },
+      await tx.tRANSACCIONES.update({
+        where: { id_transaccion: ticket.id_transaccion },
+        data: { id_transaccion_rel: idPagoReceptor ?? idPagoPagador ?? null },
       });
 
       await tx.tRANSACCIONES.updateMany({

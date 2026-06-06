@@ -718,20 +718,20 @@ export class LogisticaService {
           ? `${nota_opcional} - Monto abonado: ${monto}`
           : `Monto abonado: ${monto}`;
 
-        const idAcreedor = await this.transaccionesService.crearTransaccion({
-          id_usuario: id_usuario_credenciales,
+        const idDeudor = await this.transaccionesService.crearTransaccion({
+          id_usuario: id_usuario_consolidar,
           monto: -monto,
-          id_tipo_transaccion: 5,
-          nota_opcional: notaConMonto,
+          id_tipo_transaccion: 2,
+          nota_opcional: 'monto adelantado pendiente',
           estado_transaccion: 1,
         });
 
         await this.transaccionesService.crearTransaccion({
-          id_usuario: id_usuario_consolidar,
-          id_transaccion_rel: idAcreedor,
+          id_usuario: id_usuario_credenciales,
+          id_transaccion_rel: idDeudor,
           monto: -monto,
-          id_tipo_transaccion: 2,
-          nota_opcional: 'monto adelantado pendiente',
+          id_tipo_transaccion: 5,
+          nota_opcional: notaConMonto,
           estado_transaccion: 1,
         });
 
@@ -934,6 +934,7 @@ export class LogisticaService {
         ? {
             id_usuario: tx.transaccionRel.usuario.id_usuario,
             nombre_completo: `${tx.transaccionRel.usuario.nombre_usuario} ${tx.transaccionRel.usuario.apellido_usuario}`,
+            id_rol: tx.transaccionRel.usuario.id_rol,
           }
         : null;
 
@@ -1617,21 +1618,21 @@ export class LogisticaService {
       const notaPago = `Cobrado por: ${nombreLogistico} (ID: ${idUsuarioLogistico}) | Nota: adelanto de $${montoAdelanto.toLocaleString('es-CO')} hecho por el usuario tienda (ID: ${idUsuarioTienda}) | #NEVERA:${idNevera}`;
 
       try {
-        const idPago = await this.transaccionesService.crearTransaccion({
-          id_usuario: idUsuarioLogistico,
-          monto: montoAdelanto,
-          id_tipo_transaccion: 4,
-          nota_opcional: notaPago,
+        const idAdelanto = await this.transaccionesService.crearTransaccion({
+          id_usuario: idUsuarioTienda,
+          monto: -montoAdelanto,
+          id_tipo_transaccion: 2,
+          nota_opcional: `Adelanto pendiente #NEVERA:${idNevera}${nota_opcional ? ' | ' + nota_opcional : ''}`,
           estado_transaccion: 1,
           id_nevera: idNevera,
         });
 
-        const idAdelanto = await this.transaccionesService.crearTransaccion({
-          id_usuario: idUsuarioTienda,
-          id_transaccion_rel: idPago,
-          monto: -montoAdelanto,
-          id_tipo_transaccion: 2,
-          nota_opcional: `Adelanto pendiente #NEVERA:${idNevera}${nota_opcional ? ' | ' + nota_opcional : ''}`,
+        const idPago = await this.transaccionesService.crearTransaccion({
+          id_usuario: idUsuarioLogistico,
+          id_transaccion_rel: idAdelanto,
+          monto: montoAdelanto,
+          id_tipo_transaccion: 4,
+          nota_opcional: notaPago,
           estado_transaccion: 1,
           id_nevera: idNevera,
         });
@@ -1900,8 +1901,18 @@ export class LogisticaService {
       const resultado = await this.databaseService.$transaction(async (prisma) => {
         const notaPago = `Cobrado por: ${nombreLogistico} (ID: ${idUsuarioLogistico}) | Nota: abono de $${monto.toLocaleString('es-CO')} hecho por el usuario tienda (ID: ${idUsuarioTienda}) | #NEVERA:${idNevera}`;
 
+        const idTicket = await this.transaccionesService.crearTransaccionEnTx(prisma, {
+          id_usuario: idUsuarioTienda,
+          monto: -totalLiquidar,
+          id_tipo_transaccion: 3,
+          nota_opcional: `#NEVERA:${idNevera} EMPAQUES:${idsEmpaquesStr}${nota_opcional ? ' | ' + nota_opcional : ''}`,
+          estado_transaccion: 4,
+          id_nevera: idNevera,
+        });
+
         const idPago = await this.transaccionesService.crearTransaccionEnTx(prisma, {
           id_usuario: idUsuarioLogistico,
+          id_transaccion_rel: idTicket,
           monto,
           id_tipo_transaccion: 4,
           nota_opcional: notaPago,
@@ -1909,14 +1920,9 @@ export class LogisticaService {
           id_nevera: idNevera,
         });
 
-        const idTicket = await this.transaccionesService.crearTransaccionEnTx(prisma, {
-          id_usuario: idUsuarioTienda,
-          id_transaccion_rel: idPago,
-          monto: -totalLiquidar,
-          id_tipo_transaccion: 3,
-          nota_opcional: `#NEVERA:${idNevera} EMPAQUES:${idsEmpaquesStr}${nota_opcional ? ' | ' + nota_opcional : ''}`,
-          estado_transaccion: 4,
-          id_nevera: idNevera,
+        await prisma.tRANSACCIONES.update({
+          where: { id_transaccion: idTicket },
+          data: { id_transaccion_rel: idPago },
         });
 
         if (idsPendientesPrevias.length > 0) {
