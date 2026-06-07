@@ -718,22 +718,22 @@ export class LogisticaService {
           ? `${nota_opcional} - Monto abonado: ${monto}`
           : `Monto abonado: ${monto}`;
 
-        const idDeudor = await this.transaccionesService.crearTransaccion({
-          id_usuario: id_usuario_consolidar,
-          monto: -monto,
-          id_tipo_transaccion: 2,
-          nota_opcional: 'monto adelantado pendiente',
-          estado_transaccion: 1,
-        });
-
-        await this.transaccionesService.crearTransaccion({
-          id_usuario: id_usuario_credenciales,
-          id_transaccion_rel: idDeudor,
-          monto: -monto,
-          id_tipo_transaccion: 5,
-          nota_opcional: notaConMonto,
-          estado_transaccion: 1,
-        });
+        const { idA: idDeudor } = await this.transaccionesService.crearParAtomico(
+          {
+            id_usuario: id_usuario_consolidar,
+            monto: -monto,
+            id_tipo_transaccion: 2,
+            nota_opcional: 'monto adelantado pendiente',
+            estado_transaccion: 1,
+          },
+          {
+            id_usuario: id_usuario_credenciales,
+            monto: -monto,
+            id_tipo_transaccion: 5,
+            nota_opcional: notaConMonto,
+            estado_transaccion: 1,
+          },
+        );
 
         return {
           message: 'Abono adelantado registrado exitosamente',
@@ -1595,7 +1595,7 @@ export class LogisticaService {
         );
       }
 
-      return await this._ejecutarLiquidacion(
+      return await this.ejecutarLiquidacion(
         idNevera, idUsuarioTienda, idUsuarioLogistico,
         monto, totalLiquidar, nota_opcional, fechaAhora,
         detallesCalculo, nombreTienda, nombreLogistico,
@@ -1615,24 +1615,24 @@ export class LogisticaService {
       const notaPago = `Cobrado por: ${nombreLogistico} (ID: ${idUsuarioLogistico}) | Nota: adelanto de $${montoAdelanto.toLocaleString('es-CO')} hecho por el usuario tienda (ID: ${idUsuarioTienda}) | #NEVERA:${idNevera}`;
 
       try {
-        const idAdelanto = await this.transaccionesService.crearTransaccion({
-          id_usuario: idUsuarioTienda,
-          monto: -montoAdelanto,
-          id_tipo_transaccion: 2,
-          nota_opcional: `Adelanto pendiente #NEVERA:${idNevera}${nota_opcional ? ' | ' + nota_opcional : ''}`,
-          estado_transaccion: 1,
-          id_nevera: idNevera,
-        });
-
-        const idPago = await this.transaccionesService.crearTransaccion({
-          id_usuario: idUsuarioLogistico,
-          id_transaccion_rel: idAdelanto,
-          monto: montoAdelanto,
-          id_tipo_transaccion: 4,
-          nota_opcional: notaPago,
-          estado_transaccion: 1,
-          id_nevera: idNevera,
-        });
+        const { idA: idAdelanto, idB: idPago } = await this.transaccionesService.crearParAtomico(
+          {
+            id_usuario: idUsuarioTienda,
+            monto: -montoAdelanto,
+            id_tipo_transaccion: 2,
+            nota_opcional: `Adelanto pendiente #NEVERA:${idNevera}${nota_opcional ? ' | ' + nota_opcional : ''}`,
+            estado_transaccion: 1,
+            id_nevera: idNevera,
+          },
+          {
+            id_usuario: idUsuarioLogistico,
+            monto: montoAdelanto,
+            id_tipo_transaccion: 4,
+            nota_opcional: notaPago,
+            estado_transaccion: 1,
+            id_nevera: idNevera,
+          },
+        );
 
         return {
           message: 'Adelanto registrado exitosamente',
@@ -1879,7 +1879,7 @@ export class LogisticaService {
     };
   }
 
-  private async _ejecutarLiquidacion(
+  private async ejecutarLiquidacion(
     idNevera: number,
     idUsuarioTienda: number,
     idUsuarioLogistico: number,

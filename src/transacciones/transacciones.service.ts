@@ -291,6 +291,23 @@ export class TransaccionesService {
     });
   }
 
+  async crearParAtomico(
+    txA: CrearTransaccionParams,
+    txB: CrearTransaccionParams,
+  ): Promise<{ idA: number; idB: number }> {
+    return this.db.$transaction(async (tx) => {
+      const idA = await this.crearTransaccionEnTx(tx, {
+        ...txA,
+        id_transaccion_rel: null,
+      });
+      const idB = await this.crearTransaccionEnTx(tx, {
+        ...txB,
+        id_transaccion_rel: idA,
+      });
+      return { idA, idB };
+    });
+  }
+
   async getPendientes(params: {
     idUsuario: number;
     idNevera?: number;
