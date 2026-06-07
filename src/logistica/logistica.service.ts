@@ -1092,10 +1092,7 @@ export class LogisticaService {
           notaOpcional: nLog,
         });
 
-        await this.databaseService.tRANSACCIONES.update({
-          where: { id_transaccion: r.idTransaccionPagador },
-          data: { nota_opcional: nAdm },
-        });
+        await this.transaccionesService.actualizarNota(r.idTransaccionPagador, nAdm);
 
         return {
           mensaje: 'Ingreso del admin registrado exitosamente', tipo_movimiento, monto,
@@ -1920,20 +1917,9 @@ export class LogisticaService {
           id_nevera: idNevera,
         });
 
-        await prisma.tRANSACCIONES.update({
-          where: { id_transaccion: idTicket },
-          data: { id_transaccion_rel: idPago },
-        });
+        await this.transaccionesService.vincularRelEnTx(prisma, idTicket, idPago);
 
-        if (idsPendientesPrevias.length > 0) {
-          await prisma.tRANSACCIONES.updateMany({
-            where: { id_transaccion: { in: idsPendientesPrevias } },
-            data: {
-              estado_transaccion: 2,
-              id_transaccion_rel: idTicket,
-            },
-          });
-        }
+        await this.transaccionesService.marcarPagadasEnTx(prisma, idsPendientesPrevias, idTicket);
 
         const transaccionesEmpaques: any[] = [];
         for (const detalle of detallesCalculo) {

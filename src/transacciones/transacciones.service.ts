@@ -173,13 +173,7 @@ export class TransaccionesService {
         data: { id_transaccion_rel: idPagoReceptor ?? idPagoPagador ?? null },
       });
 
-      await tx.tRANSACCIONES.updateMany({
-        where: { id_transaccion: { in: idsReales } },
-        data: {
-          estado_transaccion: ESTADO_PAGADO,
-          id_transaccion_rel: ticket.id_transaccion,
-        },
-      });
+      await this.marcarPagadasEnTx(tx, idsReales, ticket.id_transaccion);
 
       let idSaldo: number | undefined;
       if (!esCompleto) {
@@ -265,6 +259,35 @@ export class TransaccionesService {
         idTransaccionPagador: txPagador.id_transaccion,
         monto,
       };
+    });
+  }
+
+  async actualizarNota(idTransaccion: number, notaOpcional: string): Promise<void> {
+    await this.db.tRANSACCIONES.update({
+      where: { id_transaccion: idTransaccion },
+      data: { nota_opcional: notaOpcional },
+    });
+  }
+
+  async vincularRelEnTx(tx: TxClient, idTransaccion: number, idRel: number): Promise<void> {
+    await tx.tRANSACCIONES.update({
+      where: { id_transaccion: idTransaccion },
+      data: { id_transaccion_rel: idRel },
+    });
+  }
+
+  async marcarPagadasEnTx(
+    tx: TxClient,
+    ids: number[],
+    idTicket: number,
+  ): Promise<void> {
+    if (ids.length === 0) return;
+    await tx.tRANSACCIONES.updateMany({
+      where: { id_transaccion: { in: ids } },
+      data: {
+        estado_transaccion: ESTADO_PAGADO,
+        id_transaccion_rel: idTicket,
+      },
     });
   }
 
