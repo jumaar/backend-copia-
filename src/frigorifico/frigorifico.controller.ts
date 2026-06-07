@@ -139,8 +139,8 @@ export class FrigorificoController {
   @UseGuards(HerenciaGuard)
   @Roles(4)
   @Herencia({ tipo: 'resolver', scope: 'hermanos', entidad: 'usuario' })
-  async cambiarEstadoEmpaques(@Req() req: any, @Body() body: { id_estacion: string; id_producto: number; id_logistica: number }) {
+  async empaqueDeUnoaDos(@Req() req: any, @Body() body: { id_estacion: string; id_producto: number; id_logistica: number }) {
     const { id_estacion, id_producto, id_logistica } = body;
-    return this.frigorificoService.cambiarEstadoEmpaques(id_estacion, id_producto, id_logistica, req.user.id_usuario, req.accessibleUserIds);
+    return this.frigorificoService.empaqueDeUnoaDos(id_estacion, id_producto, id_logistica, req.user.id_usuario, req.accessibleUserIds);
   }
 }

@@ -1273,7 +1273,7 @@ export class FrigorificoService {
   }
 
   // Método para cambiar el estado de los empaques - VERSIÓN ULTRA-ROBUSTA ANTI-BUGS
-  async cambiarEstadoEmpaques(
+  async empaqueDeUnoaDos(
     id_estacion: string,
     id_producto: number,
     id_logistica: number,
