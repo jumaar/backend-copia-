@@ -16,6 +16,10 @@ export interface ConsolidarParams {
   notaOpcional?: string;
 
   idNevera?: number;
+
+  idTipoTransaccionSaldo?: number;
+
+  idTipoTransaccionSaldoNegativo?: number;
 }
 
 export interface ConsolidarResultado {

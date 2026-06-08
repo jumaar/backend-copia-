@@ -64,6 +64,157 @@ export class TransaccionesService {
     return result.id_transaccion;
   }
 
+  async consolidarEnTx(
+    tx: TxClient,
+    params: {
+      idsPendientes: number[];
+      montoPagado: number;
+      montoConsolidado: number;
+      idUsuarioTicket: number;
+      idUsuarioPagador?: number;
+      idUsuarioReceptor?: number;
+      mutualLink?: boolean;
+      notaOpcional?: string;
+      idNevera?: number;
+      idTipoTransaccionSaldo?: number;
+      idTipoTransaccionSaldoNegativo?: number;
+      notaReceptorOpcional?: string;
+    },
+  ): Promise<ConsolidarResultado> {
+    const {
+      idsPendientes,
+      montoPagado,
+      montoConsolidado,
+      idUsuarioTicket,
+      idUsuarioPagador,
+      idUsuarioReceptor,
+      mutualLink = false,
+      notaOpcional,
+      idNevera,
+      idTipoTransaccionSaldo = TIPO_COSTO_FRIGORIFICO,
+      idTipoTransaccionSaldoNegativo,
+      notaReceptorOpcional,
+    } = params;
+
+    const esCompleto = montoPagado === montoConsolidado;
+    const saldo = montoConsolidado - montoPagado;
+
+    // ── REGLA DE CUADRE: monto = 0 solo si no hay deuda pendiente ──
+    // Caso válido: logística recibió de admin + de tiendas y ya gastó
+    // todo (ej: reparación de vehículo). Sus pendientes netas Σ=0.
+    // En ese escenario monto=0 cierra el ciclo sin mover dinero.
+    if (montoPagado === 0 && montoConsolidado !== 0) {
+      throw new BadRequestException(
+        'No se puede consolidar con monto 0 cuando existen deudas pendientes. ' +
+        'Monto pendiente a consolidar: ' + montoConsolidado + '. ' +
+        'Si las pendientes netas son 0 (ej: ya se usó todo el dinero), ' +
+        'el sistema lo detectará automáticamente como montoConsolidado = 0.',
+      );
+    }
+
+    let idPagoPagador: number | undefined;
+    let idPagoReceptor: number | undefined;
+
+    const ticket = await tx.tRANSACCIONES.create({
+      data: {
+        id_empaque: null,
+        id_usuario: idUsuarioTicket,
+        id_transaccion_rel: null,
+        monto: -montoConsolidado,
+        hora_transaccion: new Date(),
+        id_tipo_transaccion: TIPO_TICKET_CONSOLIDADO,
+        nota_opcional: notaOpcional ?? null,
+        estado_transaccion: ESTADO_CONSOLIDADO,
+        id_nevera: idNevera ?? null,
+      },
+      select: { id_transaccion: true },
+    });
+
+    if (idUsuarioReceptor) {
+      idPagoReceptor = await this.crearTransaccionEnTx(tx, {
+        id_usuario: idUsuarioReceptor,
+        id_transaccion_rel: ticket.id_transaccion,
+        monto: montoPagado,
+        id_tipo_transaccion: TIPO_DINERO_RECIBIDO,
+        estado_transaccion: ESTADO_PENDIENTE,
+        nota_opcional: notaReceptorOpcional ?? notaOpcional,
+        id_nevera: idNevera,
+      });
+    }
+
+    if (idUsuarioPagador) {
+      idPagoPagador = await this.crearTransaccionEnTx(tx, {
+        id_usuario: idUsuarioPagador,
+        id_transaccion_rel: ticket.id_transaccion,
+        monto: -montoPagado,
+        id_tipo_transaccion: TIPO_DINERO_ENTREGADO,
+        estado_transaccion: ESTADO_PENDIENTE,
+        nota_opcional: notaOpcional,
+        id_nevera: idNevera,
+      });
+    }
+
+    if (mutualLink && idPagoReceptor && idPagoPagador) {
+      await tx.tRANSACCIONES.update({
+        where: { id_transaccion: idPagoReceptor },
+        data: { id_transaccion_rel: idPagoPagador },
+      });
+      await tx.tRANSACCIONES.update({
+        where: { id_transaccion: idPagoPagador },
+        data: { id_transaccion_rel: idPagoReceptor },
+      });
+    }
+
+    await tx.tRANSACCIONES.update({
+      where: { id_transaccion: ticket.id_transaccion },
+      data: { id_transaccion_rel: idPagoReceptor ?? idPagoPagador ?? null },
+    });
+
+    const marcadas = await this.marcarPagadasEnTx(tx, idsPendientes, ticket.id_transaccion);
+    if (marcadas !== idsPendientes.length) {
+      throw new Error(
+        `CONSOLIDACIÓN RECHAZADA: ${idsPendientes.length - marcadas} de ${idsPendientes.length} ` +
+        `transacciones ya no están en estado pendiente. Otra consolidación concurrente las procesó.`,
+      );
+    }
+
+    let idSaldo: number | undefined;
+    if (!esCompleto) {
+      const esSaldoAFavor = saldo < 0;
+      const saldoTx = await tx.tRANSACCIONES.create({
+        data: {
+          id_empaque: null,
+          id_usuario: idUsuarioTicket,
+          id_transaccion_rel: ticket.id_transaccion,
+          monto: saldo,
+          hora_transaccion: new Date(),
+          id_tipo_transaccion: saldo < 0
+            ? (idTipoTransaccionSaldoNegativo ?? idTipoTransaccionSaldo)
+            : idTipoTransaccionSaldo,
+          nota_opcional: `Saldo ${
+            esSaldoAFavor ? 'a favor del usuario' : 'pendiente'
+          } consolidación #${ticket.id_transaccion}`,
+          estado_transaccion: ESTADO_PENDIENTE,
+          id_nevera: idNevera ?? null,
+        },
+        select: { id_transaccion: true },
+      });
+      idSaldo = saldoTx.id_transaccion;
+    }
+
+    return {
+      idTicket: ticket.id_transaccion,
+      montoConsolidado,
+      montoPagado,
+      pendientesProcesadas: idsPendientes.length,
+      idPagoPagador,
+      idPagoReceptor,
+      saldo: idSaldo
+        ? { idTransaccion: idSaldo, monto: saldo, esSaldoAFavor: saldo < 0 }
+        : undefined,
+    };
+  }
+
   async consolidar(params: ConsolidarParams): Promise<ConsolidarResultado> {
     const {
       idsPendientes,
@@ -75,6 +226,8 @@ export class TransaccionesService {
       montoConsolidadoOverride,
       notaOpcional,
       idNevera,
+      idTipoTransaccionSaldo = TIPO_COSTO_FRIGORIFICO,
+      idTipoTransaccionSaldoNegativo,
     } = params;
 
     if (!idUsuarioPagador && !idUsuarioReceptor) {
@@ -111,123 +264,50 @@ export class TransaccionesService {
         pendientes.reduce((sum, p) => sum + parseFloat(p.monto.toString()), 0),
       );
 
-    const esCompleto = montoPagado === montoConsolidado;
-    const saldo = montoConsolidado - montoPagado;
-
-    const resultado = await this.db.$transaction(async (tx) => {
-      let idPagoPagador: number | undefined;
-      let idPagoReceptor: number | undefined;
-
-      const ticket = await tx.tRANSACCIONES.create({
-        data: {
-          id_empaque: null,
-          id_usuario: idUsuarioTicket,
-          id_transaccion_rel: null,
-          monto: -montoConsolidado,
-          hora_transaccion: new Date(),
-          id_tipo_transaccion: TIPO_TICKET_CONSOLIDADO,
-          nota_opcional: notaOpcional ?? null,
-          estado_transaccion: ESTADO_CONSOLIDADO,
-          id_nevera: idNevera ?? null,
-        },
-        select: { id_transaccion: true },
-      });
-
-      if (idUsuarioReceptor) {
-        idPagoReceptor = await this.crearTransaccionEnTx(tx, {
-          id_usuario: idUsuarioReceptor,
-          id_transaccion_rel: ticket.id_transaccion,
-          monto: montoPagado,
-          id_tipo_transaccion: TIPO_DINERO_RECIBIDO,
-          estado_transaccion: ESTADO_PENDIENTE,
-          nota_opcional: notaOpcional,
-          id_nevera: idNevera,
-        });
-      }
-
-      if (idUsuarioPagador) {
-        idPagoPagador = await this.crearTransaccionEnTx(tx, {
-          id_usuario: idUsuarioPagador,
-          id_transaccion_rel: ticket.id_transaccion,
-          monto: -montoPagado,
-          id_tipo_transaccion: TIPO_DINERO_ENTREGADO,
-          estado_transaccion: ESTADO_PENDIENTE,
-          nota_opcional: notaOpcional,
-          id_nevera: idNevera,
-        });
-      }
-
-      if (mutualLink && idPagoReceptor && idPagoPagador) {
-        await tx.tRANSACCIONES.update({
-          where: { id_transaccion: idPagoReceptor },
-          data: { id_transaccion_rel: idPagoPagador },
-        });
-        await tx.tRANSACCIONES.update({
-          where: { id_transaccion: idPagoPagador },
-          data: { id_transaccion_rel: idPagoReceptor },
-        });
-      }
-
-      await tx.tRANSACCIONES.update({
-        where: { id_transaccion: ticket.id_transaccion },
-        data: { id_transaccion_rel: idPagoReceptor ?? idPagoPagador ?? null },
-      });
-
-      await this.marcarPagadasEnTx(tx, idsReales, ticket.id_transaccion);
-
-      let idSaldo: number | undefined;
-      if (!esCompleto) {
-        const esSaldoAFavor = saldo < 0;
-        const saldoTx = await tx.tRANSACCIONES.create({
-          data: {
-            id_empaque: null,
-            id_usuario: idUsuarioTicket,
-            id_transaccion_rel: ticket.id_transaccion,
-            monto: saldo,
-            hora_transaccion: new Date(),
-            id_tipo_transaccion: TIPO_COSTO_FRIGORIFICO,
-            nota_opcional: `Saldo ${
-              esSaldoAFavor ? 'adelantado pendiente' : 'a favor del usuario'
-            } consolidación #${ticket.id_transaccion}`,
-            estado_transaccion: ESTADO_PENDIENTE,
-            id_nevera: idNevera ?? null,
-          },
-          select: { id_transaccion: true },
-        });
-        idSaldo = saldoTx.id_transaccion;
-      }
-
-      return {
-        idTicket: ticket.id_transaccion,
-        montoConsolidado,
+    return this.db.$transaction(async (tx) => {
+      return this.consolidarEnTx(tx, {
+        idsPendientes: idsReales,
         montoPagado,
-        pendientesProcesadas: idsReales.length,
-        idPagoPagador,
-        idPagoReceptor,
-        saldo: idSaldo
-          ? { idTransaccion: idSaldo, monto: saldo, esSaldoAFavor: saldo < 0 }
-          : undefined,
-      };
+        montoConsolidado,
+        idUsuarioTicket,
+        idUsuarioPagador,
+        idUsuarioReceptor,
+        mutualLink,
+        notaOpcional,
+        idNevera,
+        idTipoTransaccionSaldo,
+        idTipoTransaccionSaldoNegativo,
+      });
     });
-
-    return resultado;
   }
 
   async transferenciaDirecta(
     params: TransferenciaDirectaParams,
   ): Promise<TransferenciaDirectaResultado> {
-    const { idUsuarioPagador, idUsuarioReceptor, monto, notaOpcional } = params;
+    const {
+      idUsuarioPagador,
+      idUsuarioReceptor,
+      monto,
+      notaOpcional,
+      tipoReceptor = TIPO_DINERO_RECIBIDO,
+      tipoPagador = TIPO_DINERO_ENTREGADO,
+      montoReceptorNegativo = false,
+      notaReceptorOpcional,
+      notaPagadorOpcional,
+    } = params;
 
     return this.db.$transaction(async (tx) => {
+      const montoReceptor = montoReceptorNegativo ? -monto : monto;
+
       const txReceptor = await tx.tRANSACCIONES.create({
         data: {
           id_empaque: null,
           id_usuario: idUsuarioReceptor,
           id_transaccion_rel: null,
-          monto,
+          monto: montoReceptor,
           hora_transaccion: new Date(),
-          id_tipo_transaccion: TIPO_DINERO_RECIBIDO,
-          nota_opcional: notaOpcional ?? null,
+          id_tipo_transaccion: tipoReceptor,
+          nota_opcional: notaReceptorOpcional ?? notaOpcional ?? null,
           estado_transaccion: ESTADO_PENDIENTE,
           id_nevera: null,
         },
@@ -241,8 +321,8 @@ export class TransaccionesService {
           id_transaccion_rel: txReceptor.id_transaccion,
           monto: -monto,
           hora_transaccion: new Date(),
-          id_tipo_transaccion: TIPO_DINERO_ENTREGADO,
-          nota_opcional: notaOpcional ?? null,
+          id_tipo_transaccion: tipoPagador,
+          nota_opcional: notaPagadorOpcional ?? notaOpcional ?? null,
           estado_transaccion: ESTADO_PENDIENTE,
           id_nevera: null,
         },
@@ -280,32 +360,19 @@ export class TransaccionesService {
     tx: TxClient,
     ids: number[],
     idTicket: number,
-  ): Promise<void> {
-    if (ids.length === 0) return;
-    await tx.tRANSACCIONES.updateMany({
-      where: { id_transaccion: { in: ids } },
+  ): Promise<number> {
+    if (ids.length === 0) return 0;
+    const result = await tx.tRANSACCIONES.updateMany({
+      where: {
+        id_transaccion: { in: ids },
+        estado_transaccion: ESTADO_PENDIENTE,
+      },
       data: {
         estado_transaccion: ESTADO_PAGADO,
         id_transaccion_rel: idTicket,
       },
     });
-  }
-
-  async crearParAtomico(
-    txA: CrearTransaccionParams,
-    txB: CrearTransaccionParams,
-  ): Promise<{ idA: number; idB: number }> {
-    return this.db.$transaction(async (tx) => {
-      const idA = await this.crearTransaccionEnTx(tx, {
-        ...txA,
-        id_transaccion_rel: null,
-      });
-      const idB = await this.crearTransaccionEnTx(tx, {
-        ...txB,
-        id_transaccion_rel: idA,
-      });
-      return { idA, idB };
-    });
+    return result.count;
   }
 
   async getPendientes(params: {

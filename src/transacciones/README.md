@@ -1,366 +1,243 @@
-# Módulo Transacciones — Guía Definitiva
+# Módulo Transacciones
 
-## 1. Estructura de la Tabla `TRANSACCIONES`
+## 1. Schema
 
 | Campo | Tipo | Descripción |
 |---|---|---|
-| `id_transaccion` | Int (PK, autoincrement) | Identificador único |
-| `id_empaque` | Int? (FK → EMPAQUES) | Empaque asociado (ventas) |
+| `id_transaccion` | Int (PK) | Autoincremental |
+| `id_empaque` | Int? (FK → EMPAQUES) | Empaque asociado (solo ventas) |
 | `id_usuario` | Int (FK → USUARIOS) | Usuario afectado |
-| `id_transaccion_rel` | Int? (self-ref FK) | Vincula transacciones entre sí (ticket ↔ pago, pagador ↔ receptor) |
+| `id_transaccion_rel` | Int? (self-ref FK) | Vincula transacciones entre sí |
 | `id_nevera` | Int? (FK → NEVERAS) | Nevera asociada |
-| `monto` | Decimal | **Positivo = recibe/debe**, **Negativo = entrega/crédito a favor empresa** |
+| `monto` | Decimal | **Positivo = recibe/debe**, **Negativo = entrega/crédito a favor** |
 | `hora_transaccion` | DateTime | Timestamp |
-| `id_tipo_transaccion` | Int (FK → TIPO_TRANSACCION) | Categoría de la transacción |
+| `id_tipo_transaccion` | Int (FK → TIPO_TRANSACCION) | Categoría |
 | `nota_opcional` | String? | Descripción libre |
 | `estado_transaccion` | Int (FK → ESTADO_TRANSACCION) | Ciclo de vida |
 
-### Tipos de Transacción
+> **Convención de entrada:** Todos los endpoints reciben montos **positivos** (lo que el usuario entregó o recibió). El signo en la BD lo calcula el sistema internamente según el tipo de transacción y el rol. La única excepción es `monto = 0` en el cuadre de caja logística → admin.
 
-| id | Constante | Significado |
+### Tipos
+
+| id | Constante | Uso |
 |---|---|---|
 | 1 | `TIPO_VENTA` | Venta de empaque en tienda |
-| 2 | `TIPO_COSTO_FRIGORIFICO` | Costo frigorífico / Saldo exclusivo consolidación frigorífico |
-| 3 | `TIPO_TICKET_CONSOLIDADO` | Ticket de consolidación (resumen contable) |
-| 4 | `TIPO_DINERO_RECIBIDO` | Dinero recibido (quien cobra) |
-| 5 | `TIPO_DINERO_ENTREGADO` | Dinero entregado (quien paga) |
+| 2 | `TIPO_COSTO_FRIGORIFICO` | Costo frigorífico / saldo exclusivo de frigorífico |
+| 3 | `TIPO_TICKET_CONSOLIDADO` | Ticket de consolidación (cierre contable) |
+| 4 | `TIPO_DINERO_RECIBIDO` | Dinero recibido |
+| 5 | `TIPO_DINERO_ENTREGADO` | Dinero entregado |
 
-### Estados de Transacción
+### Estados
 
 | id | Constante | Significado |
 |---|---|---|
 | 1 | `ESTADO_PENDIENTE` | Pendiente de liquidación |
 | 2 | `ESTADO_PAGADO` | Liquidado / cerrado |
-| 4 | `ESTADO_CONSOLIDADO` | Ticket consolidado (cierre contable) |
+| 4 | `ESTADO_CONSOLIDADO` | Ticket consolidado |
 
 ---
 
-## 2. Principio Contable: La Ley del Cero
+## 2. Ley del Cero
 
-> **Para cualquier usuario, la suma de TODAS sus transacciones en estado 2 (PAGADO) debe ser exactamente 0.**
+> **Para cualquier usuario, `Σ(tx en estado 2) + ticket(tipo 3, estado 4) = 0`.**
 
-El **ticket de consolidación** (tipo 3, estado 4, monto negativo) es el mecanismo que garantiza esta invariante. Cada vez que se liquidan transacciones pendientes de un usuario, se crea un ticket con valor `-Σ(pendientes)` para ese mismo usuario:
+El ticket de consolidación (tipo 3, estado 4, **siempre negativo**) es el mecanismo que garantiza esta invariante. Cada vez que se liquidan transacciones pendientes de un usuario, se crea un ticket con valor `-Σ(pendientes)` para ese mismo usuario.
 
-```
-Σ(tx individuales estado 2) + ticket(negativo, estado 4) = 0
-```
+> El significado del signo depende del rol. Ver tablas por categoría en §5.
 
-### Convención de Signos
+---
+
+## 3. API del Servicio (`TransaccionesService`)
+
+Único servicio autorizado para escribir en `tRANSACCIONES`. Módulo `@Global()`, sin controller.
+
+### Escritura
+
+| Método | Qué hace |
+|---|---|
+| `crearTransaccion(params)` | Crea una tx individual |
+| `crearTransaccionEnTx(tx, params)` | Crea dentro de una tx Prisma existente |
+| `consolidar(params)` | Motor de consolidación — ver §5 |
+| `consolidarEnTx(tx, params)` | Motor de consolidación dentro de tx Prisma |
+| `transferenciaDirecta(params)` | Transferencia directa entre dos usuarios |
+| `marcarPagadasEnTx(tx, ids, idTicket)` | Marca txs como estado 2 y las vincula al ticket |
+| `actualizarNota(id, nota)` | Actualiza `nota_opcional` |
+| `vincularRelEnTx(tx, id, idRel)` | Actualiza `id_transaccion_rel` |
+
+### Lectura
+
+| Método | Qué hace |
+|---|---|
+| `getPendientes({ idUsuario, idNevera?, idTipoTransaccion?, idTransaccionRelNotNull? })` | Tx en estado 1 |
+| `countPendientes({ idUsuario, idNevera })` | Conteo de pendientes |
+
+---
+
+## 4. Endpoints
+
+| # | Endpoint | Roles | Método Service | Operación |
+|---|---|---|---|---|
+| 1 | `POST /api/frigorifico/empaques/cambiar-estado` | 4 | `empaqueDeUnoaDos()` | Despacho → tipo 2 estado 1 para frigorífico |
+| 2 | `POST /api/logistica/cuentas` | 2, 4 | `consolidarCuentas()` | Pago o adelanto a frigorífico |
+| 3 | `POST /api/logistica/consolidar-admin` | 2, 4 | `consolidarAdmin()` | Ingreso admin→logística o cuadre de caja |
+| 4 | `POST /api/logistica/cuentas/nevera/:id_nevera` | 2, 4 | `liquidarNevera()` | Liquidación de nevera (tienda→logística) |
+
+---
+
+## 5. Guía por Categoría
+
+> Cada categoría de usuario tiene reglas de signo, tipos de transacción y parámetros de consolidación distintos. Esta sección es la referencia canónica para crear endpoints y detectar errores.
+
+---
+
+### 5.1 PROVEEDORES — Frigorífico (rol 3)
+
+**Tipos:** solo 2 (`costo_frigorifico`) y 3 (ticket). **Nunca** 4 ni 5.
 
 | Signo | Significado |
 |---|---|
-| **Positivo (+)** | El usuario recibe dinero O la empresa le debe |
-| **Negativo (-)** | El usuario entrega dinero O tiene crédito a favor de la empresa |
+| **Positivo (+)** | Debe dinero a la empresa |
+| **Negativo (-)** | Adelanto / saldo a favor |
+
+**Generación de deuda** — `POST /api/frigorifico/empaques/cambiar-estado`:
+```
+cada empaque despachado → tipo 2, +costo_frigorifico, estado 1
+id_usuario extraído del id_estacion (formato XXXX00XXX)
+```
+
+**Pago con pendientes** — `consolidar()`:
+```
+idUsuarioTicket    = frigorífico
+idUsuarioPagador   = quien paga (admin o logística)
+// NO pasar idTipoTransaccionSaldo → usa default (2)
+// NO pasar idTipoTransaccionSaldoNegativo → usa default (2)
+```
+Resultado: ticket (frigorífico, tipo 3, `-Σ`, estado 4) + pagador (tipo 5, `-monto`, estado 1) + saldo si difiere (tipo 2).
+
+**Adelanto (sin pendientes)** — `transferenciaDirecta()`:
+```
+tipoReceptor = 2, montoReceptorNegativo = true
+→ frigorífico: tipo 2, -monto, estado 1 (adelanto)
+```
+
+**⚠️ `consolidarCuentas()` es compartido entre Admin y Logística para pagar al frigorífico.**
 
 ---
 
-## 3. Puerta de Entrada Única
+### 5.2 TIENDAS (rol 5)
 
-`TransaccionesService` (`src/transacciones/transacciones.service.ts`) es el **único servicio autorizado** para crear o modificar registros en la tabla. Es un módulo `@Global()`, sin controller propio.
+**Tipo base:** 1 (`venta`). Saldos: tipo 4 (debe) o 5 (a favor). **Nunca** tipo 2.
 
-Toda escritura directa a `prisma.tRANSACCIONES` desde otros módulos ha sido centralizada en los siguientes métodos del servicio:
-
-### Métodos de escritura
-
-| Método | Operación |
+| Signo | Significado |
 |---|---|
-| `crearTransaccion()` | Crea una transacción individual |
-| `crearTransaccionEnTx(tx, params)` | Crea dentro de una transacción Prisma existente |
-| `consolidar()` | Motor de consolidación (ver §5) |
-| `transferenciaDirecta()` | Transferencia directa entre dos usuarios |
-| `actualizarNota(id, nota)` | Actualiza `nota_opcional` de una transacción |
-| `vincularRelEnTx(tx, id, idRel)` | Actualiza `id_transaccion_rel` dentro de una tx |
-| `marcarPagadasEnTx(tx, ids, idTicket)` | Marca transacciones como estado 2 y las vincula a un ticket |
+| **Positivo (+)** | Debe dinero |
+| **Negativo (-)** | Adelanto a favor |
 
-### Métodos de lectura
+**Liquidación CON empaques (estado 4 → 8):**
 
-| Método | Operación |
+```
+monto por empaque = precioVenta - descuentoPromocion - comisionTienda
+totalLiquidar = Σ(montos empaques) + Σ(pendientes previas tienda/nevera)
+```
+
+Usa `consolidarEnTx()`:
+```
+idUsuarioTicket              = tienda
+idUsuarioReceptor            = logística
+idTipoTransaccionSaldo       = 4
+idTipoTransaccionSaldoNegativo = 5
+montoConsolidado             = totalLiquidar
+idsPendientes                = ids pendientes previas
+```
+
+Luego: una tx tipo 1 por empaque (estado 2, `id_rel` = ticket). Empaques → estado 8.
+
+**Liquidación SIN empaques:**
+- Con pendientes → `consolidar()` con mismos parámetros de arriba
+- Sin pendientes (adelanto) → `transferenciaDirecta()` estándar
+
+**⚠️** `getPendientes()` para tienda se llama con `{ idUsuario, idNevera }` **sin filtro de tipo**.
+
+---
+
+### 5.3 ADMINISTRACIÓN — Admin (rol 2) + Logística (rol 4)
+
+**Tipos:** 4 (`recibido`) y 5 (`entregado`).
+
+| Signo | Significado |
 |---|---|
-| `getPendientes()` | Consulta transacciones en estado 1 |
-| `getPendientesVinculadas()` | Transacciones vinculadas entre dos usuarios |
-| `countPendientes()` | Conteo de pendientes por usuario/nevera |
+| **Positivo (+)** | Recibe dinero |
+| **Negativo (-)** | Entrega dinero |
+
+**Ingreso admin → logística** — `transferenciaDirecta()`:
+```
+idUsuarioPagador  = admin    → tipo 5, -monto, estado 1
+idUsuarioReceptor = logística → tipo 4, +monto, estado 1
+id_rel cruzado entre ambos
+```
+
+**Cuadre de caja logística → admin** — `consolidar()`:
+```
+Paso 1: getPendientes({ idUsuario: logistica })
+        // SIN filtros. Devuelve TODAS las tx en estado 1 del logístico.
+
+Paso 2: idUsuarioTicket              = logística
+        idUsuarioReceptor            = admin
+        // NO idUsuarioPagador → el ticket negativo ES el pago
+        idTipoTransaccionSaldo       = 4
+        idTipoTransaccionSaldoNegativo = 5
+```
+Resultado: ticket (logística, tipo 3, `-Σ`, estado 4) + admin (tipo 4, `+montoPagado`, estado 1) + saldo si difiere (tipo 4 o 5 para logística). Acepta `monto = 0`.
+
+**Admin paga a frigorífico:** comparte `consolidarCuentas()` con logística (ver §5.1).
+
+**⚠️ El admin no tiene endpoint de consolidación propio (§6.1).** Sus tx tipo 4/5 en estado 1 quedan abiertas.
 
 ---
 
-## 4. Endpoints POST que Generan Transacciones
+### 5.4 Tabla Resumen
 
-| # | Endpoint | Rol | Método | Operación |
-|---|---|---|---|---|
-| 1 | `POST /api/frigorifico/empaques/cambiar-estado` | 4 | `cambiarEstadoEmpaques()` | Despacho → tipo 2, estado 1 para **frigorífico** |
-| 2 | `POST /api/logistica/cuentas` | 2, 4 | `consolidarCuentas()` | Adelanto o consolidación de frigorífico |
-| 3 | `POST /api/logistica/consolidar-admin` | 2, 4 | `consolidarAdmin()` | Ingreso admin→logística o consolidación logística→admin |
-| 4 | `POST /api/logistica/cuentas/nevera/:id_nevera` | 2, 4 | `liquidarNevera()` | Liquidación de nevera (tienda→logística) |
-
-**No existen PUT, PATCH, DELETE que modifiquen `TRANSACCIONES`.**
-
----
-
-## 5. Los 3 Tipos de Interacción
-
-### 🔵 CASO 1: Admin ↔ Logística
-
-#### 1A. Admin entrega dinero a Logística (ingreso)
-
-**Endpoint:** `POST /api/logistica/consolidar-admin` (`tipo_movimiento: "ingreso"`)
-**Ejecutor:** Admin (rol 2)
-**Método:** `transferenciaDirecta()`
-
-```
-Transferencia directa Admin → Logística:
-
-  Admin (pagador):       tipo=5 (entregado),  monto=-X, estado=1
-                         id_transaccion_rel ↔ logística
-
-  Logística (receptor):  tipo=4 (recibido),   monto=+X, estado=1
-                         id_transaccion_rel ↔ admin
-```
-
-#### 1B. Logística consolida con Admin (cuadre de caja)
-
-**Endpoint:** `POST /api/logistica/consolidar-admin` (`tipo_movimiento: "consolidacion"`)
-**Ejecutor:** Logística (rol 4)
-**Método:** `consolidar()` con `mutualLink: true`
-
-**⚠️ REGLA CRÍTICA:** Solo se consolidan las transacciones pendientes del **usuario logística**. Las transacciones del admin NO se tocan (permanecen en estado 1 hasta que exista un consolidado de admin — ver §7.1).
-
-**Acepta monto = 0** como caso válido (cuando el logístico ya cuadró exactamente lo que recibió y entregó).
-
-```
-FLUJO DE CONSOLIDACIÓN LOGÍSTICA → ADMIN:
-
-1. Se obtienen SOLO las transacciones pendientes (estado 1) del logística
-   con id_transaccion_rel (tipos 4 y 5).
-
-2. TICKET CONSOLIDADO:
-   Usuario: logística
-   Tipo: 3 (ticket_consolidado)
-   Monto: -Σ(pendientes logística)   ← negativo para cumplir suma 0
-   Estado: 4 (consolidado)
-
-   → El ticket FUNCIONA COMO LA TRANSACCIÓN DE PAGO del logístico.
-     No se crea una tx separada de pago (tipo 5) para el logístico.
-     El ticket negativo ES el pago desde la perspectiva contable.
-
-3. ADMIN (receptor del dinero):
-   Usuario: admin
-   Tipo: 4 (dinero_recibido)
-   Monto: +montoPagado
-   Estado: 1 (pendiente)
-   id_transaccion_rel ↔ ticket
-
-4. Pendientes del logística → estado=2 (pagado), vinculadas al ticket.
-
-5. SOLO si montoPagado ≠ Σ(pendientes logística):
-   → SALDO al usuario logística:
-     Tipo: 4 o 5 (según dirección)
-     • Saldo positivo → logística aún debe (tipo 4)
-     • Saldo negativo → empresa le debe a logística (tipo 5)
-     Estado: 1
-     id_transaccion_rel ↔ ticket
-```
-
-```
-VERIFICACIÓN CONTABLE (usuario logística):
-  Σ(pendientes consolidadas) + ticket(-Σ) = 0 ✓
-```
+| Parámetro | PROVEEDORES | TIENDAS | ADMINISTRACIÓN |
+|---|---|---|---|
+| Rol | 3 | 5 | 2 / 4 |
+| Tipo base | 2 | 1 | 4, 5 |
+| `idUsuarioTicket` | frigorífico | tienda | logística |
+| `idUsuarioPagador` | admin/logística | — | — |
+| `idUsuarioReceptor` | — | logística | admin |
+| Saldo positivo (debe) | tipo 2 | tipo 4 | tipo 4 |
+| Saldo negativo (a favor) | tipo 2 | tipo 5 | tipo 5 |
+| Admite monto=0 | no | no | sí |
+| `transferenciaDirecta` | `tipoReceptor=2, montoReceptorNegativo=true` | estándar | estándar |
+| `getPendientes` extra | — | `idNevera` | — |
 
 ---
 
-### 🟢 CASO 2: Logística ↔ Frigorífico
+### 5.5 Errores Comunes
 
-#### 2A. Despacho de empaques (crea deuda del frigorífico)
-
-**Endpoint:** `POST /api/frigorifico/empaques/cambiar-estado`
-**Ejecutor:** Logística (rol 4)
-**Qué hace:** Cambia empaques estado 1 → 2 (stock → despachado).
-
-```
-Para cada empaque despachado:
-  Usuario: FRIGORÍFICO (extraído del id_estacion)
-  Tipo: 2 (costo_frigorifico)
-  Monto: +costo_frigorifico del empaque
-  Estado: 1 (pendiente)
-  id_empaque: empaque.id_empaque
-```
-
-#### 2B. Logística/Admin paga al Frigorífico
-
-**Endpoint:** `POST /api/logistica/cuentas`
-**Ejecutor:** Admin (rol 2) o Logística (rol 4)
-**Método:** `consolidarCuentas()` → `consolidar()`
-
-**Subcaso A — Sin pendientes (adelanto):**
-```
-Frigorífico:  tipo=2, monto=-X, estado=1   (adelanto pendiente)
-Pagador:      tipo=5, monto=-X, estado=1, id_rel ↔ frigorífico
-```
-
-**Subcaso B — Con pendientes (consolidación):**
-```
-TICKET:    usuario=frigorífico, tipo=3, monto=-Σpendientes, estado=4
-RECEPTOR:  usuario=pagador,     tipo=4, monto=+montoPagado, estado=1
-Pendientes → estado=2, vinculadas al ticket
-
-SALDO (solo si montoPagado ≠ Σpendientes):
-  usuario=frigorífico, tipo=2 (costo_frigorifico), monto=diferencia, estado=1
-  • Positivo = frigorífico aún debe
-  • Negativo = frigorífico tiene adelanto a favor
-```
-
-> **NOTA:** El tipo 2 como saldo **solo aplica en la consolidación frigorífico**.
-> En los demás casos (admin, tienda) los saldos son tipo 4 o 5 según la dirección del dinero.
-
-#### 2C. Admin ↔ Frigorífico
-
-Idéntica mecánica que 2B. El mismo endpoint `POST /api/logistica/cuentas` invocado por Admin (rol 2). El `id_usuario_credenciales` (pagador) es el admin en vez del logístico.
-
----
-
-### 🟡 CASO 3: Tienda ↔ Logística
-
-**Endpoint:** `POST /api/logistica/cuentas/nevera/:id_nevera`
-**Ejecutor:** Logística (rol 4) — quien cobra a la tienda
-**Método:** `liquidarNevera()`
-
-#### Caso A: Liquidación CON empaques (estado 4 → 8)
-
-```
-PASO 1: Cálculo por empaque
-───────────────────────────
-Para cada empaque en estado 4 (pendiente de pago) de la nevera:
-
-  precioVenta         = empaque.precio_venta_total
-  valorPromocion      = empaque.promocion?.valor || 0
-  descuento           = Math.ceil(precioVenta × valorPromocion / 100)
-  precioConDescuento  = precioVenta - descuento
-  tiendaComision      = Math.ceil(precioConDescuento × precioTienda% / 100)
-  liquidar            = precioConDescuento - tiendaComision
-
-  totalLiquidar += liquidar
-```
-
-> Las promociones se aplican sobre `precio_venta_total` del empaque **antes** de calcular
-> la comisión de la tienda. La promoción proviene de `EMPAQUES.promocion_id` (FK a `PROMOCIONES`).
-
-```
-PASO 2: Incorporar transacciones pendientes previas de la tienda
-────────────────────────────────────────────────────────────────
-Se buscan TODAS las transacciones en estado 1 (pendiente)
-de la tienda para esa nevera (sin filtrar por tipo).
-Su monto se SUMA al totalLiquidar.
-
-Esto garantiza:
-"Antes de consolidar se deben considerar TODAS las
-transacciones en estado 1 del usuario a consolidar."
-```
-
-```
-PASO 3: Ejecución atómica (_ejecutarLiquidacion)
-──────────────────────────────────────────────────
-
-3a. TRANSACCIONES DE VENTA INDIVIDUALES (por cada empaque):
-    Usuario: tienda
-    Tipo: 1 (venta)
-    Monto: +liquidar (calculado en paso 1)
-    Estado: 2 (pagado)
-    id_empaque: empaque
-    id_rel: ticket
-    id_nevera: nevera
-
-3b. TICKET CONSOLIDADO (basado en ventas + pendientes previos):
-    Usuario: tienda
-    Tipo: 3 (ticket_consolidado)
-    Monto: -totalLiquidar
-    Estado: 4 (consolidado)
-    id_nevera: nevera
-
-3c. PENDIENTES PREVIAS → estado=2 (pagado), vinculadas al ticket
-
-3d. LOGÍSTICA (receptor del dinero):
-    Usuario: logística
-    Tipo: 4 (dinero_recibido)
-    Monto: +montoPagado
-    Estado: 1 (pendiente)
-    id_rel: ticket
-    id_nevera: nevera
-
-3e. EMPAQUES → estado=8 (finalizado), se registra costo_tienda
-
-3f. SALDO (solo si montoPagado ≠ totalLiquidar):
-    Usuario: tienda
-    Tipo: 4 o 5 (según dirección del flujo)
-    Monto: diferencia
-    Estado: 1 (pendiente)
-    id_rel: ticket
-    id_nevera: nevera
-
-    • Sobre el consolidado: tienda tiene adelanto
-    • Bajo el consolidado: tienda aún debe
-    → Visible en la próxima consolidación (paso 2)
-```
-
-```
-VERIFICACIÓN CONTABLE (usuario tienda):
-  Σ(tx venta estado 2) + Σ(pendientes previas → estado 2) + ticket(-totalLiquidar) = 0 ✓
-```
-
-#### Caso B: Liquidación SIN empaques (solo pendientes)
-
-Cuando la tienda no tiene empaques en estado 4 pero realiza un abono.
-
-```
-1. Se buscan transacciones pendientes (estado 1) de la tienda
-   para la nevera (sin filtrar por tipo).
-
-2. SI HAY PENDIENTES → consolidación estándar con consolidar():
-   TICKET:      usuario=tienda, tipo=3, monto=-Σpendientes, estado=4
-   RECEPTOR:    usuario=logística, tipo=4, monto=+montoPagado, estado=1
-   SALDO:       usuario=tienda, tipo=4/5, monto=diferencia, estado=1
-   Pendientes → estado=2, vinculadas al ticket
-
-3. SI NO HAY PENDIENTES → transferenciaDirecta():
-   Tienda (pagador):     tipo=5, monto=-X, estado=1
-   Logística (receptor): tipo=4, monto=+X, estado=1, id_rel ↔ tienda
-```
-
----
-
-## 6. Reglas de Negocio
-
-| # | Regla |
+| Error | Síntoma |
 |---|---|
-| 1 | Toda transacción tiene `id_usuario` obligatorio |
-| 2 | En estado 2 (pagado), Σ(montos del usuario) = 0 |
-| 3 | El ticket consolidado (tipo 3) siempre es **negativo** y en estado 4 |
-| 4 | `id_transaccion_rel` vincula transacciones formando grupos contables |
-| 5 | Los empaques en estado 4 se liquidan y pasan a estado 8 (finalizado) |
-| 6 | Antes de consolidar, se consideran TODAS las transacciones en estado 1 del usuario a consolidar |
-| 7 | Si el pago difiere de lo consolidado, se genera un saldo en estado 1 |
-| 8 | Saldo positivo = usuario debe; saldo negativo = usuario tiene a favor |
-| 9 | El tipo 2 como saldo **solo aplica en consolidación frigorífico**. Para admin/tienda se usa tipo 4 o 5 |
-| 10 | Las promociones se toman de `EMPAQUES.promocion_id` (FK a `PROMOCIONES`) y se aplican sobre `precio_venta_total` antes de calcular comisiones |
-| 11 | El endpoint de consolidación logística→admin **debe aceptar monto = 0** |
-| 12 | En la consolidación logística→admin, el ticket (tipo 3 negativo) **hace las veces de la transacción de pago** del logístico — no se crea un tipo 5 separado |
-| 13 | En caso B de liquidación de nevera (sin empaques ni pendientes), se usa `transferenciaDirecta()` en vez de crear transacciones sueltas |
+| Usar tipo 2 como saldo en tienda o admin | Saldo no se consolidará en el futuro |
+| Pasar `idTipoTransaccionSaldo` en consolidación de frigorífico | Rompe la convención de tipo exclusivo 2 |
+| Filtrar `getPendientes()` por tipo o `idTransaccionRelNotNull` | Transacciones huérfanas que nunca se cierran |
+| Pasar `idUsuarioPagador` en cuadre de caja logística→admin | Crea tipo 5 redundante |
+| No incluir pendientes previas en `totalLiquidar` de tienda | `Σ(ventas + previas) ≠ Σ(consolidado)` |
+| Usar `getPendientesVinculadas()` en vez de `getPendientes()` | Solo consolida tx con `id_rel` apuntando al otro usuario |
 
 ---
 
-## 7. Pendientes y Mejoras
+## 6. Pendientes
 
-### 7.1 Consolidación del Admin (PENDIENTE)
+### 6.1 Consolidación del Admin
 
-Cuando el admin entrega dinero a logística (`transferenciaDirecta`), se crean transacciones en estado 1 para el admin. Actualmente NO existe un endpoint que cierre/consolide las cuentas del admin.
+El admin acumula transacciones tipo 4 y 5 en estado 1 que **nunca se liquidan**. No existe endpoint de cierre.
 
-**Problema:** El admin acumula transacciones tipo 4 (recibido) y tipo 5 (entregado) en estado 1 que nunca se liquidan.
-
-**Solución requerida:** Crear un endpoint `POST /api/logistica/consolidar-admin-cierre` que:
-- Consolide SOLO las transacciones pendientes del admin
+**Requerido:** `POST /api/logistica/consolidar-admin-cierre` que:
+- Obtenga `getPendientes({ idUsuario: admin })` sin filtros
 - Genere ticket consolidado (tipo 3, negativo) para el admin
-- Marque pendientes como estado 2
+- Marque pendientes → estado 2
 - Cree saldo si hay diferencia (tipo 4 o 5, estado 1)
 
-### 7.2 Desincronización Entity ↔ Prisma Schema
+### 6.2 Entity vs Prisma Schema
 
-La entity `Transaccion` (`entities/transaccion.entity.ts`) tiene un campo `promocion_id` que **no existe en el modelo Prisma** de `TRANSACCIONES`. Esto es correcto conceptualmente — la promoción pertenece al empaque, no a la transacción. La entity debe limpiarse eliminando ese campo.
-
-La entity `Promocion` (`entities/promocion.entity.ts`) tiene campos (`condiciones`, `fecha_inicio`, `fecha_fin`, `activo`) que no existen en el modelo Prisma actual. Debe decidirse si se migra el schema o se limpia la entity.
+- `Transaccion` entity tiene campo `promocion_id` que no existe en Prisma → eliminar de la entity
+- `Promocion` entity tiene campos (`condiciones`, `fecha_inicio`, `fecha_fin`, `activo`) no presentes en Prisma → migrar schema o limpiar entity

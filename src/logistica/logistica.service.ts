@@ -718,22 +718,15 @@ export class LogisticaService {
           ? `${nota_opcional} - Monto abonado: ${monto}`
           : `Monto abonado: ${monto}`;
 
-        const { idA: idDeudor } = await this.transaccionesService.crearParAtomico(
-          {
-            id_usuario: id_usuario_consolidar,
-            monto: -monto,
-            id_tipo_transaccion: 2,
-            nota_opcional: 'monto adelantado pendiente',
-            estado_transaccion: 1,
-          },
-          {
-            id_usuario: id_usuario_credenciales,
-            monto: -monto,
-            id_tipo_transaccion: 5,
-            nota_opcional: notaConMonto,
-            estado_transaccion: 1,
-          },
-        );
+        const r = await this.transaccionesService.transferenciaDirecta({
+          idUsuarioPagador: id_usuario_credenciales,
+          idUsuarioReceptor: id_usuario_consolidar,
+          monto,
+          notaOpcional: notaConMonto,
+          tipoReceptor: 2,
+          montoReceptorNegativo: true,
+          notaReceptorOpcional: 'monto adelantado pendiente',
+        });
 
         return {
           message: 'Abono adelantado registrado exitosamente',
@@ -1090,9 +1083,9 @@ export class LogisticaService {
           idUsuarioReceptor: idUsuarioLogistica,
           monto,
           notaOpcional: nLog,
+          notaReceptorOpcional: nLog,
+          notaPagadorOpcional: nAdm,
         });
-
-        await this.transaccionesService.actualizarNota(r.idTransaccionPagador, nAdm);
 
         return {
           mensaje: 'Ingreso del admin registrado exitosamente', tipo_movimiento, monto,
@@ -1106,14 +1099,14 @@ export class LogisticaService {
       }
     }
 
-    const { vinculadasA, vinculadasB } = await this.transaccionesService.getPendientesVinculadas(
-      idUsuarioLogistica, idUsuarioAdmin, [4, 5],
-    );
+    const pendientesLogistica = await this.transaccionesService.getPendientes({
+      idUsuario: idUsuarioLogistica,
+    });
 
-    const todosIds = [...vinculadasA.map(t => t.id_transaccion), ...vinculadasB.map(t => t.id_transaccion)];
+    const todosIds = pendientesLogistica.map(t => t.id_transaccion);
 
     if (todosIds.length === 0) {
-      throw new BadRequestException('No hay transacciones pendientes entre ambos. Usa tipo_movimiento: "ingreso" para transferencia directa.');
+      throw new BadRequestException('No hay transacciones pendientes del usuario logística. Usa tipo_movimiento: "ingreso" para transferencia directa.');
     }
 
     try {
@@ -1122,8 +1115,8 @@ export class LogisticaService {
         montoPagado: monto,
         idUsuarioTicket: idUsuarioLogistica,
         idUsuarioReceptor: idUsuarioAdmin,
-        idUsuarioPagador: idUsuarioLogistica,
-        mutualLink: true,
+        idTipoTransaccionSaldo: 4,
+        idTipoTransaccionSaldoNegativo: 5,
         notaOpcional: nota_opcional
           ? `Consolidación logística (${nombreLogistica}) - ${nota_opcional}`
           : `Consolidación logística (${nombreLogistica})`,
@@ -1138,9 +1131,8 @@ export class LogisticaService {
         ...(resultado.saldo && { saldo_pendiente: resultado.saldo.monto }),
         logistica: { id_usuario: idUsuarioLogistica, nombre_completo: nombreLogistica },
         admin: { id_usuario: idUsuarioAdmin, nombre_completo: nombreAdmin },
-        ticket_consolidado: { id: resultado.idTicket, monto: -resultado.montoConsolidado },
-        transaccion_logistica: { id: resultado.idPagoPagador, tipo: 'dinero_entregado', monto: -monto },
-        transaccion_admin:     { id: resultado.idPagoReceptor, tipo: 'dinero_recibido', monto },
+        ticket_consolidado: { id: resultado.idTicket, tipo: 'ticket_consolidado', monto: -resultado.montoConsolidado, funcion: 'pago_logistica' },
+        transaccion_admin:  { id: resultado.idPagoReceptor, tipo: 'dinero_recibido', monto },
       };
     } catch (error) {
       throw new BadRequestException(`Error al consolidar con admin: ${error instanceof Error ? error.message : String(error)}`);
@@ -1576,7 +1568,6 @@ export class LogisticaService {
           id_usuario: idUsuarioTienda,
           id_nevera: idNevera,
           estado_transaccion: 1,
-          id_tipo_transaccion: 2,
         },
         select: { id_transaccion: true, monto: true },
       });
@@ -1607,7 +1598,6 @@ export class LogisticaService {
     const transaccionesPendientes = await this.transaccionesService.getPendientes({
       idUsuario: idUsuarioTienda,
       idNevera: idNevera,
-      idTipoTransaccion: 2,
     });
 
     if (transaccionesPendientes.length === 0) {
@@ -1615,24 +1605,12 @@ export class LogisticaService {
       const notaPago = `Cobrado por: ${nombreLogistico} (ID: ${idUsuarioLogistico}) | Nota: adelanto de $${montoAdelanto.toLocaleString('es-CO')} hecho por el usuario tienda (ID: ${idUsuarioTienda}) | #NEVERA:${idNevera}`;
 
       try {
-        const { idA: idAdelanto, idB: idPago } = await this.transaccionesService.crearParAtomico(
-          {
-            id_usuario: idUsuarioTienda,
-            monto: -montoAdelanto,
-            id_tipo_transaccion: 2,
-            nota_opcional: `Adelanto pendiente #NEVERA:${idNevera}${nota_opcional ? ' | ' + nota_opcional : ''}`,
-            estado_transaccion: 1,
-            id_nevera: idNevera,
-          },
-          {
-            id_usuario: idUsuarioLogistico,
-            monto: montoAdelanto,
-            id_tipo_transaccion: 4,
-            nota_opcional: notaPago,
-            estado_transaccion: 1,
-            id_nevera: idNevera,
-          },
-        );
+        const r = await this.transaccionesService.transferenciaDirecta({
+          idUsuarioPagador: idUsuarioTienda,
+          idUsuarioReceptor: idUsuarioLogistico,
+          monto: montoAdelanto,
+          notaOpcional: notaPago,
+        });
 
         return {
           message: 'Adelanto registrado exitosamente',
@@ -1643,8 +1621,8 @@ export class LogisticaService {
             monto_adelantado: montoAdelanto,
           },
           transacciones: {
-            id_transaccion_pago: idPago,
-            id_transaccion_adelanto: idAdelanto,
+            id_transaccion_receptor: r.idTransaccionReceptor,
+            id_transaccion_pagador: r.idTransaccionPagador,
             monto_adelantado: montoAdelanto,
           },
         };
@@ -1664,6 +1642,8 @@ export class LogisticaService {
         montoPagado: monto,
         idUsuarioTicket: idUsuarioTienda,
         idUsuarioReceptor: idUsuarioLogistico,
+        idTipoTransaccionSaldo: 4,
+        idTipoTransaccionSaldoNegativo: 5,
         notaOpcional: notaPago,
         idNevera,
       });
@@ -1898,35 +1878,25 @@ export class LogisticaService {
       const resultado = await this.databaseService.$transaction(async (prisma) => {
         const notaPago = `Cobrado por: ${nombreLogistico} (ID: ${idUsuarioLogistico}) | Nota: abono de $${monto.toLocaleString('es-CO')} hecho por el usuario tienda (ID: ${idUsuarioTienda}) | #NEVERA:${idNevera}`;
 
-        const idTicket = await this.transaccionesService.crearTransaccionEnTx(prisma, {
-          id_usuario: idUsuarioTienda,
-          monto: -totalLiquidar,
-          id_tipo_transaccion: 3,
-          nota_opcional: `#NEVERA:${idNevera} EMPAQUES:${idsEmpaquesStr}${nota_opcional ? ' | ' + nota_opcional : ''}`,
-          estado_transaccion: 4,
-          id_nevera: idNevera,
+        const consolidado = await this.transaccionesService.consolidarEnTx(prisma, {
+          idsPendientes: idsPendientesPrevias,
+          montoPagado: monto,
+          montoConsolidado: totalLiquidar,
+          idUsuarioTicket: idUsuarioTienda,
+          idUsuarioReceptor: idUsuarioLogistico,
+          idTipoTransaccionSaldo: 4,
+          idTipoTransaccionSaldoNegativo: 5,
+          idNevera,
+          notaOpcional: `#NEVERA:${idNevera} EMPAQUES:${idsEmpaquesStr}${nota_opcional ? ' | ' + nota_opcional : ''}`,
+          notaReceptorOpcional: notaPago,
         });
-
-        const idPago = await this.transaccionesService.crearTransaccionEnTx(prisma, {
-          id_usuario: idUsuarioLogistico,
-          id_transaccion_rel: idTicket,
-          monto,
-          id_tipo_transaccion: 4,
-          nota_opcional: notaPago,
-          estado_transaccion: 1,
-          id_nevera: idNevera,
-        });
-
-        await this.transaccionesService.vincularRelEnTx(prisma, idTicket, idPago);
-
-        await this.transaccionesService.marcarPagadasEnTx(prisma, idsPendientesPrevias, idTicket);
 
         const transaccionesEmpaques: any[] = [];
         for (const detalle of detallesCalculo) {
           const idVenta = await this.transaccionesService.crearTransaccionEnTx(prisma, {
             id_empaque: detalle.id_empaque,
             id_usuario: idUsuarioTienda,
-            id_transaccion_rel: idTicket,
+            id_transaccion_rel: consolidado.idTicket,
             monto: detalle.liquidar,
             id_tipo_transaccion: 1,
             nota_opcional: `Venta empaque #${detalle.id_empaque} - ${detalle.nombre_producto}${detalle.promocion_id ? ` (promo ${detalle.valor_promocion}% dto)` : ''}`,
@@ -1951,28 +1921,12 @@ export class LogisticaService {
           });
         }
 
-        let saldoPendiente = 0;
-        const esAbonoCompleto = monto === totalLiquidar;
-        if (!esAbonoCompleto) {
-          saldoPendiente = totalLiquidar - monto;
-          const esSaldoAFavor = monto > totalLiquidar;
-          await this.transaccionesService.crearTransaccionEnTx(prisma, {
-            id_usuario: idUsuarioTienda,
-            id_transaccion_rel: idTicket,
-            monto: saldoPendiente,
-            id_tipo_transaccion: 2,
-            nota_opcional: `Saldo ${esSaldoAFavor ? 'adelantado pendiente' : 'a favor del usuario'} consolidación #NEVERA:${idNevera} ticket:${idTicket}`,
-            estado_transaccion: 1,
-            id_nevera: idNevera,
-          });
-        }
-
         return {
-          id_transaccion_consolidada: idTicket,
-          id_transaccion_pago: idPago,
+          id_transaccion_consolidada: consolidado.idTicket,
+          id_transaccion_pago: consolidado.idPagoReceptor,
           total_liquidado: totalLiquidar,
           monto_recibido: monto,
-          saldo_pendiente: saldoPendiente,
+          saldo_pendiente: consolidado.saldo?.monto ?? 0,
           transacciones_empaques: transaccionesEmpaques,
         };
       });
