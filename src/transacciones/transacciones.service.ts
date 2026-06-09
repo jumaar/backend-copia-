@@ -296,6 +296,7 @@ export class TransaccionesService {
       montoReceptorNegativo = false,
       notaReceptorOpcional,
       notaPagadorOpcional,
+      idNevera,
     } = params;
 
     return this.db.$transaction(async (tx) => {
@@ -311,7 +312,7 @@ export class TransaccionesService {
           id_tipo_transaccion: tipoReceptor,
           nota_opcional: notaReceptorOpcional ?? notaOpcional ?? null,
           estado_transaccion: ESTADO_PENDIENTE,
-          id_nevera: null,
+          id_nevera: idNevera ?? null,
         },
         select: { id_transaccion: true },
       });
@@ -326,7 +327,7 @@ export class TransaccionesService {
           id_tipo_transaccion: tipoPagador,
           nota_opcional: notaPagadorOpcional ?? notaOpcional ?? null,
           estado_transaccion: ESTADO_PENDIENTE,
-          id_nevera: null,
+          id_nevera: idNevera ?? null,
         },
         select: { id_transaccion: true },
       });

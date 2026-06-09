@@ -8,6 +8,7 @@ export interface TransferenciaDirectaParams {
   montoReceptorNegativo?: boolean;
   notaReceptorOpcional?: string;
   notaPagadorOpcional?: string;
+  idNevera?: number;
 }
 
 export interface TransferenciaDirectaResultado {

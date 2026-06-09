@@ -1610,6 +1610,7 @@ export class LogisticaService {
           idUsuarioReceptor: idUsuarioLogistico,
           monto: montoAdelanto,
           notaOpcional: notaPago,
+          idNevera,
         });
 
         return {
