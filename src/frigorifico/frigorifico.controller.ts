@@ -130,9 +130,9 @@ export class FrigorificoController {
   @Get('hermanos')
   @UseGuards(HerenciaGuard)
   @Roles(2, 4)
-  @Herencia({ tipo: 'resolver', scope: 'hermanos', entidad: 'usuario' })
+  @Herencia({ tipo: 'resolver', scope: 'hijos', entidad: 'usuario' })
   getHermanosFrigorifico(@Req() req: any) {
-    return this.frigorificoService.getHermanosFrigorificoPorScope(req.user.id_usuario, req.accessibleUserIds);
+    return this.frigorificoService.getHermanosFrigorificoPorScope(req.user.id_usuario, req.user.roleId, req.accessibleUserIds);
   }
 
   @Post('empaques/cambiar-estado')

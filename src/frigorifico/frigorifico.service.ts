@@ -108,16 +108,19 @@ export class FrigorificoService {
         },
       });
 
-    // Lista de todas las ciudades disponibles (esto es global, no necesita filtrado por usuario)
-    const ciudadesDisponibles = await this.databaseService.cIUDAD.findMany({
-      select: {
-        id_ciudad: true,
-        nombre_ciudad: true,
-      },
-      orderBy: {
-        nombre_ciudad: 'asc',
-      },
-    });
+    // Ciudades disponibles: solo aquellas donde el usuario tiene frigoríficos
+    const seen = new Set<number>();
+    const ciudadesDisponibles = frigorificos
+      .filter((f) => {
+        if (seen.has(f.ciudad.id_ciudad)) return false;
+        seen.add(f.ciudad.id_ciudad);
+        return true;
+      })
+      .map((f) => ({
+        id_ciudad: f.ciudad.id_ciudad,
+        nombre_ciudad: f.ciudad.nombre_ciudad,
+      }))
+      .sort((a, b) => (a.nombre_ciudad || '').localeCompare(b.nombre_ciudad || ''));
 
     // Inventario agrupado por producto: empaques con estado 1, agrupados por id_producto
     // Solo de los frigoríficos del usuario
@@ -1214,16 +1217,19 @@ export class FrigorificoService {
       }),
     );
 
-    // Lista de ciudades disponibles
-    const ciudadesDisponibles = await this.databaseService.cIUDAD.findMany({
-      select: {
-        id_ciudad: true,
-        nombre_ciudad: true,
-      },
-      orderBy: {
-        nombre_ciudad: 'asc',
-      },
-    });
+    // Ciudades disponibles: solo aquellas donde el admin tiene frigoríficos
+    const seen = new Set<number>();
+    const ciudadesDisponibles = frigorificos
+      .filter((f) => {
+        if (seen.has(f.ciudad.id_ciudad)) return false;
+        seen.add(f.ciudad.id_ciudad);
+        return true;
+      })
+      .map((f) => ({
+        id_ciudad: f.ciudad.id_ciudad,
+        nombre_ciudad: f.ciudad.nombre_ciudad,
+      }))
+      .sort((a, b) => (a.nombre_ciudad || '').localeCompare(b.nombre_ciudad || ''));
 
     return {
       usuario_actual: {
@@ -1511,7 +1517,7 @@ export class FrigorificoService {
     return idUsuario;
   }
 
-  async getHermanosFrigorificoPorScope(requesterId: number, accessibleUserIds: number[]) {
+  async getHermanosFrigorificoPorScope(requesterId: number, requesterRole: number, accessibleUserIds: number[]) {
     const usuarioSolicitante = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario: requesterId },
       include: {
@@ -1532,9 +1538,37 @@ export class FrigorificoService {
       );
     }
 
+    let frigorificoIds: number[];
+
+    if (requesterRole === 4) {
+      const token = await this.databaseService.tOKEN_REGISTRO.findFirst({
+        where: { id_usuario_nuevo: requesterId },
+        select: { id_usuario_creador: true },
+      });
+
+      if (token?.id_usuario_creador) {
+        const adminHijos = await this.databaseService.tOKEN_REGISTRO.findMany({
+          where: {
+            id_usuario_creador: token.id_usuario_creador,
+            es_usado: true,
+            id_rol_nuevo_usuario: 3,
+            id_usuario_nuevo: { not: null },
+          },
+          select: { id_usuario_nuevo: true },
+        });
+        frigorificoIds = adminHijos
+          .filter((t) => t.id_usuario_nuevo !== null)
+          .map((t) => t.id_usuario_nuevo!);
+      } else {
+        frigorificoIds = [];
+      }
+    } else {
+      frigorificoIds = accessibleUserIds;
+    }
+
     const hermanos = await this.databaseService.uSUARIOS.findMany({
       where: {
-        id_usuario: { in: accessibleUserIds },
+        id_usuario: { in: frigorificoIds },
         id_rol: 3,
         activo: true,
       },
