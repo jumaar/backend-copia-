@@ -257,6 +257,8 @@ describe('TransaccionesService', () => {
         idUsuarioTicket: ID_LOGISTICA,
         idUsuarioReceptor: ID_ADMIN, idUsuarioPagador: ID_LOGISTICA,
         mutualLink: true,
+        idTipoTransaccionSaldo: TIPO_DINERO_RECIBIDO,
+        idTipoTransaccionSaldoNegativo: TIPO_DINERO_ENTREGADO,
       });
       log('3A EXACTO + mutualLink', r);
 
@@ -282,11 +284,16 @@ describe('TransaccionesService', () => {
         idUsuarioTicket: ID_LOGISTICA,
         idUsuarioReceptor: ID_ADMIN, idUsuarioPagador: ID_LOGISTICA,
         mutualLink: true,
+        idTipoTransaccionSaldo: TIPO_DINERO_RECIBIDO,
+        idTipoTransaccionSaldoNegativo: TIPO_DINERO_ENTREGADO,
       });
       log('3B SOBREPAGO', r);
 
+      const ticket3b = transaccionesCreadas.find(
+        (t) => t.id_tipo_transaccion === TIPO_TICKET_CONSOLIDADO && t.id_usuario === ID_LOGISTICA,
+      );
       const saldo = transaccionesCreadas.find(
-        (t) => t.id_tipo_transaccion === 2 && t.id_usuario === ID_LOGISTICA,
+        (t) => t.id_tipo_transaccion === TIPO_DINERO_ENTREGADO && t.id_usuario === ID_LOGISTICA && t.id_transaccion_rel === ticket3b.id_transaccion,
       );
       expect(saldo.monto).toBe(-500);
       expect(r.saldo!.esSaldoAFavor).toBe(true);
@@ -299,11 +306,13 @@ describe('TransaccionesService', () => {
         idUsuarioTicket: ID_LOGISTICA,
         idUsuarioReceptor: ID_ADMIN, idUsuarioPagador: ID_LOGISTICA,
         mutualLink: true,
+        idTipoTransaccionSaldo: TIPO_DINERO_RECIBIDO,
+        idTipoTransaccionSaldoNegativo: TIPO_DINERO_ENTREGADO,
       });
       log('3C SUBPAGO', r);
 
       const saldo = transaccionesCreadas.find(
-        (t) => t.id_tipo_transaccion === 2 && t.id_usuario === ID_LOGISTICA,
+        (t) => t.id_tipo_transaccion === TIPO_DINERO_RECIBIDO && t.id_usuario === ID_LOGISTICA,
       );
       expect(saldo.monto).toBe(500);
       expect(r.saldo!.esSaldoAFavor).toBe(false);

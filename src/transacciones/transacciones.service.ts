@@ -228,6 +228,7 @@ export class TransaccionesService {
       idNevera,
       idTipoTransaccionSaldo = TIPO_COSTO_FRIGORIFICO,
       idTipoTransaccionSaldoNegativo,
+      notaReceptorOpcional,
     } = params;
 
     if (!idUsuarioPagador && !idUsuarioReceptor) {
@@ -238,7 +239,7 @@ export class TransaccionesService {
 
     if (idsPendientes.length === 0) {
       throw new BadRequestException(
-        'No hay transacciones pendientes para consolidar. Use registrarAdelanto para pagos sin deuda.',
+        'No hay transacciones pendientes para consolidar. Use transferenciaDirecta para pagos sin deuda.',
       );
     }
 
@@ -277,6 +278,7 @@ export class TransaccionesService {
         idNevera,
         idTipoTransaccionSaldo,
         idTipoTransaccionSaldoNegativo,
+        notaReceptorOpcional,
       });
     });
   }
@@ -405,46 +407,6 @@ export class TransaccionesService {
       select: { id_transaccion: true, monto: true, id_empaque: true, nota_opcional: true },
     });
   }
-
-  async getPendientesVinculadas(
-    idUsuarioA: number,
-    idUsuarioB: number,
-    tiposTransaccion: number[],
-  ) {
-    const pendientesA = await this.db.tRANSACCIONES.findMany({
-      where: {
-        id_usuario: idUsuarioA,
-        estado_transaccion: ESTADO_PENDIENTE,
-        id_tipo_transaccion: { in: tiposTransaccion },
-        id_transaccion_rel: { not: null },
-      },
-      select: { id_transaccion: true, monto: true, id_transaccion_rel: true },
-    });
-
-    const idsA = new Set(pendientesA.map((t) => t.id_transaccion));
-
-    const pendientesB = await this.db.tRANSACCIONES.findMany({
-      where: {
-        id_usuario: idUsuarioB,
-        estado_transaccion: ESTADO_PENDIENTE,
-        id_tipo_transaccion: { in: tiposTransaccion },
-        id_transaccion_rel: { not: null },
-      },
-      select: { id_transaccion: true, monto: true, id_transaccion_rel: true },
-    });
-
-    const idsB = new Set(pendientesB.map((t) => t.id_transaccion));
-
-    const vinculadasA = pendientesA.filter(
-      (t) => t.id_transaccion_rel && idsB.has(t.id_transaccion_rel),
-    );
-    const vinculadasB = pendientesB.filter(
-      (t) => t.id_transaccion_rel && idsA.has(t.id_transaccion_rel),
-    );
-
-    return { vinculadasA, vinculadasB };
-  }
-
   async countPendientes(params: {
     idUsuario: number;
     idNevera: number;
