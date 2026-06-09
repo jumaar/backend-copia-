@@ -97,11 +97,11 @@ export class FrigorificoService {
       },
     });
 
-    // Total transacciones: suma de monto en TRANSACCIONES para el id_usuario
     const totalTransacciones =
       await this.databaseService.tRANSACCIONES.aggregate({
         where: {
           id_usuario: idUsuario,
+          estado_transaccion: 1,
         },
         _sum: {
           monto: true,
@@ -1138,6 +1138,14 @@ export class FrigorificoService {
       _sum: { peso_exacto_g: true },
     });
 
+    const totalTransacciones = await this.databaseService.tRANSACCIONES.aggregate({
+      where: {
+        id_usuario: idUsuario,
+        estado_transaccion: 1,
+      },
+      _sum: { monto: true },
+    });
+
     // Procesar estaciones con sus empaques
     const estacionesProcesadas = await Promise.all(
       frigorifico.estaciones.map(async (estacion) => {
@@ -1230,6 +1238,7 @@ export class FrigorificoService {
             cantidad: lotesDespachados._count.id_empaque,
             peso_total_g: lotesDespachados._sum.peso_exacto_g || 0,
           },
+          total_transacciones: totalTransacciones._sum.monto || 0,
           estaciones: estacionesProcesadas,
         },
       ],
