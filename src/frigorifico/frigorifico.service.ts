@@ -1006,10 +1006,71 @@ export class FrigorificoService {
     return chunks;
   }
 
-  async getGestionFrigorifico(idUsuario: number) {
-    // Obtener información básica del usuario y sus frigoríficos
-    const frigorificos = await this.databaseService.fRIGORIFICO.findMany({
+  async getGestionFrigorifico(idUsuario: number, idFrigorifico?: number) {
+    const usuarioActual = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario: idUsuario },
+      include: {
+        rol: {
+          select: {
+            nombre_rol: true,
+          },
+        },
+      },
+    });
+
+    if (!usuarioActual) {
+      throw new HttpException(
+        {
+          status: HttpStatus.NOT_FOUND,
+          error: 'Usuario no encontrado',
+          message: 'El usuario solicitante no existe.',
+          code: 'USER_NOT_FOUND',
+        },
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    // --- MODO LIGERO: sin id_frigorifico, solo lista de frigoríficos disponibles ---
+    if (!idFrigorifico) {
+      const frigorificos = await this.databaseService.fRIGORIFICO.findMany({
+        where: { id_usuario: idUsuario },
+        include: {
+          ciudad: {
+            include: {
+              departamento: true,
+            },
+          },
+        },
+      });
+
+      return {
+        usuario_actual: {
+          id: usuarioActual.id_usuario,
+          nombre_completo:
+            `${usuarioActual.nombre_usuario || ''} ${usuarioActual.apellido_usuario || ''}`.trim(),
+          celular: usuarioActual.celular,
+          rol: usuarioActual.rol?.nombre_rol,
+          activo: usuarioActual.activo,
+        },
+        frigorificos: frigorificos.map((f) => ({
+          id_frigorifico: f.id_frigorifico,
+          nombre_frigorifico: f.nombre_frigorifico,
+          direccion: f.direccion,
+          ciudad: {
+            id_ciudad: f.ciudad.id_ciudad,
+            nombre_ciudad: f.ciudad.nombre_ciudad,
+            departamento: {
+              id__departamento: f.ciudad.departamento.id__departamento,
+              nombre_departamento: f.ciudad.departamento.nombre_departamento,
+            },
+          },
+        })),
+      };
+    }
+
+    // --- MODO COMPLETO: con id_frigorifico, todo el detalle de ese frigorífico ---
+    const frigorifico = await this.databaseService.fRIGORIFICO.findFirst({
+      where: { id_frigorifico: idFrigorifico, id_usuario: idUsuario },
       include: {
         ciudad: {
           include: {
@@ -1026,170 +1087,130 @@ export class FrigorificoService {
       },
     });
 
-    if (frigorificos.length === 0) {
+    if (!frigorifico) {
       throw new HttpException(
         {
           status: HttpStatus.NOT_FOUND,
-          error: 'Frigoríficos no encontrados',
-          message: 'No se encontraron frigoríficos asociados al usuario.',
-          code: 'FRIGORIFICOS_NOT_FOUND',
+          error: 'Frigorífico no encontrado',
+          message: 'El frigorífico no pertenece al usuario o no existe.',
+          code: 'FRIGORIFICO_NOT_FOUND',
         },
         HttpStatus.NOT_FOUND,
       );
     }
 
-    // Obtener información del usuario
-    const usuarioActual = await this.databaseService.uSUARIOS.findUnique({
-      where: { id_usuario: idUsuario },
-      include: {
-        rol: {
-          select: {
-            nombre_rol: true,
+    const frigorificoIds = [frigorifico.id_frigorifico];
+
+    // Lotes en stock
+    const lotesEnStock = await this.databaseService.eMPAQUES.aggregate({
+      where: {
+        estacion: {
+          frigorifico: {
+            id_frigorifico: { in: frigorificoIds },
           },
         },
+        id_estado_empaque: 1,
       },
+      _count: { id_empaque: true },
+      _sum: { peso_exacto_g: true },
     });
 
-    // Procesar cada frigorífico y sus estaciones
-    const frigorificosProcesados = await Promise.all(
-      frigorificos.map(async (frigorifico) => {
-        // Obtener datos generales del frigorífico
-        const frigorificoIds = [frigorifico.id_frigorifico];
+    // Lotes despachados del día
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    const manana = new Date(hoy);
+    manana.setDate(hoy.getDate() + 1);
 
-        // Lotes en stock del frigorífico
-        const lotesEnStock = await this.databaseService.eMPAQUES.aggregate({
+    const lotesDespachados = await this.databaseService.eMPAQUES.aggregate({
+      where: {
+        estacion: {
+          frigorifico: {
+            id_frigorifico: { in: frigorificoIds },
+          },
+        },
+        id_estado_empaque: { in: [2, 3, 4] },
+        hora_en_logistica_2: {
+          gte: hoy,
+          lt: manana,
+        },
+      },
+      _count: { id_empaque: true },
+      _sum: { peso_exacto_g: true },
+    });
+
+    // Procesar estaciones con sus empaques
+    const estacionesProcesadas = await Promise.all(
+      frigorifico.estaciones.map(async (estacion) => {
+        const empaques = await this.databaseService.eMPAQUES.findMany({
           where: {
-            estacion: {
-              frigorifico: {
-                id_frigorifico: { in: frigorificoIds },
-              },
-            },
+            id_estacion: estacion.id_estacion,
             id_estado_empaque: 1,
           },
-          _count: {
-            id_empaque: true,
+          include: {
+            producto: {
+              select: {
+                id_producto: true,
+                nombre_producto: true,
+                peso_nominal_g: true,
+              },
+            },
           },
-          _sum: {
-            peso_exacto_g: true,
-          },
+          orderBy: { fecha_empaque_1: 'desc' },
         });
 
-        // Lotes despachados del día (usando hora_en_logistica_2)
-        const hoy = new Date();
-        hoy.setHours(0, 0, 0, 0);
-        const manana = new Date(hoy);
-        manana.setDate(hoy.getDate() + 1);
-
-        const lotesDespachados = await this.databaseService.eMPAQUES.aggregate({
-          where: {
-            estacion: {
-              frigorifico: {
-                id_frigorifico: { in: frigorificoIds },
-              },
-            },
-            id_estado_empaque: {
-              in: [2, 3, 4], // Estados: enviado, en tránsito, entregado
-            },
-            hora_en_logistica_2: {
-              gte: hoy,
-              lt: manana,
-            },
-          },
-          _count: {
-            id_empaque: true,
-          },
-          _sum: {
-            peso_exacto_g: true,
-          },
-        });
-
-        // Total transacciones del usuario
-        const totalTransacciones =
-          await this.databaseService.tRANSACCIONES.aggregate({
-            where: {
-              id_usuario: idUsuario,
-            },
-            _sum: {
-              monto: true,
-            },
-          });
-
-        // Procesar cada estación del frigorífico
-        const estacionesProcesadas = await Promise.all(
-          frigorifico.estaciones.map(async (estacion) => {
-            // Obtener empaques de la estación agrupados por producto
-            const empaques = await this.databaseService.eMPAQUES.findMany({
-              where: {
-                id_estacion: estacion.id_estacion,
-                id_estado_empaque: 1,
-              },
-              include: {
-                producto: {
-                  select: {
-                    id_producto: true,
-                    nombre_producto: true,
-                    peso_nominal_g: true,
-                  },
-                },
-              },
-              orderBy: {
-                fecha_empaque_1: 'desc',
-              },
-            });
-
-            // Agrupar empaques por producto
-            const productosAgrupados = empaques.reduce((acc, empaque) => {
-              const productoId = empaque.id_producto;
-              if (!acc[productoId]) {
-                acc[productoId] = {
-                  id_producto: productoId,
-                  nombre_producto: empaque.producto.nombre_producto,
-                  peso_nominal_g: empaque.producto.peso_nominal_g,
-                  cantidad_total: 0,
-                  peso_total_g: 0,
-                  empaques: [],
-                };
-              }
-
-              acc[productoId].cantidad_total++;
-              acc[productoId].peso_total_g += parseFloat(
-                empaque.peso_exacto_g.toString(),
-              );
-              acc[productoId].empaques.push({
-                epc: empaque.EPC_id,
-                peso_g: empaque.peso_exacto_g,
-                precio_venta_total: parseFloat(
-                  empaque.precio_venta_total.toString(),
-                ),
-                fecha_empaque: empaque.fecha_empaque_1,
-              });
-
-              return acc;
-            }, {});
-
-            // Convertir a array y calcular totales por estación
-            const productosArray = Object.values(productosAgrupados);
-            const totalEmpaquesEstacion = productosArray.reduce(
-              (sum, prod: any) => sum + prod.cantidad_total,
-              0,
-            );
-            const totalPesoEstacion = productosArray.reduce(
-              (sum, prod: any) => sum + prod.peso_total_g,
-              0,
-            );
-
-            return {
-              id_estacion: estacion.id_estacion,
-              clave_vinculacion: estacion.clave_vinculacion,
-              activa: estacion.activa,
-              total_empaques: totalEmpaquesEstacion,
-              peso_total_g: totalPesoEstacion,
-              productos: productosArray,
+        const productosAgrupados = empaques.reduce((acc, empaque) => {
+          const productoId = empaque.id_producto;
+          if (!acc[productoId]) {
+            acc[productoId] = {
+              id_producto: productoId,
+              nombre_producto: empaque.producto.nombre_producto,
+              peso_nominal_g: empaque.producto.peso_nominal_g,
+              cantidad_total: 0,
+              peso_total_g: 0,
+              empaques: [],
             };
-          }),
+          }
+          acc[productoId].cantidad_total++;
+          acc[productoId].peso_total_g += parseFloat(empaque.peso_exacto_g.toString());
+          acc[productoId].empaques.push({
+            epc: empaque.EPC_id,
+            peso_g: empaque.peso_exacto_g,
+            precio_venta_total: parseFloat(empaque.precio_venta_total.toString()),
+            fecha_empaque: empaque.fecha_empaque_1,
+          });
+          return acc;
+        }, {});
+
+        const productosArray = Object.values(productosAgrupados);
+        const totalEmpaquesEstacion = productosArray.reduce(
+          (sum: number, prod: any) => sum + prod.cantidad_total, 0,
+        );
+        const totalPesoEstacion = productosArray.reduce(
+          (sum: number, prod: any) => sum + prod.peso_total_g, 0,
         );
 
         return {
+          id_estacion: estacion.id_estacion,
+          clave_vinculacion: estacion.clave_vinculacion,
+          activa: estacion.activa,
+          total_empaques: totalEmpaquesEstacion,
+          peso_total_g: totalPesoEstacion,
+          productos: productosArray,
+        };
+      }),
+    );
+
+    return {
+      usuario_actual: {
+        id: usuarioActual.id_usuario,
+        nombre_completo:
+          `${usuarioActual.nombre_usuario || ''} ${usuarioActual.apellido_usuario || ''}`.trim(),
+        celular: usuarioActual.celular,
+        rol: usuarioActual.rol?.nombre_rol,
+        activo: usuarioActual.activo,
+      },
+      frigorificos: [
+        {
           id_frigorifico: frigorifico.id_frigorifico,
           nombre_frigorifico: frigorifico.nombre_frigorifico,
           direccion: frigorifico.direccion,
@@ -1197,10 +1218,8 @@ export class FrigorificoService {
             id_ciudad: frigorifico.ciudad.id_ciudad,
             nombre_ciudad: frigorifico.ciudad.nombre_ciudad,
             departamento: {
-              id__departamento:
-                frigorifico.ciudad.departamento.id__departamento,
-              nombre_departamento:
-                frigorifico.ciudad.departamento.nombre_departamento,
+              id__departamento: frigorifico.ciudad.departamento.id__departamento,
+              nombre_departamento: frigorifico.ciudad.departamento.nombre_departamento,
             },
           },
           lotes_en_stock: {
@@ -1211,37 +1230,9 @@ export class FrigorificoService {
             cantidad: lotesDespachados._count.id_empaque,
             peso_total_g: lotesDespachados._sum.peso_exacto_g || 0,
           },
-          total_transacciones: totalTransacciones._sum.monto || 0,
           estaciones: estacionesProcesadas,
-        };
-      }),
-    );
-
-    // Ciudades disponibles: solo aquellas donde el admin tiene frigoríficos
-    const seen = new Set<number>();
-    const ciudadesDisponibles = frigorificos
-      .filter((f) => {
-        if (seen.has(f.ciudad.id_ciudad)) return false;
-        seen.add(f.ciudad.id_ciudad);
-        return true;
-      })
-      .map((f) => ({
-        id_ciudad: f.ciudad.id_ciudad,
-        nombre_ciudad: f.ciudad.nombre_ciudad,
-      }))
-      .sort((a, b) => (a.nombre_ciudad || '').localeCompare(b.nombre_ciudad || ''));
-
-    return {
-      usuario_actual: {
-        id: usuarioActual?.id_usuario,
-        nombre_completo:
-          `${usuarioActual?.nombre_usuario || ''} ${usuarioActual?.apellido_usuario || ''}`.trim(),
-        celular: usuarioActual?.celular,
-        rol: usuarioActual?.rol?.nombre_rol,
-        activo: usuarioActual?.activo,
-      },
-      frigorificos: frigorificosProcesados,
-      ciudades_disponibles: ciudadesDisponibles,
+        },
+      ],
     };
   }
 

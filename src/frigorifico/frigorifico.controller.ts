@@ -111,12 +111,13 @@ export class FrigorificoController {
   @UseGuards(HerenciaGuard)
   @Roles(2, 3, 4)
   @Herencia({ tipo: 'resolver', scope: 'hermanos', entidad: 'usuario' })
-  getGestionFrigorifico(@Query('id_usuario') id_usuario: string, @Req() req: any) {
+  getGestionFrigorifico(@Query('id_usuario') id_usuario: string, @Query('id_frigorifico') id_frigorifico: string, @Req() req: any) {
     const requesterId = req.user.id_usuario;
     const requesterRole = req.user.roleId;
+    const frigorificoId = id_frigorifico ? Number(id_frigorifico) : undefined;
 
     if (requesterRole === 3) {
-      return this.frigorificoService.getGestionFrigorifico(requesterId);
+      return this.frigorificoService.getGestionFrigorifico(requesterId, frigorificoId);
     }
 
     const targetId = Number(id_usuario);
@@ -124,7 +125,7 @@ export class FrigorificoController {
       throw new Error('Se requiere el parámetro id_usuario para usuarios con rol 2 o 4');
     }
 
-    return this.frigorificoService.getGestionFrigorifico(targetId);
+    return this.frigorificoService.getGestionFrigorifico(targetId, frigorificoId);
   }
 
   @Get('hermanos')
