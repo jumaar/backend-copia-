@@ -4,7 +4,7 @@ import { Type } from 'class-transformer';
 export class ConsolidarAdminDto {
   @Type(() => Number)
   @IsNumber()
-  @Min(0)
+  @Min(0, { message: 'El monto debe ser mayor o igual a 0' })
   monto: number;
 
   @IsOptional()
