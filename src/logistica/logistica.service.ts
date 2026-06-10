@@ -434,20 +434,67 @@ export class LogisticaService {
       orderBy: { hora_transaccion: 'desc' },
     });
 
-    // PASO 2: Búsqueda inversa — transacciones cuyo id_transaccion_rel apunta
-    // a cualquiera del resultado base. Captura las pendientes viejas que fueron
-    // consolidadas en este mes (estado 2 vinculadas al ticket del mes actual).
+    // PASO 2: Búsqueda hacia adelante — transacciones referenciadas por las
+    // del resultado base (vía id_transaccion_rel). Cuando se consulta un mes
+    // histórico, las transacciones consolidadas apuntan al ticket de ese mes
+    // (que puede estar en un mes posterior). Sin este paso, el ticket no aparece.
     const todasLasTransacciones = [...transaccionesBase];
+    const idsBaseSet = new Set(transaccionesBase.map(t => t.id_transaccion));
 
-    if (transaccionesBase.length > 0) {
-      const idsBase = transaccionesBase.map(t => t.id_transaccion);
-      const idsBaseSet = new Set(idsBase);
+    const idsForward = transaccionesBase
+      .map(t => t.id_transaccion_rel)
+      .filter(id => id !== null && !idsBaseSet.has(id as number)) as number[];
+
+    if (idsForward.length > 0) {
+      const transaccionesForward = await this.databaseService.tRANSACCIONES.findMany({
+        where: {
+          id_usuario: id_usuario,
+          id_transaccion: { in: idsForward },
+        },
+        include: {
+          estadoTransaccion: {
+            select: { id_estado_transaccion: true, nombre_estado: true },
+          },
+          tipoTransaccion: {
+            select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true },
+          },
+          empaque: {
+            select: { id_empaque: true, EPC_id: true },
+          },
+          transaccionRel: {
+            select: {
+              id_transaccion: true,
+              nota_opcional: true,
+              usuario: {
+                select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true },
+              },
+            },
+          },
+        },
+        orderBy: { hora_transaccion: 'desc' },
+      });
+
+      for (const t of transaccionesForward) {
+        if (!idsBaseSet.has(t.id_transaccion)) {
+          todasLasTransacciones.push(t);
+          idsBaseSet.add(t.id_transaccion);
+        }
+      }
+    }
+
+    // PASO 3: Búsqueda inversa — transacciones cuyo id_transaccion_rel apunta
+    // a cualquiera del resultado combinado (base + forward). Captura las
+    // pendientes viejas que fueron consolidadas en este mes (estado 2 vinculadas
+    // al ticket del mes actual).
+    if (todasLasTransacciones.length > 0) {
+      const idsCombinados = todasLasTransacciones.map(t => t.id_transaccion);
+      const idsCombinadosSet = new Set(idsCombinados);
 
       const transaccionesReferenciadas = await this.databaseService.tRANSACCIONES.findMany({
         where: {
           id_usuario: id_usuario,
-          id_transaccion_rel: { in: idsBase },
-          id_transaccion: { notIn: idsBase },
+          id_transaccion_rel: { in: idsCombinados },
+          id_transaccion: { notIn: idsCombinados },
         },
         include: {
           estadoTransaccion: {
@@ -473,7 +520,7 @@ export class LogisticaService {
       });
 
       for (const t of transaccionesReferenciadas) {
-        if (!idsBaseSet.has(t.id_transaccion)) {
+        if (!idsCombinadosSet.has(t.id_transaccion)) {
           todasLasTransacciones.push(t);
         }
       }
@@ -1271,20 +1318,58 @@ export class LogisticaService {
       orderBy: { hora_transaccion: 'desc' },
     });
 
-    // PASO 2: Búsqueda inversa — transacciones cuyo id_transaccion_rel apunta
-    // a cualquiera del resultado base (pendientes viejas consolidadas en este mes).
+    // PASO 2: Búsqueda hacia adelante — transacciones referenciadas por las
+    // del resultado base (vía id_transaccion_rel). Captura el ticket de
+    // consolidación cuando se consulta un mes anterior al de la consolidación.
     const todasLasTransacciones = [...transaccionesBase];
+    const idsBaseSet = new Set(transaccionesBase.map(t => t.id_transaccion));
 
-    if (transaccionesBase.length > 0) {
-      const idsBase = transaccionesBase.map(t => t.id_transaccion);
-      const idsBaseSet = new Set(idsBase);
+    const idsForward = transaccionesBase
+      .map(t => t.id_transaccion_rel)
+      .filter(id => id !== null && !idsBaseSet.has(id as number)) as number[];
+
+    if (idsForward.length > 0) {
+      const transaccionesForward = await this.databaseService.tRANSACCIONES.findMany({
+        where: {
+          id_usuario: idUsuarioTienda,
+          id_nevera: idNevera,
+          id_transaccion: { in: idsForward },
+        },
+        include: {
+          estadoTransaccion: { select: { id_estado_transaccion: true, nombre_estado: true } },
+          tipoTransaccion: { select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true } },
+          empaque: { select: { id_empaque: true, EPC_id: true, id_nevera: true, costo_tienda: true } },
+          transaccionRel: {
+            select: {
+              id_transaccion: true,
+              nota_opcional: true,
+              usuario: { select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true } },
+            },
+          },
+        },
+        orderBy: { hora_transaccion: 'desc' },
+      });
+
+      for (const t of transaccionesForward) {
+        if (!idsBaseSet.has(t.id_transaccion)) {
+          todasLasTransacciones.push(t);
+          idsBaseSet.add(t.id_transaccion);
+        }
+      }
+    }
+
+    // PASO 3: Búsqueda inversa — transacciones cuyo id_transaccion_rel apunta
+    // a cualquiera del resultado combinado (base + forward).
+    if (todasLasTransacciones.length > 0) {
+      const idsCombinados = todasLasTransacciones.map(t => t.id_transaccion);
+      const idsCombinadosSet = new Set(idsCombinados);
 
       const transaccionesReferenciadas = await this.databaseService.tRANSACCIONES.findMany({
         where: {
           id_usuario: idUsuarioTienda,
           id_nevera: idNevera,
-          id_transaccion_rel: { in: idsBase },
-          id_transaccion: { notIn: idsBase },
+          id_transaccion_rel: { in: idsCombinados },
+          id_transaccion: { notIn: idsCombinados },
         },
         include: {
           estadoTransaccion: { select: { id_estado_transaccion: true, nombre_estado: true } },
@@ -1302,7 +1387,7 @@ export class LogisticaService {
       });
 
       for (const t of transaccionesReferenciadas) {
-        if (!idsBaseSet.has(t.id_transaccion)) {
+        if (!idsCombinadosSet.has(t.id_transaccion)) {
           todasLasTransacciones.push(t);
         }
       }
