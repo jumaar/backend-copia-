@@ -105,10 +105,8 @@ export class TransaccionesService {
     // En ese escenario monto=0 cierra el ciclo sin mover dinero.
     if (montoPagado === 0 && montoConsolidado !== 0) {
       throw new BadRequestException(
-        'No se puede consolidar con monto 0 cuando existen deudas pendientes. ' +
-        'Monto pendiente a consolidar: ' + montoConsolidado + '. ' +
-        'Si las pendientes netas son 0 (ej: ya se usó todo el dinero), ' +
-        'el sistema lo detectará automáticamente como montoConsolidado = 0.',
+        `No se puede consolidar con monto 0 porque hay ${montoConsolidado} en transacciones pendientes. ` +
+        `Para cerrar sin mover dinero, la suma de las pendientes debe ser 0.`,
       );
     }
 
