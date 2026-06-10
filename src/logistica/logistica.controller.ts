@@ -36,15 +36,6 @@ export class LogisticaController {
     );
   }
 
-  @Get('surtir')
-  @UseGuards(HerenciaGuard)
-  @Roles(1, 2, 4)
-  @Herencia({ tipo: 'resolver', scope: 'descendientes', entidad: 'usuario' })
-  getNeverasActivas(@Req() req: any) {
-    const id_usuario = req.user.id_usuario;
-    return this.logisticaService.getNeverasActivas(id_usuario, req.accessibleUserIds);
-  }
-
   @Get('cuentas')
   @Roles(1, 2, 3, 4, 5)
   getCuentasTransacciones(@Query() cuentasDto: CuentasDto) {

@@ -19,11 +19,12 @@ export class TiendasController {
     return this.tiendasService.create(createTiendaDto, id_usuario);
   }
 
-  @Get(':id')
-  @UseGuards(JwtAuthGuard)
-  findOne(@Param('id') id: string, @Req() req: any) {
-    const id_usuario = req.user.id_usuario;
-    return this.tiendasService.getTiendasByUsuario(id_usuario);
+  @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard, HerenciaGuard)
+  @Roles(1, 2, 4, 5)
+  @Herencia({ tipo: 'resolver', scope: 'descendientes', entidad: 'usuario' })
+  getNeverasActivas(@Req() req: any) {
+    return this.tiendasService.getNeverasActivas(req.user.id_usuario, req.accessibleUserIds);
   }
 
   @Patch(':id')

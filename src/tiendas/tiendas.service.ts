@@ -107,70 +107,6 @@ export class TiendasService {
     };
   }
 
-  async getTiendasByUsuario(id_usuario: number) {
-    // Obtener todas las tiendas del usuario con sus neveras
-    const tiendas = await this.databaseService.tIENDAS.findMany({
-      where: { id_usuario: id_usuario },
-      include: {
-        ciudad: {
-          select: {
-            nombre_ciudad: true,
-            departamento: {
-              select: {
-                nombre_departamento: true,
-              },
-            },
-          },
-        },
-        neveras: {
-          select: {
-            id_nevera: true,
-            id_estado_nevera: true,
-            fecha_creacion: true,
-            fecha_activacion: true,
-          },
-        },
-      },
-    });
-
-    // Obtener todas las ciudades disponibles
-    const ciudades = await this.databaseService.cIUDAD.findMany({
-      include: {
-        departamento: {
-          select: {
-            nombre_departamento: true,
-          },
-        },
-      },
-      orderBy: [
-        { departamento: { nombre_departamento: 'asc' } },
-        { nombre_ciudad: 'asc' },
-      ],
-    });
-
-    return {
-      tiendas: tiendas.map((tienda) => ({
-        id_tienda: tienda.id_tienda,
-        nombre_tienda: tienda.nombre_tienda,
-        direccion: tienda.direccion,
-        fecha_creacion: tienda.fecha_creacion,
-        ciudad: tienda.ciudad.nombre_ciudad,
-        departamento: tienda.ciudad.departamento.nombre_departamento,
-        neveras: tienda.neveras.map((nevera) => ({
-          id_nevera: nevera.id_nevera,
-          id_estado_nevera: nevera.id_estado_nevera,
-          fecha_creacion: nevera.fecha_creacion,
-          fecha_activacion: nevera.fecha_activacion,
-        })),
-      })),
-      ciudades_disponibles: ciudades.map((ciudad) => ({
-        id_ciudad: ciudad.id_ciudad,
-        nombre_ciudad: ciudad.nombre_ciudad,
-        departamento: ciudad.departamento.nombre_departamento,
-      })),
-    };
-  }
-
   async createNevera(createNeveraDto: any, id_usuario: number) {
     const { id_tienda } = createNeveraDto;
 
@@ -1022,5 +958,110 @@ export class TiendasService {
       console.error('ERROR en getTiendasSobrinas:', error);
       throw error;
     }
+  }
+
+  async getNeverasActivas(id_usuario: number, accessibleUserIds?: number[]) {
+    const idsAccesibles = accessibleUserIds || [id_usuario];
+
+    const empaquesScan = await this.databaseService.eMPAQUES.findMany({
+      where: {
+        id_estado_empaque: { in: [3, 5] },
+        nevera: { id_estado_nevera: 2 },
+      },
+      include: { producto: { select: { dias_vencimiento: true } } },
+    });
+
+    if (empaquesScan.length > 0) {
+      const ahora = new Date();
+      const idsParaCambio: number[] = [];
+      const mensajesPorNeveraProducto = new Map<
+        string,
+        { proximos: boolean; vencidos: boolean; idNevera: number; idProducto: number }
+      >();
+
+      for (const e of empaquesScan) {
+        const diasVida = e.producto.dias_vencimiento;
+        if (!diasVida || diasVida <= 0) continue;
+        const pct = ((ahora.getTime() - new Date(e.fecha_empaque_1).getTime()) / (1000 * 60 * 60 * 24) / diasVida) * 100;
+
+        const key = `${e.id_nevera}_${e.id_producto}`;
+        if (!mensajesPorNeveraProducto.has(key)) {
+          mensajesPorNeveraProducto.set(key, { proximos: false, vencidos: false, idNevera: e.id_nevera ?? 0, idProducto: e.id_producto });
+        }
+        const m = mensajesPorNeveraProducto.get(key)!;
+
+        if (pct >= UMBRAL_VENCIDO) {
+          m.vencidos = true;
+        } else if (pct >= UMBRAL_PARA_CAMBIO) {
+          m.proximos = true;
+        }
+
+        if (e.id_estado_empaque === 3 && pct >= UMBRAL_PARA_CAMBIO) {
+          if (pct >= UMBRAL_VENCIDO || e.id_nevera_anterior === null) {
+            idsParaCambio.push(e.id_empaque);
+          }
+        }
+      }
+
+      if (idsParaCambio.length > 0) {
+        await this.databaseService.eMPAQUES.updateMany({
+          where: { id_empaque: { in: idsParaCambio } },
+          data: { id_estado_empaque: 5 },
+        });
+      }
+
+      for (const [, m] of mensajesPorNeveraProducto) {
+        if (!m.idNevera) continue;
+        const partes: string[] = [];
+        if (m.proximos) partes.push('De este producto hay empaques proximos a vencer');
+        if (m.vencidos) partes.push('Alerta: de este producto hay empaques vencidos');
+
+        await this.databaseService.sTOCK_NEVERA.updateMany({
+          where: { id_nevera: m.idNevera, id_producto: m.idProducto },
+          data: { mensaje_sistema: partes.length > 0 ? partes.join(', ') : null },
+        });
+      }
+    }
+
+    const tiendas = await this.databaseService.tIENDAS.findMany({
+      where: { id_usuario: { in: idsAccesibles } },
+      select: { id_tienda: true }
+    });
+
+    const tiendasIds = tiendas.map(t => t.id_tienda);
+
+    if (tiendasIds.length === 0) {
+      return {
+        neveras_activas: [],
+        total_neveras: 0
+      };
+    }
+
+    const neveras = await this.databaseService.nEVERAS.findMany({
+      where: {
+        id_tienda: { in: tiendasIds },
+        id_estado_nevera: 2
+      },
+      include: {
+        tienda: {
+          include: {
+            ciudad: true
+          }
+        }
+      }
+    });
+
+    const neverasFormateadas = neveras.map((nevera) => ({
+      id_nevera: nevera.id_nevera,
+      nombre_tienda: nevera.tienda.nombre_tienda,
+      direccion: nevera.tienda.direccion,
+      ciudad: nevera.tienda.ciudad.nombre_ciudad,
+      id_ciudad: nevera.tienda.ciudad.id_ciudad,
+    }));
+
+    return {
+      neveras_activas: neverasFormateadas,
+      total_neveras: neverasFormateadas.length,
+    };
   }
 }
