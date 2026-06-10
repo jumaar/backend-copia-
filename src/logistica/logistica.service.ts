@@ -393,143 +393,95 @@ export class LogisticaService {
       };
     }
 
-    // PASO 1: Obtener transacciones directas del mes (transacciones originales)
-    const transaccionesDirectas = await this.databaseService.tRANSACCIONES.findMany({
-      where: {
-        id_usuario: id_usuario,
-        hora_transaccion: {
-          gte: fechaInicio,
-          lte: fechaFin
-        }
-      },
+    // PASO 1: Transacciones base — las del mes consultado, y si es el periodo
+    // actual se incluyen también todas las pendientes (estado 1) sin filtro de
+    // fecha, para que nunca se oculten deudas de meses anteriores no consolidadas.
+    const whereBase: any = {
+      id_usuario: id_usuario,
+    };
+
+    if (!mesParam) {
+      whereBase.OR = [
+        { hora_transaccion: { gte: fechaInicio, lte: fechaFin } },
+        { estado_transaccion: 1 },
+      ];
+    } else {
+      whereBase.hora_transaccion = { gte: fechaInicio, lte: fechaFin };
+    }
+
+    const transaccionesBase = await this.databaseService.tRANSACCIONES.findMany({
+      where: whereBase,
       include: {
         estadoTransaccion: {
-          select: {
-            id_estado_transaccion: true,
-            nombre_estado: true
-          }
+          select: { id_estado_transaccion: true, nombre_estado: true },
         },
         tipoTransaccion: {
-          select: {
-            id_tipo: true,
-            nombre_codigo: true,
-            descripcion_amigable: true
-          }
+          select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true },
         },
         empaque: {
-          select: {
-            id_empaque: true,
-            EPC_id: true
-          }
+          select: { id_empaque: true, EPC_id: true },
         },
         transaccionRel: {
           select: {
             id_transaccion: true,
             nota_opcional: true,
             usuario: {
-              select: {
-                id_usuario: true,
-                nombre_usuario: true,
-                apellido_usuario: true
-              }
-            }
-          }
-        }
-      },
-      orderBy: {
-        hora_transaccion: 'desc'
-      }
-    });
-
-    // PASO 2: Obtener transacciones acreedoras que consolidaron transacciones del mes
-    // Cuando una transacción del mes tiene id_transaccion_rel, esa transacción relacionada
-    // es la transacción acreedora que debe aparecer al consultar este mes
-    
-    // Obtener transacciones del mes que tienen id_transaccion_rel (transacciones consolidadas)
-    const transaccionesConsolidadasDelMes = await this.databaseService.tRANSACCIONES.findMany({
-      where: {
-        id_usuario: id_usuario,
-        hora_transaccion: {
-          gte: fechaInicio,
-          lte: fechaFin
-        },
-        id_transaccion_rel: {
-          not: null  // Solo transacciones que fueron consolidadas
-        }
-      },
-      select: {
-        id_transaccion_rel: true
-      }
-    });
-
-    const idsTransaccionesAcreedoras = transaccionesConsolidadasDelMes
-      .map(t => t.id_transaccion_rel)
-      .filter(id => id !== null) as number[];
-
-    let transaccionesConsolidadas: any[] = [];
-
-    if (idsTransaccionesAcreedoras.length > 0) {
-      // Obtener las transacciones acreedoras que consolidaron las del mes
-      transaccionesConsolidadas = await this.databaseService.tRANSACCIONES.findMany({
-        where: {
-          id_transaccion: {
-            in: idsTransaccionesAcreedoras
+              select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true },
+            },
           },
-          id_usuario: id_usuario
+        },
+      },
+      orderBy: { hora_transaccion: 'desc' },
+    });
+
+    // PASO 2: Búsqueda inversa — transacciones cuyo id_transaccion_rel apunta
+    // a cualquiera del resultado base. Captura las pendientes viejas que fueron
+    // consolidadas en este mes (estado 2 vinculadas al ticket del mes actual).
+    const todasLasTransacciones = [...transaccionesBase];
+
+    if (transaccionesBase.length > 0) {
+      const idsBase = transaccionesBase.map(t => t.id_transaccion);
+      const idsBaseSet = new Set(idsBase);
+
+      const transaccionesReferenciadas = await this.databaseService.tRANSACCIONES.findMany({
+        where: {
+          id_usuario: id_usuario,
+          id_transaccion_rel: { in: idsBase },
+          id_transaccion: { notIn: idsBase },
         },
         include: {
           estadoTransaccion: {
-            select: {
-              id_estado_transaccion: true,
-              nombre_estado: true
-            }
+            select: { id_estado_transaccion: true, nombre_estado: true },
           },
           tipoTransaccion: {
-            select: {
-              id_tipo: true,
-              nombre_codigo: true,
-              descripcion_amigable: true
-            }
+            select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true },
           },
           empaque: {
-            select: {
-              id_empaque: true,
-              EPC_id: true
-            }
+            select: { id_empaque: true, EPC_id: true },
           },
           transaccionRel: {
             select: {
               id_transaccion: true,
               nota_opcional: true,
               usuario: {
-                select: {
-                  id_usuario: true,
-                  nombre_usuario: true,
-                  apellido_usuario: true
-                }
-              }
-            }
-          }
+                select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true },
+              },
+            },
+          },
         },
-        orderBy: {
-          hora_transaccion: 'desc'
-        }
+        orderBy: { hora_transaccion: 'desc' },
       });
-    }
 
-    // Combinar ambas consultas y eliminar duplicados
-    const todasLasTransacciones = [...transaccionesDirectas];
-    const idsTransaccionesDirectas = new Set(todasLasTransacciones.map(t => t.id_transaccion));
-    
-    transaccionesConsolidadas.forEach(transaccion => {
-      if (!idsTransaccionesDirectas.has(transaccion.id_transaccion)) {
-        todasLasTransacciones.push(transaccion);
+      for (const t of transaccionesReferenciadas) {
+        if (!idsBaseSet.has(t.id_transaccion)) {
+          todasLasTransacciones.push(t);
+        }
       }
-    });
+    }
 
     // Ordenar todas las transacciones por fecha descendente
     todasLasTransacciones.sort((a, b) =>
-      new Date(b.hora_transaccion).getTime() - new Date(a.hora_transaccion).getTime()
+      new Date(b.hora_transaccion).getTime() - new Date(a.hora_transaccion).getTime(),
     );
 
     const transacciones = todasLasTransacciones;
@@ -1285,12 +1237,25 @@ export class LogisticaService {
       }));
     }
 
-    const transaccionesDirectas = await this.databaseService.tRANSACCIONES.findMany({
-      where: {
-        id_usuario: idUsuarioTienda,
-        id_nevera: idNevera,
-        hora_transaccion: { gte: fechaInicio, lte: fechaFin },
-      },
+    // PASO 1: Transacciones base — las del mes consultado para esta nevera,
+    // y si es el periodo actual se incluyen también todas las pendientes
+    // (estado 1) sin filtro de fecha.
+    const whereBaseNevera: any = {
+      id_usuario: idUsuarioTienda,
+      id_nevera: idNevera,
+    };
+
+    if (!mesParam) {
+      whereBaseNevera.OR = [
+        { hora_transaccion: { gte: fechaInicio, lte: fechaFin } },
+        { estado_transaccion: 1 },
+      ];
+    } else {
+      whereBaseNevera.hora_transaccion = { gte: fechaInicio, lte: fechaFin };
+    }
+
+    const transaccionesBase = await this.databaseService.tRANSACCIONES.findMany({
+      where: whereBaseNevera,
       include: {
         estadoTransaccion: { select: { id_estado_transaccion: true, nombre_estado: true } },
         tipoTransaccion: { select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true } },
@@ -1306,7 +1271,48 @@ export class LogisticaService {
       orderBy: { hora_transaccion: 'desc' },
     });
 
-    const transaccionesFormateadas = transaccionesDirectas.map(t => {
+    // PASO 2: Búsqueda inversa — transacciones cuyo id_transaccion_rel apunta
+    // a cualquiera del resultado base (pendientes viejas consolidadas en este mes).
+    const todasLasTransacciones = [...transaccionesBase];
+
+    if (transaccionesBase.length > 0) {
+      const idsBase = transaccionesBase.map(t => t.id_transaccion);
+      const idsBaseSet = new Set(idsBase);
+
+      const transaccionesReferenciadas = await this.databaseService.tRANSACCIONES.findMany({
+        where: {
+          id_usuario: idUsuarioTienda,
+          id_nevera: idNevera,
+          id_transaccion_rel: { in: idsBase },
+          id_transaccion: { notIn: idsBase },
+        },
+        include: {
+          estadoTransaccion: { select: { id_estado_transaccion: true, nombre_estado: true } },
+          tipoTransaccion: { select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true } },
+          empaque: { select: { id_empaque: true, EPC_id: true, id_nevera: true, costo_tienda: true } },
+          transaccionRel: {
+            select: {
+              id_transaccion: true,
+              nota_opcional: true,
+              usuario: { select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true } },
+            },
+          },
+        },
+        orderBy: { hora_transaccion: 'desc' },
+      });
+
+      for (const t of transaccionesReferenciadas) {
+        if (!idsBaseSet.has(t.id_transaccion)) {
+          todasLasTransacciones.push(t);
+        }
+      }
+    }
+
+    todasLasTransacciones.sort((a, b) =>
+      new Date(b.hora_transaccion).getTime() - new Date(a.hora_transaccion).getTime(),
+    );
+
+    const transaccionesFormateadas = todasLasTransacciones.map(t => {
       const infoPago = (t.id_empaque === null && t.transaccionRel)
         ? {
             id_usuario_pago: t.transaccionRel.usuario.id_usuario,
