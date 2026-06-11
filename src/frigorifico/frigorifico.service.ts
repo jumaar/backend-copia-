@@ -1518,6 +1518,51 @@ export class FrigorificoService {
   }
 
   async getHermanosFrigorificoPorScope(requesterId: number, requesterRole: number, accessibleUserIds: number[]) {
+    if (requesterRole === 1) {
+      const admins = await this.databaseService.uSUARIOS.findMany({
+        where: { id_rol: 2, activo: true },
+        select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true, email: true, celular: true },
+      });
+
+      const result = await Promise.all(
+        admins.map(async (admin) => {
+          const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
+            where: {
+              id_usuario_creador: admin.id_usuario,
+              es_usado: true,
+              id_rol_nuevo_usuario: 3,
+              id_usuario_nuevo: { not: null },
+            },
+            select: { id_usuario_nuevo: true },
+          });
+          const frigorificoIds = tokens
+            .map((t) => t.id_usuario_nuevo)
+            .filter(Boolean) as number[];
+
+          let frigorificos: any[] = [];
+          if (frigorificoIds.length > 0) {
+            frigorificos = await this.databaseService.uSUARIOS.findMany({
+              where: { id_usuario: { in: frigorificoIds }, activo: true },
+              select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true, email: true, celular: true },
+            });
+          }
+
+          return {
+            admin: {
+              id_usuario: admin.id_usuario,
+              nombre_usuario: admin.nombre_usuario,
+              apellido_usuario: admin.apellido_usuario,
+              email: admin.email,
+              celular: admin.celular,
+            },
+            frigorificos,
+          };
+        }),
+      );
+
+      return { admins: result };
+    }
+
     const usuarioSolicitante = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario: requesterId },
       include: {

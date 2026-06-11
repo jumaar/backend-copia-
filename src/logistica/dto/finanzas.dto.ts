@@ -1,7 +1,7 @@
 import { IsInt, IsOptional, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export class ResumenFinancieroDto {
+export class FinanzasDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -20,5 +20,5 @@ export class ResumenFinancieroDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  id_logistica?: number;
+  id_usuario?: number;
 }

@@ -8,7 +8,7 @@ import { ConsolidacionCuentasDto } from './dto/consolidacion-cuentas.dto';
 import { LiquidacionNeveraDto } from './dto/liquidacion-nevera.dto';
 import { DecincoaseisDto } from './dto/decincoaseis.dto';
 import { SeisasieteDto } from './dto/seisasiete.dto';
-import { ResumenFinancieroDto } from './dto/resumen-financiero.dto';
+import { FinanzasDto } from './dto/finanzas.dto';
 import { ConsolidarAdminDto } from './dto/consolidar-admin.dto';
 import { UMBRAL_VENCIDO, UMBRAL_PARA_CAMBIO } from '../common/config/constants';
 
@@ -770,6 +770,69 @@ export class LogisticaService {
   }
 
   async getHermanosLogisticaPorScope(requesterId: number, requesterRole: number, accessibleUserIds: number[]) {
+    if (requesterRole === 1) {
+      const admins = await this.databaseService.uSUARIOS.findMany({
+        where: { id_rol: 2, activo: true },
+        select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true, email: true, celular: true },
+      });
+
+      const result = await Promise.all(
+        admins.map(async (admin) => {
+          const tokens = await this.databaseService.tOKEN_REGISTRO.findMany({
+            where: {
+              id_usuario_creador: admin.id_usuario,
+              es_usado: true,
+              id_rol_nuevo_usuario: 4,
+              id_usuario_nuevo: { not: null },
+            },
+            select: { id_usuario_nuevo: true },
+          });
+          const logisticaIds = tokens
+            .map((t) => t.id_usuario_nuevo)
+            .filter(Boolean) as number[];
+
+          let usuariosLogistica: any[] = [];
+          if (logisticaIds.length > 0) {
+            usuariosLogistica = await this.databaseService.uSUARIOS.findMany({
+              where: { id_usuario: { in: logisticaIds }, activo: true },
+              select: {
+                id_usuario: true,
+                nombre_usuario: true,
+                apellido_usuario: true,
+                email: true,
+                celular: true,
+                logisticas: { select: { id_logistica: true, nombre_empresa: true, placa_vehiculo: true } },
+              },
+            });
+          }
+
+          return {
+            admin: {
+              id_usuario: admin.id_usuario,
+              nombre_usuario: admin.nombre_usuario,
+              apellido_usuario: admin.apellido_usuario,
+              email: admin.email,
+              celular: admin.celular,
+            },
+            logisticas: usuariosLogistica.map((u) => ({
+              id_usuario: u.id_usuario,
+              nombre_usuario: u.nombre_usuario,
+              apellido_usuario: u.apellido_usuario,
+              email: u.email,
+              celular: u.celular,
+              empresas: u.logisticas.map((l: any) => ({
+                id_logistica: l.id_logistica,
+                nombre_empresa: l.nombre_empresa,
+                placa_vehiculo: l.placa_vehiculo,
+              })),
+            })),
+          };
+        }),
+      );
+
+      return { admins: result };
+    }
+
     const hermanos = await this.databaseService.uSUARIOS.findMany({
       where: {
         id_usuario: { in: accessibleUserIds },
@@ -819,156 +882,196 @@ export class LogisticaService {
     };
   }
 
-  async getResumenFinanciero(idUsuarioLogistica: number, idRol: number, dto: ResumenFinancieroDto) {
+  async getFinanzas(dto: FinanzasDto) {
+    const { mes: mesParam, ano: anoParam, id_usuario } = dto;
+
     const ahora = new Date();
-    const mes = dto.mes || (ahora.getMonth() + 1);
-    const ano = dto.ano || ahora.getFullYear();
+    const mes = mesParam || (ahora.getMonth() + 1);
+    const ano = anoParam || ahora.getFullYear();
     const fechaInicio = new Date(ano, mes - 1, 1);
     const fechaFin = new Date(ano, mes, 0, 23, 59, 59, 999);
 
-    const usuarioLogistica = await this.databaseService.uSUARIOS.findUnique({
-      where: { id_usuario: idUsuarioLogistica },
-      select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true, id_rol: true },
+    const usuario = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario },
+      select: {
+        id_usuario: true,
+        nombre_usuario: true,
+        apellido_usuario: true,
+        id_rol: true,
+        fecha_creacion: true,
+      },
     });
 
-    if (!usuarioLogistica || usuarioLogistica.id_rol !== 4) {
+    if (!usuario || usuario.id_rol !== 4) {
       throw new BadRequestException('Usuario logística no encontrado');
     }
 
-    const adminPadre = await this.databaseService.tOKEN_REGISTRO.findFirst({
-      where: { id_usuario_nuevo: idUsuarioLogistica, id_rol_nuevo_usuario: 4 },
-      select: {
-        creador: {
-          select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true, id_rol: true },
-        },
-      },
-    });
+    const whereBase: any = {
+      id_usuario,
+    };
 
-    const adminId = adminPadre?.creador?.id_usuario ?? null;
-    const adminNombre = adminPadre?.creador
-      ? `${adminPadre.creador.nombre_usuario} ${adminPadre.creador.apellido_usuario}`
-      : 'Admin no encontrado';
+    const esMesActual = mes === (ahora.getMonth() + 1) && ano === ahora.getFullYear();
 
-    const todasLasTransacciones: any[] = [];
+    if (esMesActual) {
+      whereBase.OR = [
+        { hora_transaccion: { gte: fechaInicio, lte: fechaFin } },
+        { estado_transaccion: 1 },
+      ];
+    } else {
+      whereBase.hora_transaccion = { gte: fechaInicio, lte: fechaFin };
+    }
 
-    const transaccionesLogistica = await this.databaseService.tRANSACCIONES.findMany({
-      where: {
-        id_usuario: idUsuarioLogistica,
-        id_tipo_transaccion: { in: [4, 5] },
-        hora_transaccion: { gte: fechaInicio, lte: fechaFin },
-      },
+    const transaccionesBase = await this.databaseService.tRANSACCIONES.findMany({
+      where: whereBase,
       include: {
-        estadoTransaccion: { select: { id_estado_transaccion: true, nombre_estado: true } },
-        tipoTransaccion: { select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true } },
+        estadoTransaccion: {
+          select: { id_estado_transaccion: true, nombre_estado: true },
+        },
+        tipoTransaccion: {
+          select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true },
+        },
+        empaque: {
+          select: { id_empaque: true, EPC_id: true },
+        },
         transaccionRel: {
           select: {
             id_transaccion: true,
             nota_opcional: true,
-            monto: true,
-            usuario: { select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true, id_rol: true } },
+            usuario: {
+              select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true },
+            },
           },
         },
       },
       orderBy: { hora_transaccion: 'desc' },
     });
 
-    todasLasTransacciones.push(...transaccionesLogistica);
+    const todasLasTransacciones = [...transaccionesBase];
+    const idsBaseSet = new Set(transaccionesBase.map(t => t.id_transaccion));
 
-    if (adminId) {
-      const transaccionesAdminVinculadas = await this.databaseService.tRANSACCIONES.findMany({
+    const idsForward = transaccionesBase
+      .map(t => t.id_transaccion_rel)
+      .filter(id => id !== null && !idsBaseSet.has(id as number)) as number[];
+
+    if (idsForward.length > 0) {
+      const transaccionesForward = await this.databaseService.tRANSACCIONES.findMany({
         where: {
-          id_usuario: adminId,
-          id_tipo_transaccion: { in: [4, 5] },
-          hora_transaccion: { gte: fechaInicio, lte: fechaFin },
-          transaccionRel: { id_usuario: idUsuarioLogistica },
+          id_usuario,
+          id_transaccion: { in: idsForward },
         },
         include: {
-          estadoTransaccion: { select: { id_estado_transaccion: true, nombre_estado: true } },
-          tipoTransaccion: { select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true } },
+          estadoTransaccion: {
+            select: { id_estado_transaccion: true, nombre_estado: true },
+          },
+          tipoTransaccion: {
+            select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true },
+          },
+          empaque: {
+            select: { id_empaque: true, EPC_id: true },
+          },
           transaccionRel: {
             select: {
               id_transaccion: true,
               nota_opcional: true,
-              monto: true,
-              usuario: { select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true, id_rol: true } },
+              usuario: {
+                select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true },
+              },
             },
           },
         },
         orderBy: { hora_transaccion: 'desc' },
       });
 
-      const idsExistentes = new Set(todasLasTransacciones.map(t => t.id_transaccion));
-      for (const tx of transaccionesAdminVinculadas) {
-        if (!idsExistentes.has(tx.id_transaccion)) {
-          todasLasTransacciones.push(tx);
+      for (const t of transaccionesForward) {
+        if (!idsBaseSet.has(t.id_transaccion)) {
+          todasLasTransacciones.push(t);
+          idsBaseSet.add(t.id_transaccion);
         }
       }
     }
 
-    todasLasTransacciones.sort(
-      (a, b) => new Date(b.hora_transaccion).getTime() - new Date(a.hora_transaccion).getTime(),
-    );
+    if (todasLasTransacciones.length > 0) {
+      const idsCombinados = todasLasTransacciones.map(t => t.id_transaccion);
+      const idsCombinadosSet = new Set(idsCombinados);
 
-    let totalIngresos = 0;
-    let totalEgresos = 0;
-
-    const transaccionesFormateadas = todasLasTransacciones.map(tx => {
-      const monto = parseFloat(tx.monto.toString());
-      const tipo = tx.tipoTransaccion.nombre_codigo;
-      const esUsuarioLogistica = tx.id_usuario === idUsuarioLogistica;
-
-      if (esUsuarioLogistica) {
-        if (tipo === 'dinero_recibido' && monto > 0) totalIngresos += monto;
-        if (tipo === 'dinero_entregado' && monto < 0) totalEgresos += Math.abs(monto);
-      }
-
-      const usuarioRelacionado = tx.transaccionRel?.usuario
-        ? {
-            id_usuario: tx.transaccionRel.usuario.id_usuario,
-            nombre_completo: `${tx.transaccionRel.usuario.nombre_usuario} ${tx.transaccionRel.usuario.apellido_usuario}`,
-            id_rol: tx.transaccionRel.usuario.id_rol,
-          }
-        : null;
-
-      return {
-        id_transaccion: tx.id_transaccion,
-        id_empaque: tx.id_empaque,
-        id_transaccion_rel: tx.id_transaccion_rel,
-        monto,
-        hora_transaccion: tx.hora_transaccion,
-        nombre_tipo_transaccion: tipo,
-        nombre_estado_transaccion: tx.estadoTransaccion.nombre_estado,
-        nota_opcional: tx.nota_opcional,
-        usuario_relacionado: usuarioRelacionado,
-      };
-    });
-
-    const balanceNetoPeriodo = totalIngresos - totalEgresos;
-
-    let balanceAcumuladoHistorico = 0;
-    if (adminId) {
-      const todasHistoricasLogistica = await this.databaseService.tRANSACCIONES.findMany({
-        where: { id_usuario: idUsuarioLogistica, id_tipo_transaccion: { in: [4, 5] } },
-        select: { monto: true, id_tipo_transaccion: true },
+      const transaccionesReferenciadas = await this.databaseService.tRANSACCIONES.findMany({
+        where: {
+          id_usuario,
+          id_transaccion_rel: { in: idsCombinados },
+          id_transaccion: { notIn: idsCombinados },
+        },
+        include: {
+          estadoTransaccion: {
+            select: { id_estado_transaccion: true, nombre_estado: true },
+          },
+          tipoTransaccion: {
+            select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true },
+          },
+          empaque: {
+            select: { id_empaque: true, EPC_id: true },
+          },
+          transaccionRel: {
+            select: {
+              id_transaccion: true,
+              nota_opcional: true,
+              usuario: {
+                select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true },
+              },
+            },
+          },
+        },
+        orderBy: { hora_transaccion: 'desc' },
       });
 
-      for (const tx of todasHistoricasLogistica) {
-        const m = parseFloat(tx.monto.toString());
-        if (tx.id_tipo_transaccion === 4 && m > 0) balanceAcumuladoHistorico += m;
-        if (tx.id_tipo_transaccion === 5 && m < 0) balanceAcumuladoHistorico -= Math.abs(m);
+      for (const t of transaccionesReferenciadas) {
+        if (!idsCombinadosSet.has(t.id_transaccion)) {
+          todasLasTransacciones.push(t);
+        }
       }
     }
 
+    todasLasTransacciones.sort((a, b) =>
+      new Date(b.hora_transaccion).getTime() - new Date(a.hora_transaccion).getTime(),
+    );
+
+    const transacciones = todasLasTransacciones;
+
+    const transaccionesFormateadas = transacciones.map(transaccion => {
+      const infoPago = (transaccion.id_empaque === null && transaccion.transaccionRel) ? {
+        id_usuario_pago: transaccion.transaccionRel.usuario.id_usuario,
+        nombre_usuario_pago: `${transaccion.transaccionRel.usuario.nombre_usuario} ${transaccion.transaccionRel.usuario.apellido_usuario}`,
+        nota_opcional_pago: transaccion.transaccionRel.nota_opcional,
+      } : null;
+
+      return {
+        id_transaccion: transaccion.id_transaccion,
+        id_empaque: transaccion.id_empaque,
+        id_transaccion_rel: transaccion.id_transaccion_rel,
+        monto: parseFloat(transaccion.monto.toString()),
+        hora_transaccion: transaccion.hora_transaccion,
+        nombre_tipo_transaccion: transaccion.tipoTransaccion.nombre_codigo,
+        nombre_estado_transaccion: transaccion.estadoTransaccion.nombre_estado,
+        nota_opcional: transaccion.nota_opcional,
+        ...(infoPago && { info_pago: infoPago }),
+      };
+    });
+
     return {
-      periodo: { mes, ano },
-      admin: { id_usuario: adminId, nombre_completo: adminNombre },
-      resumen: {
-        total_ingresos: totalIngresos,
-        total_egresos: totalEgresos,
-        balance_neto_periodo: balanceNetoPeriodo,
-        balance_acumulado_historico: balanceAcumuladoHistorico,
-      },
       transacciones: transaccionesFormateadas,
+      fecha_creacion_usuario: usuario.fecha_creacion,
+      nombre_usuario: usuario.nombre_usuario,
+      apellido_usuario: usuario.apellido_usuario,
+      periodo: { mes, ano },
+      fecha_inicio_periodo: fechaInicio,
+      fecha_fin_periodo: fechaFin,
+      total_transacciones: transacciones.length,
+      parametros_usados: {
+        mes_pedido: mesParam || null,
+        ano_pedido: anoParam || null,
+        mes_devuelto: mes,
+        ano_devuelto: ano,
+        es_periodo_actual: mes === (ahora.getMonth() + 1) && ano === ahora.getFullYear(),
+      },
     };
   }
 
@@ -1292,7 +1395,9 @@ export class LogisticaService {
       id_nevera: idNevera,
     };
 
-    if (!mesParam) {
+    const esMesActual = mes === (now.getMonth() + 1) && año === now.getFullYear();
+
+    if (esMesActual) {
       whereBaseNevera.OR = [
         { hora_transaccion: { gte: fechaInicio, lte: fechaFin } },
         { estado_transaccion: 1 },

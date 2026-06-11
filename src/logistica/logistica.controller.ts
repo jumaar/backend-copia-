@@ -5,7 +5,7 @@ import { ConsolidacionCuentasDto } from './dto/consolidacion-cuentas.dto';
 import { LiquidacionNeveraDto } from './dto/liquidacion-nevera.dto';
 import { DecincoaseisDto } from './dto/decincoaseis.dto';
 import { SeisasieteDto } from './dto/seisasiete.dto';
-import { ResumenFinancieroDto } from './dto/resumen-financiero.dto';
+import { FinanzasDto } from './dto/finanzas.dto';
 import { ConsolidarAdminDto } from './dto/consolidar-admin.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -42,21 +42,16 @@ export class LogisticaController {
     return this.logisticaService.getCuentasTransacciones(cuentasDto);
   }
 
-  @Get('resumen-financiero')
-  @Roles(2, 4)
-  getResumenFinanciero(
-    @Query() dto: ResumenFinancieroDto,
-    @Req() req: any,
-  ) {
-    const id_usuario = req.user.id_usuario;
-    const id_rol = req.user.roleId;
-    const idLogisticaTarget = dto.id_logistica ?? id_usuario;
-    return this.logisticaService.getResumenFinanciero(idLogisticaTarget, id_rol, dto);
+  @Get('finanzas')
+  @Roles(1, 2, 4)
+  getFinanzas(@Query() dto: FinanzasDto, @Req() req: any) {
+    const idUsuario = dto.id_usuario ?? req.user.id_usuario;
+    return this.logisticaService.getFinanzas({ ...dto, id_usuario: idUsuario });
   }
 
   @Get('hermanos')
   @UseGuards(HerenciaGuard)
-  @Roles(2, 4)
+  @Roles(1, 2, 4)
   @Herencia({ tipo: 'resolver', scope: 'descendientes', entidad: 'usuario' })
   getHermanosLogistica(@Req() req: any) {
     return this.logisticaService.getHermanosLogisticaPorScope(req.user.id_usuario, req.user.roleId, req.accessibleUserIds);
