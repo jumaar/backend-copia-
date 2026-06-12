@@ -12,7 +12,7 @@ export class ConsolidarAdminDto {
   nota_opcional?: string;
 
   @IsString()
-  @IsIn(['ingreso', 'consolidacion'])
+  @IsIn(['ingreso', 'consolidacion', 'egreso'])
   tipo_movimiento: string;
 
   @IsOptional()

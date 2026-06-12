@@ -1185,44 +1185,53 @@ export class LogisticaService {
       throw new BadRequestException('Rol no autorizado para esta operación');
     }
 
-    const esIngreso = tipo_movimiento === 'ingreso';
+    const esTransferencia = tipo_movimiento === 'ingreso' || tipo_movimiento === 'egreso';
+    const esConsolidacion = tipo_movimiento === 'consolidacion';
 
-    // Validar que cada rol use solo su tipo de movimiento
-    if (idRol === 2 && !esIngreso) {
-      throw new BadRequestException('El admin solo puede registrar ingresos (tipo_movimiento: "ingreso")');
-    }
-    if (idRol === 4 && esIngreso) {
-      throw new BadRequestException('El logístico solo puede consolidar (tipo_movimiento: "consolidacion")');
-    }
+    if (idRol === 4 && esConsolidacion) {
+      // validación abajo, después de este bloque
+    } else if (esTransferencia) {
+      const esPagadorAdmin = idRol === 2;
+      const idPagador = esPagadorAdmin ? idUsuarioAdmin : idUsuarioLogistica;
+      const idReceptor = esPagadorAdmin ? idUsuarioLogistica : idUsuarioAdmin;
+      const nombrePagador = esPagadorAdmin ? nombreAdmin : nombreLogistica;
+      const nombreReceptor = esPagadorAdmin ? nombreLogistica : nombreAdmin;
 
-    if (esIngreso) {
-      const nLog = nota_opcional
-        ? `Ingreso del admin (${nombreAdmin}) - ${nota_opcional}`
-        : `Ingreso del admin (${nombreAdmin})`;
-      const nAdm = nota_opcional
-        ? `Entrega a logística (${nombreLogistica}) - ${nota_opcional}`
-        : `Entrega a logística (${nombreLogistica})`;
+      const nReceptor = nota_opcional
+        ? `Egreso de ${nombrePagador} - ${nota_opcional}`
+        : `Egreso de ${nombrePagador}`;
+      const nPagador = nota_opcional
+        ? `Entrega a ${nombreReceptor} - ${nota_opcional}`
+        : `Entrega a ${nombreReceptor}`;
 
       try {
         const r = await this.transaccionesService.transferenciaDirecta({
-          idUsuarioPagador: idUsuarioAdmin,
-          idUsuarioReceptor: idUsuarioLogistica,
+          idUsuarioPagador: idPagador,
+          idUsuarioReceptor: idReceptor,
           monto,
-          notaOpcional: nLog,
-          notaReceptorOpcional: nLog,
-          notaPagadorOpcional: nAdm,
+          notaOpcional: nReceptor,
+          notaReceptorOpcional: nReceptor,
+          notaPagadorOpcional: nPagador,
         });
 
         return {
-          mensaje: 'Ingreso del admin registrado exitosamente', tipo_movimiento, monto,
-          logistica: { id_usuario: idUsuarioLogistica, nombre_completo: nombreLogistica },
-          admin: { id_usuario: idUsuarioAdmin, nombre_completo: nombreAdmin },
-          transaccion_logistica: { id: r.idTransaccionReceptor, tipo: 'dinero_recibido', monto },
-          transaccion_admin:     { id: r.idTransaccionPagador, tipo: 'dinero_entregado', monto: -monto },
+          mensaje: 'Egreso registrado exitosamente', tipo_movimiento, monto,
+          pagador: { id_usuario: idPagador, tipo: 'dinero_entregado', monto: -monto, id_transaccion: r.idTransaccionPagador },
+          receptor: { id_usuario: idReceptor, tipo: 'dinero_recibido', monto, id_transaccion: r.idTransaccionReceptor },
         };
       } catch (error) {
-        throw new BadRequestException(`Error al registrar ingreso: ${error instanceof Error ? error.message : String(error)}`);
+        throw new BadRequestException(
+          `Error al registrar egreso: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
+    } else {
+      throw new BadRequestException(
+        'tipo_movimiento inválido. Usa "ingreso", "egreso" o "consolidacion".',
+      );
+    }
+
+    if (!esConsolidacion) {
+      return; // unreachable, pero TypeScript necesita saberlo
     }
 
     const pendientesLogistica = await this.transaccionesService.getPendientes({
@@ -1230,9 +1239,30 @@ export class LogisticaService {
     });
 
     const todosIds = pendientesLogistica.map(t => t.id_transaccion);
+    const sumaPendientes = Math.round(
+      pendientesLogistica.reduce((sum, t) => sum + parseFloat(t.monto.toString()), 0),
+    );
 
     if (todosIds.length === 0) {
-      throw new BadRequestException('No hay transacciones pendientes del usuario logística. Usa tipo_movimiento: "ingreso" para transferencia directa.');
+      throw new BadRequestException(
+        'No hay transacciones pendientes del usuario logística. ' +
+        'Usa tipo_movimiento: "egreso" para transferencia directa.',
+      );
+    }
+
+    if (sumaPendientes < 0) {
+      throw new BadRequestException(
+        `El saldo pendiente es negativo (${sumaPendientes}). ` +
+        'La empresa te debe dinero. Para prestar más dinero a la empresa, ' +
+        'usa tipo_movimiento: "egreso" (transferencia directa, ambas en estado 1).',
+      );
+    }
+
+    if (monto === 0 && sumaPendientes !== 0) {
+      throw new BadRequestException(
+        `No se puede consolidar con monto 0 porque hay ${sumaPendientes} en transacciones pendientes. ` +
+        'Para cerrar sin mover dinero, la suma de las pendientes debe ser 0.',
+      );
     }
 
     try {
@@ -1244,8 +1274,10 @@ export class LogisticaService {
         idTipoTransaccionSaldo: 4,
         idTipoTransaccionSaldoNegativo: 5,
         notaOpcional: nota_opcional
-          ? `Consolidación logística (${nombreLogistica}) - ${nota_opcional}`
-          : `Consolidación logística (${nombreLogistica})`,
+          ? `${nota_opcional} - ${monto === 0 ? 'Cierre de caja (saldo neto 0)' : `Consolidación logística (${nombreLogistica})`}`
+          : monto === 0
+            ? 'Cierre de caja — transacciones pendientes con saldo neto 0'
+            : `Consolidación logística (${nombreLogistica})`,
       });
 
       return {
@@ -1797,6 +1829,12 @@ export class LogisticaService {
         (sum, t) => sum + parseFloat(t.monto.toString()), 0,
       );
 
+      if (monto <= 0) {
+        throw new BadRequestException(
+          'Al liquidar empaques el monto debe ser mayor a 0.',
+        );
+      }
+
       totalLiquidar += montoPendientesPrevias;
       totalLiquidar = Math.round(totalLiquidar);
 
@@ -1821,6 +1859,12 @@ export class LogisticaService {
     });
 
     if (transaccionesPendientes.length === 0) {
+      if (monto <= 0) {
+        throw new BadRequestException(
+          'No hay transacciones pendientes. El monto debe ser mayor a 0.',
+        );
+      }
+
       const montoAdelanto = Math.abs(monto);
       const notaPago = `Cobrado por: ${nombreLogistico} (ID: ${idUsuarioLogistico}) | Nota: adelanto de $${montoAdelanto.toLocaleString('es-CO')} hecho por el usuario tienda (ID: ${idUsuarioTienda}) | #NEVERA:${idNevera}`;
 
@@ -1854,6 +1898,17 @@ export class LogisticaService {
     }
 
     const idsTransaccionesPendientes = transaccionesPendientes.map(t => t.id_transaccion);
+
+    const montoTotalPendientes = transaccionesPendientes.reduce(
+      (sum, t) => sum + parseFloat(t.monto.toString()),
+      0,
+    );
+
+    if (monto === 0 && Math.round(montoTotalPendientes) !== 0) {
+      throw new BadRequestException(
+        'No se puede liquidar con monto 0 si la suma de transacciones pendientes es diferente de 0.',
+      );
+    }
 
     try {
       const notaPago = `Cobrado por: ${nombreLogistico} (ID: ${idUsuarioLogistico}) | Nota: abono de $${monto.toLocaleString('es-CO')} hecho por el usuario tienda (ID: ${idUsuarioTienda}) | #NEVERA:${idNevera}`;
