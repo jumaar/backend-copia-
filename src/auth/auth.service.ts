@@ -31,7 +31,7 @@ export class AuthService {
     const { email, password, turnstileToken } = loginDto;
 
     if (turnstileToken) {
-      const isValidTurnstile = await this.turnstileService.verifyToken(turnstileToken);
+    const isValidTurnstile = await this.turnstileService.verifyToken(turnstileToken ?? '');
       if (!isValidTurnstile) {
         throw new BadRequestException('Verificación de seguridad fallida. Por favor, intenta de nuevo.');
       }
@@ -98,7 +98,7 @@ export class AuthService {
 
     // 1. Validar tokens (Turnstile y de Registro)
     const token = await this.registrationTokensService.validateToken(registrationToken);
-    const isValidTurnstile = await this.turnstileService.verifyToken(turnstileToken);
+    const isValidTurnstile = await this.turnstileService.verifyToken(turnstileToken ?? '');
     if (!isValidTurnstile) {
       throw new BadRequestException('Verificación de seguridad fallida. Por favor, intenta de nuevo.');
     }

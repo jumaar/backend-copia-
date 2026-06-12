@@ -365,10 +365,14 @@ export class LogisticaService {
   async getCuentasTransacciones(cuentasDto: CuentasDto) {
     const { mes: mesParam, año: añoParam, id_usuario } = cuentasDto;
     
-    // Si no se proporcionan mes/año, usar el último mes en vigencia (mes actual)
     const ahora = new Date();
-    const mes = mesParam || (ahora.getMonth() + 1); // getMonth() devuelve 0-11, sumamos 1
-    const año = añoParam || ahora.getFullYear();
+    const mesActual = ahora.getMonth() + 1;
+    const añoActual = ahora.getFullYear();
+    
+    // Si no se proporcionan mes/año, usar el mes actual
+    const mes = mesParam || mesActual;
+    const año = añoParam || añoActual;
+    const esPeriodoActual = mes === mesActual && año === añoActual;
     
     // Calcular el primer y último día del mes especificado
     const fechaInicio = new Date(año, mes - 1, 1);
@@ -400,7 +404,7 @@ export class LogisticaService {
       id_usuario: id_usuario,
     };
 
-    if (!mesParam) {
+    if (esPeriodoActual) {
       whereBase.OR = [
         { hora_transaccion: { gte: fechaInicio, lte: fechaFin } },
         { estado_transaccion: 1 },
@@ -570,7 +574,7 @@ export class LogisticaService {
         año_pedido: añoParam || null,
         mes_devuelto: mes,
         año_devuelto: año,
-        es_periodo_actual: !mesParam && !añoParam
+        es_periodo_actual: esPeriodoActual
       }
     };
   }
@@ -711,6 +715,12 @@ export class LogisticaService {
       idUsuario: id_usuario_consolidar,
     });
 
+    if (monto === 0 && transaccionesPendientes.length === 0) {
+      throw new BadRequestException(
+        'No se puede realizar una consolidación con monto 0 si no hay transacciones pendientes.',
+      );
+    }
+
     if (transaccionesPendientes.length === 0) {
       try {
         const notaConMonto = nota_opcional
@@ -751,8 +761,10 @@ export class LogisticaService {
         idUsuarioTicket: id_usuario_consolidar,
         idUsuarioPagador: id_usuario_credenciales,
         notaOpcional: nota_opcional
-          ? `${nota_opcional} - Monto abonado: ${monto}`
-          : `Monto abonado: ${monto}`,
+          ? `${nota_opcional} - ${monto === 0 ? 'Cierre de caja (saldo neto 0)' : `Monto abonado: ${monto}`}`
+          : monto === 0
+            ? 'Cierre de caja — transacciones pendientes con saldo neto 0'
+            : `Monto abonado: ${monto}`,
       });
 
       return {
@@ -906,6 +918,17 @@ export class LogisticaService {
       throw new BadRequestException('Usuario logística no encontrado');
     }
 
+    const adminPadre = await this.databaseService.tOKEN_REGISTRO.findFirst({
+      where: { id_usuario_nuevo: id_usuario, id_rol_nuevo_usuario: 4 },
+      select: {
+        creador: {
+          select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true },
+        },
+      },
+    });
+
+    const admin = adminPadre?.creador ?? null;
+
     const whereBase: any = {
       id_usuario,
     };
@@ -1057,6 +1080,7 @@ export class LogisticaService {
     });
 
     return {
+      admin,
       transacciones: transaccionesFormateadas,
       fecha_creacion_usuario: usuario.fecha_creacion,
       nombre_usuario: usuario.nombre_usuario,
@@ -1554,7 +1578,7 @@ export class LogisticaService {
         año_pedido: añoParam || null,
         mes_devuelto: mes,
         año_devuelto: año,
-        es_periodo_actual: !mesParam && !añoParam,
+        es_periodo_actual: esMesActual,
       },
     };
   }
