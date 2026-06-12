@@ -36,8 +36,8 @@ export class CreateUserDto {
   password: string;
 
   @IsString()
-  @IsNotEmpty({ message: 'El token de Turnstile no puede estar vacío' })
-  turnstileToken: string;
+  @IsOptional()
+  turnstileToken?: string;
 
   @IsString()
   @IsNotEmpty({ message: 'El token de registro no puede estar vacío' })

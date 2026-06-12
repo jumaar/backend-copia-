@@ -7,6 +7,11 @@ export class TurnstileService {
   constructor(private configService: ConfigService) {}
 
   async verifyToken(token: string): Promise<boolean> {
+    const enabled = this.configService.get<string>('TURNSTILE_ENABLED');
+    if (enabled !== 'true') {
+      return true;
+    }
+
     try {
       const secretKey = this.configService.get<string>('TURNSTILE_SECRET_KEY');
 
