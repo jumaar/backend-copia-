@@ -1878,18 +1878,10 @@ export class LogisticaService {
         });
 
         return {
-          message: 'Adelanto registrado exitosamente',
-          resumen: {
-            nevera: { id_nevera: idNevera, nombre_tienda: nevera.tienda.nombre_tienda },
-            usuario_tienda: idUsuarioTienda,
-            usuario_logistico: idUsuarioLogistico,
-            monto_adelantado: montoAdelanto,
-          },
-          transacciones: {
-            id_transaccion_receptor: r.idTransaccionReceptor,
-            id_transaccion_pagador: r.idTransaccionPagador,
-            monto_adelantado: montoAdelanto,
-          },
+          message: `Adelanto recibido: $${montoAdelanto.toLocaleString('es-CO')}`,
+          id_transaccion_receptor: r.idTransaccionReceptor,
+          id_transaccion_pagador: r.idTransaccionPagador,
+          monto: montoAdelanto,
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1925,27 +1917,12 @@ export class LogisticaService {
       });
 
       return {
-        message: 'Consolidación de pendientes realizada exitosamente',
-        resumen: {
-          nevera: { id_nevera: idNevera, nombre_tienda: nevera.tienda.nombre_tienda },
-          usuario_tienda: idUsuarioTienda,
-          usuario_logistico: idUsuarioLogistico,
-          total_pendiente_consolidado: resultado.montoConsolidado,
-          monto_recibido: monto,
-          saldo_pendiente: resultado.saldo?.monto ?? 0,
-          transacciones_pendientes_procesadas: resultado.pendientesProcesadas,
-        },
-        detalle_pendientes: transaccionesPendientes.map(t => ({
-          id_transaccion_pendiente: t.id_transaccion,
-          monto_pendiente: parseFloat(t.monto.toString()),
-        })),
-        transacciones: {
-          id_transaccion_consolidada: resultado.idTicket,
-          id_transaccion_pago: resultado.idPagoReceptor,
-          total_pendiente_consolidado: resultado.montoConsolidado,
-          monto_recibido: monto,
-          saldo_pendiente: resultado.saldo?.monto ?? 0,
-        },
+        message: `Pago consolidado: $${monto.toLocaleString('es-CO')}${resultado.saldo?.monto ? ` (saldo pendiente: $${resultado.saldo.monto})` : ''}`,
+        id_ticket: resultado.idTicket,
+        monto_consolidado: resultado.montoConsolidado,
+        monto_recibido: monto,
+        saldo_pendiente: resultado.saldo?.monto ?? 0,
+        pendientes_procesadas: resultado.pendientesProcesadas,
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -2208,18 +2185,12 @@ export class LogisticaService {
       });
 
       return {
-        message: 'Liquidación de nevera realizada exitosamente',
-        resumen: {
-          nevera: { id_nevera: idNevera, nombre_tienda: nombreTienda },
-          usuario_tienda: idUsuarioTienda,
-          usuario_logistico: idUsuarioLogistico,
-          total_liquidado: totalLiquidar,
-          monto_recibido: monto,
-          saldo_pendiente: resultado.saldo_pendiente,
-          empaques_procesados: detallesCalculo.length,
-        },
-        detalle_calculo: detallesCalculo,
-        transacciones: resultado,
+        message: `Liquidación: $${monto.toLocaleString('es-CO')}${resultado.saldo_pendiente ? ` (saldo pendiente: $${resultado.saldo_pendiente})` : ''}`,
+        id_ticket: resultado.id_transaccion_consolidada,
+        total_liquidado: totalLiquidar,
+        monto_recibido: monto,
+        saldo_pendiente: resultado.saldo_pendiente,
+        empaques: detallesCalculo.length,
       };
 
     } catch (error) {
