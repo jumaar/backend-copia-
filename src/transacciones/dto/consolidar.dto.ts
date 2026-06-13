@@ -17,6 +17,12 @@ export interface ConsolidarParams {
 
   notaReceptorOpcional?: string;
 
+  notaPagadorOpcional?: string;
+
+  notaSaldoPendiente?: string;
+
+  notaSaldoAFavor?: string;
+
   idNevera?: number;
 
   idTipoTransaccionSaldo?: number;

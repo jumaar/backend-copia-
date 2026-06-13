@@ -79,6 +79,9 @@ export class TransaccionesService {
       idTipoTransaccionSaldo?: number;
       idTipoTransaccionSaldoNegativo?: number;
       notaReceptorOpcional?: string;
+      notaPagadorOpcional?: string;
+      notaSaldoPendiente?: string;
+      notaSaldoAFavor?: string;
     },
   ): Promise<ConsolidarResultado> {
     const {
@@ -94,6 +97,9 @@ export class TransaccionesService {
       idTipoTransaccionSaldo = TIPO_COSTO_FRIGORIFICO,
       idTipoTransaccionSaldoNegativo,
       notaReceptorOpcional,
+      notaPagadorOpcional,
+      notaSaldoPendiente,
+      notaSaldoAFavor,
     } = params;
 
     const esCompleto = montoPagado === montoConsolidado;
@@ -147,7 +153,7 @@ export class TransaccionesService {
         monto: -montoPagado,
         id_tipo_transaccion: TIPO_DINERO_ENTREGADO,
         estado_transaccion: ESTADO_PENDIENTE,
-        nota_opcional: notaOpcional,
+        nota_opcional: notaPagadorOpcional ?? notaOpcional,
         id_nevera: idNevera,
       });
     }
@@ -189,9 +195,9 @@ export class TransaccionesService {
           id_tipo_transaccion: saldo < 0
             ? (idTipoTransaccionSaldoNegativo ?? idTipoTransaccionSaldo)
             : idTipoTransaccionSaldo,
-          nota_opcional: `Saldo ${
-            esSaldoAFavor ? 'a favor del usuario' : 'pendiente'
-          } consolidación #${ticket.id_transaccion}`,
+          nota_opcional: esSaldoAFavor
+            ? `${notaSaldoAFavor ?? 'Saldo a favor del usuario'} consolidación #${ticket.id_transaccion}`
+            : `${notaSaldoPendiente ?? 'Saldo pendiente'} consolidación #${ticket.id_transaccion}`,
           estado_transaccion: ESTADO_PENDIENTE,
           id_nevera: idNevera ?? null,
         },
@@ -227,6 +233,9 @@ export class TransaccionesService {
       idTipoTransaccionSaldo = TIPO_COSTO_FRIGORIFICO,
       idTipoTransaccionSaldoNegativo,
       notaReceptorOpcional,
+      notaPagadorOpcional,
+      notaSaldoPendiente,
+      notaSaldoAFavor,
     } = params;
 
     if (!idUsuarioPagador && !idUsuarioReceptor) {
@@ -277,6 +286,9 @@ export class TransaccionesService {
         idTipoTransaccionSaldo,
         idTipoTransaccionSaldoNegativo,
         notaReceptorOpcional,
+        notaPagadorOpcional,
+        notaSaldoPendiente,
+        notaSaldoAFavor,
       });
     });
   }

@@ -797,6 +797,7 @@ export class LogisticaService {
       const notaTicket = monto === 0
         ? `Cierre de caja frigorífico (saldo neto 0)${nota_opcional ? ' | ' + nota_opcional : ''}`
         : `Consolidación con abono de $${monto.toLocaleString('es-CO')} a frigorífico${nota_opcional ? ' | ' + nota_opcional : ''}`;
+      const notaPagador = `Adelanto a frigorífico${nota_opcional ? ' | ' + nota_opcional : ''}`;
 
       await this.transaccionesService.consolidar({
         idsPendientes,
@@ -804,6 +805,8 @@ export class LogisticaService {
         idUsuarioTicket: id_usuario_consolidar,
         idUsuarioPagador: id_usuario_credenciales,
         notaOpcional: notaTicket,
+        notaPagadorOpcional: notaPagador,
+        notaSaldoAFavor: 'Saldo adelantado pendiente | ',
       });
 
       return {
@@ -2060,6 +2063,7 @@ export class LogisticaService {
         idTipoTransaccionSaldoNegativo: 5,
         notaOpcional: notaTicket,
         notaReceptorOpcional: notaReceptor,
+        notaSaldoPendiente: 'Saldo pendiente por liquidar | ',
         idNevera,
       });
 
@@ -2290,6 +2294,7 @@ export class LogisticaService {
           idNevera,
           notaOpcional: notaTicket,
           notaReceptorOpcional: notaReceptor,
+          notaSaldoPendiente: 'Saldo pendiente por liquidar | ',
         });
 
         const transaccionesEmpaques: any[] = [];
