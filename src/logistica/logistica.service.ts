@@ -516,14 +516,75 @@ export class LogisticaService {
       t => !new Set(consolidadosPosteriores.map(c => c.id_transaccion)).has(t.id_transaccion)
     );
 
+    const idsConsolidadasParaPago = [
+      ...transacciones
+        .filter(t =>
+          t.id_empaque === null &&
+          t.tipoTransaccion.nombre_codigo !== 'ticket_consolidado' &&
+          t.estadoTransaccion.id_estado_transaccion === 2,
+        )
+        .map(t => t.id_transaccion),
+      ...consolidadosPosteriores.map(c => c.id_transaccion),
+    ];
+
+    const mapaInfoPago = new Map<number, { id_usuario_pago: number; nombre_usuario_pago: string; nota_opcional_pago: string | null }>();
+
+    if (idsConsolidadasParaPago.length > 0) {
+      const contrapartes = await this.databaseService.tRANSACCIONES.findMany({
+        where: {
+          id_transaccion_rel: { in: idsConsolidadasParaPago },
+          id_usuario: { not: id_usuario },
+        },
+        select: {
+          id_transaccion_rel: true,
+          id_usuario: true,
+          nota_opcional: true,
+          usuario: {
+            select: { nombre_usuario: true, apellido_usuario: true },
+          },
+        },
+      });
+
+      for (const c of contrapartes) {
+        if (c.id_transaccion_rel && !mapaInfoPago.has(c.id_transaccion_rel)) {
+          mapaInfoPago.set(c.id_transaccion_rel, {
+            id_usuario_pago: c.id_usuario,
+            nombre_usuario_pago: `${c.usuario.nombre_usuario} ${c.usuario.apellido_usuario}`,
+            nota_opcional_pago: c.nota_opcional,
+          });
+        }
+      }
+    }
+
+    const consolidadosPosterioresConPago = consolidadosPosteriores.map(cp => {
+      const infoPago = mapaInfoPago.get(cp.id_transaccion);
+      return {
+        id_transaccion: cp.id_transaccion,
+        id_empaque: cp.id_empaque,
+        id_transaccion_rel: cp.id_transaccion_rel,
+        monto: cp.monto,
+        hora_transaccion: cp.hora_transaccion,
+        nombre_tipo_transaccion: cp.nombre_tipo_transaccion,
+        nombre_estado_transaccion: cp.nombre_estado_transaccion,
+        nota_opcional: cp.nota_opcional,
+        ...(infoPago && { info_pago: infoPago }),
+        consolidado_posterior: {
+          id_transaccion: cp.consolidado_posterior.id_transaccion,
+          fecha_consolidacion: cp.consolidado_posterior.fecha_consolidacion,
+        },
+      };
+    });
+
     // Formatear las transacciones para la respuesta (solo campos esenciales)
     const transaccionesFormateadas = transacciones.map(transaccion => {
-      // Solo agregar info_pago en transacciones consolidadas (id_empaque = null)
-      const infoPago = (transaccion.id_empaque === null && transaccion.transaccionRel) ? {
-        id_usuario_pago: transaccion.transaccionRel.usuario.id_usuario,
-        nombre_usuario_pago: `${transaccion.transaccionRel.usuario.nombre_usuario} ${transaccion.transaccionRel.usuario.apellido_usuario}`,
-        nota_opcional_pago: transaccion.transaccionRel.nota_opcional
-      } : null;
+      const infoPago = transaccion.id_empaque === null
+        ? (mapaInfoPago.get(transaccion.id_transaccion) ??
+           (transaccion.transaccionRel ? {
+             id_usuario_pago: transaccion.transaccionRel.usuario.id_usuario,
+             nombre_usuario_pago: `${transaccion.transaccionRel.usuario.nombre_usuario} ${transaccion.transaccionRel.usuario.apellido_usuario}`,
+             nota_opcional_pago: transaccion.transaccionRel.nota_opcional,
+           } : null))
+        : null;
 
       return {
         id_transaccion: transaccion.id_transaccion,
@@ -541,7 +602,7 @@ export class LogisticaService {
 
     return {
       transacciones: transaccionesFormateadas,
-      consolidados_posteriores: consolidadosPosteriores,
+      consolidados_posteriores: consolidadosPosterioresConPago,
       fecha_creacion_usuario: usuario.fecha_creacion,
       nombre_usuario: usuario.nombre_usuario,
       apellido_usuario: usuario.apellido_usuario,
@@ -703,18 +764,16 @@ export class LogisticaService {
 
     if (transaccionesPendientes.length === 0) {
       try {
-        const notaConMonto = nota_opcional
-          ? `${nota_opcional} - Monto abonado: ${monto}`
-          : `Monto abonado: ${monto}`;
+        const notaAdelanto = `Adelanto a frigorífico${nota_opcional ? ' | ' + nota_opcional : ''}`;
 
         const r = await this.transaccionesService.transferenciaDirecta({
           idUsuarioPagador: id_usuario_credenciales,
           idUsuarioReceptor: id_usuario_consolidar,
           monto,
-          notaOpcional: notaConMonto,
+          notaOpcional: notaAdelanto,
           tipoReceptor: 2,
           montoReceptorNegativo: true,
-          notaReceptorOpcional: 'monto adelantado pendiente',
+          notaReceptorOpcional: notaAdelanto,
         });
 
         return {
@@ -735,16 +794,16 @@ export class LogisticaService {
     const idsPendientes = transaccionesPendientes.map(t => t.id_transaccion);
 
     try {
+      const notaTicket = monto === 0
+        ? `Cierre de caja frigorífico (saldo neto 0)${nota_opcional ? ' | ' + nota_opcional : ''}`
+        : `Consolidación con abono de $${monto.toLocaleString('es-CO')} a frigorífico${nota_opcional ? ' | ' + nota_opcional : ''}`;
+
       await this.transaccionesService.consolidar({
         idsPendientes,
         montoPagado: monto,
         idUsuarioTicket: id_usuario_consolidar,
         idUsuarioPagador: id_usuario_credenciales,
-        notaOpcional: nota_opcional
-          ? `${nota_opcional} - ${monto === 0 ? 'Cierre de caja (saldo neto 0)' : `Monto abonado: ${monto}`}`
-          : monto === 0
-            ? 'Cierre de caja — transacciones pendientes con saldo neto 0'
-            : `Monto abonado: ${monto}`,
+        notaOpcional: notaTicket,
       });
 
       return {
@@ -1026,12 +1085,74 @@ export class LogisticaService {
       t => !new Set(consolidadosPosteriores.map(c => c.id_transaccion)).has(t.id_transaccion)
     );
 
+    const idsConsolidadasParaPago = [
+      ...transacciones
+        .filter(t =>
+          t.id_empaque === null &&
+          t.tipoTransaccion.nombre_codigo !== 'ticket_consolidado' &&
+          t.estadoTransaccion.id_estado_transaccion === 2,
+        )
+        .map(t => t.id_transaccion),
+      ...consolidadosPosteriores.map(c => c.id_transaccion),
+    ];
+
+    const mapaInfoPago = new Map<number, { id_usuario_pago: number; nombre_usuario_pago: string; nota_opcional_pago: string | null }>();
+
+    if (idsConsolidadasParaPago.length > 0) {
+      const contrapartes = await this.databaseService.tRANSACCIONES.findMany({
+        where: {
+          id_transaccion_rel: { in: idsConsolidadasParaPago },
+          id_usuario: { not: id_usuario },
+        },
+        select: {
+          id_transaccion_rel: true,
+          id_usuario: true,
+          nota_opcional: true,
+          usuario: {
+            select: { nombre_usuario: true, apellido_usuario: true },
+          },
+        },
+      });
+
+      for (const c of contrapartes) {
+        if (c.id_transaccion_rel && !mapaInfoPago.has(c.id_transaccion_rel)) {
+          mapaInfoPago.set(c.id_transaccion_rel, {
+            id_usuario_pago: c.id_usuario,
+            nombre_usuario_pago: `${c.usuario.nombre_usuario} ${c.usuario.apellido_usuario}`,
+            nota_opcional_pago: c.nota_opcional,
+          });
+        }
+      }
+    }
+
+    const consolidadosPosterioresConPago = consolidadosPosteriores.map(cp => {
+      const infoPago = mapaInfoPago.get(cp.id_transaccion);
+      return {
+        id_transaccion: cp.id_transaccion,
+        id_empaque: cp.id_empaque,
+        id_transaccion_rel: cp.id_transaccion_rel,
+        monto: cp.monto,
+        hora_transaccion: cp.hora_transaccion,
+        nombre_tipo_transaccion: cp.nombre_tipo_transaccion,
+        nombre_estado_transaccion: cp.nombre_estado_transaccion,
+        nota_opcional: cp.nota_opcional,
+        ...(infoPago && { info_pago: infoPago }),
+        consolidado_posterior: {
+          id_transaccion: cp.consolidado_posterior.id_transaccion,
+          fecha_consolidacion: cp.consolidado_posterior.fecha_consolidacion,
+        },
+      };
+    });
+
     const transaccionesFormateadas = transacciones.map(transaccion => {
-      const infoPago = (transaccion.id_empaque === null && transaccion.transaccionRel) ? {
-        id_usuario_pago: transaccion.transaccionRel.usuario.id_usuario,
-        nombre_usuario_pago: `${transaccion.transaccionRel.usuario.nombre_usuario} ${transaccion.transaccionRel.usuario.apellido_usuario}`,
-        nota_opcional_pago: transaccion.transaccionRel.nota_opcional,
-      } : null;
+      const infoPago = transaccion.id_empaque === null
+        ? (mapaInfoPago.get(transaccion.id_transaccion) ??
+           (transaccion.transaccionRel ? {
+             id_usuario_pago: transaccion.transaccionRel.usuario.id_usuario,
+             nombre_usuario_pago: `${transaccion.transaccionRel.usuario.nombre_usuario} ${transaccion.transaccionRel.usuario.apellido_usuario}`,
+             nota_opcional_pago: transaccion.transaccionRel.nota_opcional,
+           } : null))
+        : null;
 
       return {
         id_transaccion: transaccion.id_transaccion,
@@ -1049,7 +1170,7 @@ export class LogisticaService {
     return {
       admin,
       transacciones: transaccionesFormateadas,
-      consolidados_posteriores: consolidadosPosteriores,
+      consolidados_posteriores: consolidadosPosterioresConPago,
       fecha_creacion_usuario: usuario.fecha_creacion,
       nombre_usuario: usuario.nombre_usuario,
       apellido_usuario: usuario.apellido_usuario,
@@ -1169,21 +1290,17 @@ export class LogisticaService {
       const nombrePagador = esPagadorAdmin ? nombreAdmin : nombreLogistica;
       const nombreReceptor = esPagadorAdmin ? nombreLogistica : nombreAdmin;
 
-      const nReceptor = nota_opcional
-        ? `Egreso de ${nombrePagador} - ${nota_opcional}`
-        : `Egreso de ${nombrePagador}`;
-      const nPagador = nota_opcional
-        ? `Entrega a ${nombreReceptor} - ${nota_opcional}`
-        : `Entrega a ${nombreReceptor}`;
+      const notaReceptor = `Transferencia recibida${nota_opcional ? ' | ' + nota_opcional : ''}`;
+      const notaPagador = `Transferencia enviada${nota_opcional ? ' | ' + nota_opcional : ''}`;
 
       try {
         const r = await this.transaccionesService.transferenciaDirecta({
           idUsuarioPagador: idPagador,
           idUsuarioReceptor: idReceptor,
           monto,
-          notaOpcional: nReceptor,
-          notaReceptorOpcional: nReceptor,
-          notaPagadorOpcional: nPagador,
+          notaOpcional: notaReceptor,
+          notaReceptorOpcional: notaReceptor,
+          notaPagadorOpcional: notaPagador,
         });
 
         return {
@@ -1238,6 +1355,11 @@ export class LogisticaService {
     }
 
     try {
+      const notaTicket = monto === 0
+        ? `Cierre de caja (saldo neto 0)${nota_opcional ? ' | ' + nota_opcional : ''}`
+        : `Consolidación con abono de $${monto.toLocaleString('es-CO')}${nota_opcional ? ' | ' + nota_opcional : ''}`;
+      const notaReceptor = `Abono recibido${nota_opcional ? ' | ' + nota_opcional : ''}`;
+
       const resultado = await this.transaccionesService.consolidar({
         idsPendientes: todosIds,
         montoPagado: monto,
@@ -1245,11 +1367,8 @@ export class LogisticaService {
         idUsuarioReceptor: idUsuarioAdmin,
         idTipoTransaccionSaldo: 4,
         idTipoTransaccionSaldoNegativo: 5,
-        notaOpcional: nota_opcional
-          ? `${nota_opcional} - ${monto === 0 ? 'Cierre de caja (saldo neto 0)' : `Consolidación logística (${nombreLogistica})`}`
-          : monto === 0
-            ? 'Cierre de caja — transacciones pendientes con saldo neto 0'
-            : `Consolidación logística (${nombreLogistica})`,
+        notaOpcional: notaTicket,
+        notaReceptorOpcional: notaReceptor,
       });
 
       return {
@@ -1522,13 +1641,74 @@ export class LogisticaService {
       t => !new Set(consolidadosPosteriores.map(c => c.id_transaccion)).has(t.id_transaccion)
     );
 
+    const idsConsolidadasParaPago = [
+      ...transaccionesFiltradas
+        .filter(t =>
+          t.id_empaque === null &&
+          t.tipoTransaccion.nombre_codigo !== 'ticket_consolidado' &&
+          t.estadoTransaccion.id_estado_transaccion === 2,
+        )
+        .map(t => t.id_transaccion),
+      ...consolidadosPosteriores.map(c => c.id_transaccion),
+    ];
+
+    const mapaInfoPago = new Map<number, { id_usuario_pago: number; nombre_usuario_pago: string; nota_opcional_pago: string | null }>();
+
+    if (idsConsolidadasParaPago.length > 0) {
+      const contrapartes = await this.databaseService.tRANSACCIONES.findMany({
+        where: {
+          id_transaccion_rel: { in: idsConsolidadasParaPago },
+          id_usuario: { not: idUsuarioTienda },
+        },
+        select: {
+          id_transaccion_rel: true,
+          id_usuario: true,
+          nota_opcional: true,
+          usuario: {
+            select: { nombre_usuario: true, apellido_usuario: true },
+          },
+        },
+      });
+
+      for (const c of contrapartes) {
+        if (c.id_transaccion_rel && !mapaInfoPago.has(c.id_transaccion_rel)) {
+          mapaInfoPago.set(c.id_transaccion_rel, {
+            id_usuario_pago: c.id_usuario,
+            nombre_usuario_pago: `${c.usuario.nombre_usuario} ${c.usuario.apellido_usuario}`,
+            nota_opcional_pago: c.nota_opcional,
+          });
+        }
+      }
+    }
+
+    const consolidadosPosterioresConPago = consolidadosPosteriores.map(cp => {
+      const infoPago = mapaInfoPago.get(cp.id_transaccion);
+      return {
+        id_transaccion: cp.id_transaccion,
+        id_empaque: cp.id_empaque,
+        id_transaccion_rel: cp.id_transaccion_rel,
+        monto: cp.monto,
+        hora_transaccion: cp.hora_transaccion,
+        nombre_tipo_transaccion: cp.nombre_tipo_transaccion,
+        nombre_estado_transaccion: cp.nombre_estado_transaccion,
+        nota_opcional: cp.nota_opcional,
+        costo_tienda: cp.costo_tienda,
+        ...(infoPago && { info_pago: infoPago }),
+        consolidado_posterior: {
+          id_transaccion: cp.consolidado_posterior.id_transaccion,
+          fecha_consolidacion: cp.consolidado_posterior.fecha_consolidacion,
+        },
+      };
+    });
+
     const transaccionesFormateadas = transaccionesFiltradas.map(t => {
-      const infoPago = (t.id_empaque === null && t.transaccionRel)
-        ? {
-            id_usuario_pago: t.transaccionRel.usuario.id_usuario,
-            nombre_usuario_pago: `${t.transaccionRel.usuario.nombre_usuario} ${t.transaccionRel.usuario.apellido_usuario}`,
-            nota_opcional_pago: t.transaccionRel.nota_opcional,
-          }
+      const infoPago = t.id_empaque === null
+        ? (mapaInfoPago.get(t.id_transaccion) ??
+           (t.transaccionRel ? {
+             id_usuario_pago: t.transaccionRel.usuario.id_usuario,
+             nombre_usuario_pago: `${t.transaccionRel.usuario.nombre_usuario} ${t.transaccionRel.usuario.apellido_usuario}`,
+             nota_opcional_pago: t.transaccionRel.nota_opcional,
+           } : null))
         : null;
 
       return {
@@ -1562,7 +1742,7 @@ export class LogisticaService {
       productos,
       promociones,
       transacciones: transaccionesFormateadas,
-      consolidados_posteriores: consolidadosPosteriores,
+      consolidados_posteriores: consolidadosPosterioresConPago,
       fecha_creacion_usuario: usuarioTienda?.fecha_creacion ?? null,
       nombre_usuario: usuarioTienda?.nombre_usuario ?? null,
       apellido_usuario: usuarioTienda?.apellido_usuario ?? null,
@@ -1831,14 +2011,14 @@ export class LogisticaService {
       }
 
       const montoAdelanto = Math.abs(monto);
-      const notaPago = `Cobrado por: ${nombreLogistico} (ID: ${idUsuarioLogistico}) | Nota: adelanto de $${montoAdelanto.toLocaleString('es-CO')} hecho por el usuario tienda (ID: ${idUsuarioTienda}) | #NEVERA:${idNevera}`;
+      const notaAdelanto = `Adelanto a la NEVERA #${idNevera}${nota_opcional ? ' | ' + nota_opcional : ''}`;
 
       try {
         const r = await this.transaccionesService.transferenciaDirecta({
           idUsuarioPagador: idUsuarioTienda,
           idUsuarioReceptor: idUsuarioLogistico,
           monto: montoAdelanto,
-          notaOpcional: notaPago,
+          notaOpcional: notaAdelanto,
           idNevera,
         });
 
@@ -1868,7 +2048,8 @@ export class LogisticaService {
     }
 
     try {
-      const notaPago = `Cobrado por: ${nombreLogistico} (ID: ${idUsuarioLogistico}) | Nota: abono de $${monto.toLocaleString('es-CO')} hecho por el usuario tienda (ID: ${idUsuarioTienda}) | #NEVERA:${idNevera}`;
+      const notaTicket = `Consolidación con abono de $${monto.toLocaleString('es-CO')} a la NEVERA #${idNevera}${nota_opcional ? ' | ' + nota_opcional : ''}`;
+      const notaReceptor = `Abono a la NEVERA #${idNevera}${nota_opcional ? ' | ' + nota_opcional : ''}`;
 
       const resultado = await this.transaccionesService.consolidar({
         idsPendientes: idsTransaccionesPendientes,
@@ -1877,7 +2058,8 @@ export class LogisticaService {
         idUsuarioReceptor: idUsuarioLogistico,
         idTipoTransaccionSaldo: 4,
         idTipoTransaccionSaldoNegativo: 5,
-        notaOpcional: notaPago,
+        notaOpcional: notaTicket,
+        notaReceptorOpcional: notaReceptor,
         idNevera,
       });
 
@@ -2094,7 +2276,8 @@ export class LogisticaService {
 
     try {
       const resultado = await this.databaseService.$transaction(async (prisma) => {
-        const notaPago = `Cobrado por: ${nombreLogistico} (ID: ${idUsuarioLogistico}) | Nota: abono de $${monto.toLocaleString('es-CO')} hecho por el usuario tienda (ID: ${idUsuarioTienda}) | #NEVERA:${idNevera}`;
+        const notaTicket = `Consolidación con abono de $${monto.toLocaleString('es-CO')} | NEVERA #${idNevera} | EMPAQUES:${idsEmpaquesStr}${nota_opcional ? ' | ' + nota_opcional : ''}`;
+        const notaReceptor = `Abono a la NEVERA #${idNevera}${nota_opcional ? ' | ' + nota_opcional : ''}`;
 
         const consolidado = await this.transaccionesService.consolidarEnTx(prisma, {
           idsPendientes: idsPendientesPrevias,
@@ -2105,8 +2288,8 @@ export class LogisticaService {
           idTipoTransaccionSaldo: 4,
           idTipoTransaccionSaldoNegativo: 5,
           idNevera,
-          notaOpcional: `#NEVERA:${idNevera} EMPAQUES:${idsEmpaquesStr}${nota_opcional ? ' | ' + nota_opcional : ''}`,
-          notaReceptorOpcional: notaPago,
+          notaOpcional: notaTicket,
+          notaReceptorOpcional: notaReceptor,
         });
 
         const transaccionesEmpaques: any[] = [];
