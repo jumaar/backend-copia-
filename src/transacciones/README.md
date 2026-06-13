@@ -78,7 +78,7 @@ El ticket de consolidación (tipo 3, estado 4, **siempre negativo**) es el mecan
 |---|---|---|---|---|
 | 1 | `POST /api/frigorifico/empaques/cambiar-estado` | 4 | `empaqueDeUnoaDos()` | Despacho → tipo 2 estado 1 para frigorífico |
 | 2 | `POST /api/logistica/cuentas` | 2, 4 | `consolidarCuentas()` | Pago o adelanto a frigorífico |
-| 3 | `POST /api/logistica/consolidar-admin` | 2, 4 | `consolidarAdmin()` | Ingreso admin→logística o cuadre de caja |
+| 3 | `POST /api/logistica/consolidar-admin` | 2, 4 | `consolidarAdmin()` | egreso admin→logística o cuadre de caja |
 | 4 | `POST /api/logistica/cuentas/nevera/:id_nevera` | 2, 4 | `liquidarNevera()` | Liquidación de nevera (tienda→logística) |
 
 ---

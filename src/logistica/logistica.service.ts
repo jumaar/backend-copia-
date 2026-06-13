@@ -1158,6 +1158,10 @@ export class LogisticaService {
 
     if (idRol === 4 && esConsolidacion) {
       // validación abajo, después de este bloque
+    } else if (idRol === 2 && esConsolidacion) {
+      throw new BadRequestException(
+        `Solo el usuario logística (${nombreLogistica}) puede consolidar sus cuentas.`,
+      );
     } else if (esTransferencia) {
       const esPagadorAdmin = idRol === 2;
       const idPagador = esPagadorAdmin ? idUsuarioAdmin : idUsuarioLogistica;
