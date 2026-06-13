@@ -428,6 +428,7 @@ export class LogisticaService {
         transaccionRel: {
           select: {
             id_transaccion: true,
+            hora_transaccion: true,
             nota_opcional: true,
             usuario: {
               select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true },
@@ -438,22 +439,19 @@ export class LogisticaService {
       orderBy: { hora_transaccion: 'desc' },
     });
 
-    // PASO 2: Búsqueda hacia adelante — transacciones referenciadas por las
-    // del resultado base (vía id_transaccion_rel). Cuando se consulta un mes
-    // histórico, las transacciones consolidadas apuntan al ticket de ese mes
-    // (que puede estar en un mes posterior). Sin este paso, el ticket no aparece.
     const todasLasTransacciones = [...transaccionesBase];
-    const idsBaseSet = new Set(transaccionesBase.map(t => t.id_transaccion));
+    const idsSet = new Set(transaccionesBase.map(t => t.id_transaccion));
 
-    const idsForward = transaccionesBase
-      .map(t => t.id_transaccion_rel)
-      .filter(id => id !== null && !idsBaseSet.has(id as number)) as number[];
+    const idsConsolidados = transaccionesBase
+      .filter(t => t.tipoTransaccion.nombre_codigo === 'ticket_consolidado')
+      .map(t => t.id_transaccion);
 
-    if (idsForward.length > 0) {
-      const transaccionesForward = await this.databaseService.tRANSACCIONES.findMany({
+    if (idsConsolidados.length > 0) {
+      const relacionadas = await this.databaseService.tRANSACCIONES.findMany({
         where: {
           id_usuario: id_usuario,
-          id_transaccion: { in: idsForward },
+          id_transaccion_rel: { in: idsConsolidados },
+          id_transaccion: { notIn: [...idsSet] },
         },
         include: {
           estadoTransaccion: {
@@ -468,6 +466,7 @@ export class LogisticaService {
           transaccionRel: {
             select: {
               id_transaccion: true,
+              hora_transaccion: true,
               nota_opcional: true,
               usuario: {
                 select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true },
@@ -478,64 +477,44 @@ export class LogisticaService {
         orderBy: { hora_transaccion: 'desc' },
       });
 
-      for (const t of transaccionesForward) {
-        if (!idsBaseSet.has(t.id_transaccion)) {
-          todasLasTransacciones.push(t);
-          idsBaseSet.add(t.id_transaccion);
-        }
-      }
-    }
-
-    // PASO 3: Búsqueda inversa — transacciones cuyo id_transaccion_rel apunta
-    // a cualquiera del resultado combinado (base + forward). Captura las
-    // pendientes viejas que fueron consolidadas en este mes (estado 2 vinculadas
-    // al ticket del mes actual).
-    if (todasLasTransacciones.length > 0) {
-      const idsCombinados = todasLasTransacciones.map(t => t.id_transaccion);
-      const idsCombinadosSet = new Set(idsCombinados);
-
-      const transaccionesReferenciadas = await this.databaseService.tRANSACCIONES.findMany({
-        where: {
-          id_usuario: id_usuario,
-          id_transaccion_rel: { in: idsCombinados },
-          id_transaccion: { notIn: idsCombinados },
-        },
-        include: {
-          estadoTransaccion: {
-            select: { id_estado_transaccion: true, nombre_estado: true },
-          },
-          tipoTransaccion: {
-            select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true },
-          },
-          empaque: {
-            select: { id_empaque: true, EPC_id: true },
-          },
-          transaccionRel: {
-            select: {
-              id_transaccion: true,
-              nota_opcional: true,
-              usuario: {
-                select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true },
-              },
-            },
-          },
-        },
-        orderBy: { hora_transaccion: 'desc' },
-      });
-
-      for (const t of transaccionesReferenciadas) {
-        if (!idsCombinadosSet.has(t.id_transaccion)) {
+      for (const t of relacionadas) {
+        if (!idsSet.has(t.id_transaccion)) {
           todasLasTransacciones.push(t);
         }
       }
     }
+
+    const consolidadosPosteriores = transaccionesBase
+      .filter(t =>
+        t.id_transaccion_rel !== null &&
+        t.tipoTransaccion.nombre_codigo !== 'ticket_consolidado' &&
+        t.estadoTransaccion.id_estado_transaccion !== 1 &&
+        !idsSet.has(t.id_transaccion_rel as number)
+      )
+      .map(t => ({
+        id_transaccion: t.id_transaccion,
+        id_empaque: t.id_empaque,
+        id_transaccion_rel: t.id_transaccion_rel,
+        monto: parseFloat(t.monto.toString()),
+        hora_transaccion: t.hora_transaccion,
+        nombre_tipo_transaccion: t.tipoTransaccion.nombre_codigo,
+        nombre_estado_transaccion: t.estadoTransaccion.nombre_estado,
+        nota_opcional: t.nota_opcional,
+        consolidado_posterior: {
+          id_transaccion: t.transaccionRel!.id_transaccion,
+          fecha_consolidacion: t.transaccionRel!.hora_transaccion,
+          nota_opcional: t.transaccionRel!.nota_opcional,
+        },
+      }));
 
     // Ordenar todas las transacciones por fecha descendente
     todasLasTransacciones.sort((a, b) =>
       new Date(b.hora_transaccion).getTime() - new Date(a.hora_transaccion).getTime(),
     );
 
-    const transacciones = todasLasTransacciones;
+    const transacciones = todasLasTransacciones.filter(
+      t => !new Set(consolidadosPosteriores.map(c => c.id_transaccion)).has(t.id_transaccion)
+    );
 
     // Formatear las transacciones para la respuesta (solo campos esenciales)
     const transaccionesFormateadas = transacciones.map(transaccion => {
@@ -562,6 +541,7 @@ export class LogisticaService {
 
     return {
       transacciones: transaccionesFormateadas,
+      consolidados_posteriores: consolidadosPosteriores,
       fecha_creacion_usuario: usuario.fecha_creacion,
       nombre_usuario: usuario.nombre_usuario,
       apellido_usuario: usuario.apellido_usuario,
@@ -959,6 +939,7 @@ export class LogisticaService {
         transaccionRel: {
           select: {
             id_transaccion: true,
+            hora_transaccion: true,
             nota_opcional: true,
             usuario: {
               select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true },
@@ -970,17 +951,18 @@ export class LogisticaService {
     });
 
     const todasLasTransacciones = [...transaccionesBase];
-    const idsBaseSet = new Set(transaccionesBase.map(t => t.id_transaccion));
+    const idsSet = new Set(transaccionesBase.map(t => t.id_transaccion));
 
-    const idsForward = transaccionesBase
-      .map(t => t.id_transaccion_rel)
-      .filter(id => id !== null && !idsBaseSet.has(id as number)) as number[];
+    const idsConsolidados = transaccionesBase
+      .filter(t => t.tipoTransaccion.nombre_codigo === 'ticket_consolidado')
+      .map(t => t.id_transaccion);
 
-    if (idsForward.length > 0) {
-      const transaccionesForward = await this.databaseService.tRANSACCIONES.findMany({
+    if (idsConsolidados.length > 0) {
+      const relacionadas = await this.databaseService.tRANSACCIONES.findMany({
         where: {
           id_usuario,
-          id_transaccion: { in: idsForward },
+          id_transaccion_rel: { in: idsConsolidados },
+          id_transaccion: { notIn: [...idsSet] },
         },
         include: {
           estadoTransaccion: {
@@ -995,6 +977,7 @@ export class LogisticaService {
           transaccionRel: {
             select: {
               id_transaccion: true,
+              hora_transaccion: true,
               nota_opcional: true,
               usuario: {
                 select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true },
@@ -1005,59 +988,43 @@ export class LogisticaService {
         orderBy: { hora_transaccion: 'desc' },
       });
 
-      for (const t of transaccionesForward) {
-        if (!idsBaseSet.has(t.id_transaccion)) {
-          todasLasTransacciones.push(t);
-          idsBaseSet.add(t.id_transaccion);
-        }
-      }
-    }
-
-    if (todasLasTransacciones.length > 0) {
-      const idsCombinados = todasLasTransacciones.map(t => t.id_transaccion);
-      const idsCombinadosSet = new Set(idsCombinados);
-
-      const transaccionesReferenciadas = await this.databaseService.tRANSACCIONES.findMany({
-        where: {
-          id_usuario,
-          id_transaccion_rel: { in: idsCombinados },
-          id_transaccion: { notIn: idsCombinados },
-        },
-        include: {
-          estadoTransaccion: {
-            select: { id_estado_transaccion: true, nombre_estado: true },
-          },
-          tipoTransaccion: {
-            select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true },
-          },
-          empaque: {
-            select: { id_empaque: true, EPC_id: true },
-          },
-          transaccionRel: {
-            select: {
-              id_transaccion: true,
-              nota_opcional: true,
-              usuario: {
-                select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true },
-              },
-            },
-          },
-        },
-        orderBy: { hora_transaccion: 'desc' },
-      });
-
-      for (const t of transaccionesReferenciadas) {
-        if (!idsCombinadosSet.has(t.id_transaccion)) {
+      for (const t of relacionadas) {
+        if (!idsSet.has(t.id_transaccion)) {
           todasLasTransacciones.push(t);
         }
       }
     }
+
+    const consolidadosPosteriores = transaccionesBase
+      .filter(t =>
+        t.id_transaccion_rel !== null &&
+        t.tipoTransaccion.nombre_codigo !== 'ticket_consolidado' &&
+        t.estadoTransaccion.id_estado_transaccion !== 1 &&
+        !idsSet.has(t.id_transaccion_rel as number)
+      )
+      .map(t => ({
+        id_transaccion: t.id_transaccion,
+        id_empaque: t.id_empaque,
+        id_transaccion_rel: t.id_transaccion_rel,
+        monto: parseFloat(t.monto.toString()),
+        hora_transaccion: t.hora_transaccion,
+        nombre_tipo_transaccion: t.tipoTransaccion.nombre_codigo,
+        nombre_estado_transaccion: t.estadoTransaccion.nombre_estado,
+        nota_opcional: t.nota_opcional,
+        consolidado_posterior: {
+          id_transaccion: t.transaccionRel!.id_transaccion,
+          fecha_consolidacion: t.transaccionRel!.hora_transaccion,
+          nota_opcional: t.transaccionRel!.nota_opcional,
+        },
+      }));
 
     todasLasTransacciones.sort((a, b) =>
       new Date(b.hora_transaccion).getTime() - new Date(a.hora_transaccion).getTime(),
     );
 
-    const transacciones = todasLasTransacciones;
+    const transacciones = todasLasTransacciones.filter(
+      t => !new Set(consolidadosPosteriores.map(c => c.id_transaccion)).has(t.id_transaccion)
+    );
 
     const transaccionesFormateadas = transacciones.map(transaccion => {
       const infoPago = (transaccion.id_empaque === null && transaccion.transaccionRel) ? {
@@ -1082,6 +1049,7 @@ export class LogisticaService {
     return {
       admin,
       transacciones: transaccionesFormateadas,
+      consolidados_posteriores: consolidadosPosteriores,
       fecha_creacion_usuario: usuario.fecha_creacion,
       nombre_usuario: usuario.nombre_usuario,
       apellido_usuario: usuario.apellido_usuario,
@@ -1471,6 +1439,7 @@ export class LogisticaService {
         transaccionRel: {
           select: {
             id_transaccion: true,
+            hora_transaccion: true,
             nota_opcional: true,
             usuario: { select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true } },
           },
@@ -1479,22 +1448,20 @@ export class LogisticaService {
       orderBy: { hora_transaccion: 'desc' },
     });
 
-    // PASO 2: Búsqueda hacia adelante — transacciones referenciadas por las
-    // del resultado base (vía id_transaccion_rel). Captura el ticket de
-    // consolidación cuando se consulta un mes anterior al de la consolidación.
     const todasLasTransacciones = [...transaccionesBase];
-    const idsBaseSet = new Set(transaccionesBase.map(t => t.id_transaccion));
+    const idsSet = new Set(transaccionesBase.map(t => t.id_transaccion));
 
-    const idsForward = transaccionesBase
-      .map(t => t.id_transaccion_rel)
-      .filter(id => id !== null && !idsBaseSet.has(id as number)) as number[];
+    const idsConsolidados = transaccionesBase
+      .filter(t => t.tipoTransaccion.nombre_codigo === 'ticket_consolidado')
+      .map(t => t.id_transaccion);
 
-    if (idsForward.length > 0) {
-      const transaccionesForward = await this.databaseService.tRANSACCIONES.findMany({
+    if (idsConsolidados.length > 0) {
+      const relacionadas = await this.databaseService.tRANSACCIONES.findMany({
         where: {
           id_usuario: idUsuarioTienda,
           id_nevera: idNevera,
-          id_transaccion: { in: idsForward },
+          id_transaccion_rel: { in: idsConsolidados },
+          id_transaccion: { notIn: [...idsSet] },
         },
         include: {
           estadoTransaccion: { select: { id_estado_transaccion: true, nombre_estado: true } },
@@ -1503,6 +1470,7 @@ export class LogisticaService {
           transaccionRel: {
             select: {
               id_transaccion: true,
+              hora_transaccion: true,
               nota_opcional: true,
               usuario: { select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true } },
             },
@@ -1511,54 +1479,46 @@ export class LogisticaService {
         orderBy: { hora_transaccion: 'desc' },
       });
 
-      for (const t of transaccionesForward) {
-        if (!idsBaseSet.has(t.id_transaccion)) {
-          todasLasTransacciones.push(t);
-          idsBaseSet.add(t.id_transaccion);
-        }
-      }
-    }
-
-    // PASO 3: Búsqueda inversa — transacciones cuyo id_transaccion_rel apunta
-    // a cualquiera del resultado combinado (base + forward).
-    if (todasLasTransacciones.length > 0) {
-      const idsCombinados = todasLasTransacciones.map(t => t.id_transaccion);
-      const idsCombinadosSet = new Set(idsCombinados);
-
-      const transaccionesReferenciadas = await this.databaseService.tRANSACCIONES.findMany({
-        where: {
-          id_usuario: idUsuarioTienda,
-          id_nevera: idNevera,
-          id_transaccion_rel: { in: idsCombinados },
-          id_transaccion: { notIn: idsCombinados },
-        },
-        include: {
-          estadoTransaccion: { select: { id_estado_transaccion: true, nombre_estado: true } },
-          tipoTransaccion: { select: { id_tipo: true, nombre_codigo: true, descripcion_amigable: true } },
-          empaque: { select: { id_empaque: true, EPC_id: true, id_nevera: true, costo_tienda: true } },
-          transaccionRel: {
-            select: {
-              id_transaccion: true,
-              nota_opcional: true,
-              usuario: { select: { id_usuario: true, nombre_usuario: true, apellido_usuario: true } },
-            },
-          },
-        },
-        orderBy: { hora_transaccion: 'desc' },
-      });
-
-      for (const t of transaccionesReferenciadas) {
-        if (!idsCombinadosSet.has(t.id_transaccion)) {
+      for (const t of relacionadas) {
+        if (!idsSet.has(t.id_transaccion)) {
           todasLasTransacciones.push(t);
         }
       }
     }
+
+    const consolidadosPosteriores = transaccionesBase
+      .filter(t =>
+        t.id_transaccion_rel !== null &&
+        t.tipoTransaccion.nombre_codigo !== 'ticket_consolidado' &&
+        t.estadoTransaccion.id_estado_transaccion !== 1 &&
+        !idsSet.has(t.id_transaccion_rel as number)
+      )
+      .map(t => ({
+        id_transaccion: t.id_transaccion,
+        id_empaque: t.id_empaque,
+        id_transaccion_rel: t.id_transaccion_rel,
+        monto: parseFloat(t.monto.toString()),
+        hora_transaccion: t.hora_transaccion,
+        nombre_tipo_transaccion: t.tipoTransaccion.nombre_codigo,
+        nombre_estado_transaccion: t.estadoTransaccion.nombre_estado,
+        nota_opcional: t.nota_opcional,
+        costo_tienda: t.empaque ? parseFloat(t.empaque.costo_tienda.toString()) : null,
+        consolidado_posterior: {
+          id_transaccion: t.transaccionRel!.id_transaccion,
+          fecha_consolidacion: t.transaccionRel!.hora_transaccion,
+          nota_opcional: t.transaccionRel!.nota_opcional,
+        },
+      }));
 
     todasLasTransacciones.sort((a, b) =>
       new Date(b.hora_transaccion).getTime() - new Date(a.hora_transaccion).getTime(),
     );
 
-    const transaccionesFormateadas = todasLasTransacciones.map(t => {
+    const transaccionesFiltradas = todasLasTransacciones.filter(
+      t => !new Set(consolidadosPosteriores.map(c => c.id_transaccion)).has(t.id_transaccion)
+    );
+
+    const transaccionesFormateadas = transaccionesFiltradas.map(t => {
       const infoPago = (t.id_empaque === null && t.transaccionRel)
         ? {
             id_usuario_pago: t.transaccionRel.usuario.id_usuario,
@@ -1598,6 +1558,7 @@ export class LogisticaService {
       productos,
       promociones,
       transacciones: transaccionesFormateadas,
+      consolidados_posteriores: consolidadosPosteriores,
       fecha_creacion_usuario: usuarioTienda?.fecha_creacion ?? null,
       nombre_usuario: usuarioTienda?.nombre_usuario ?? null,
       apellido_usuario: usuarioTienda?.apellido_usuario ?? null,
