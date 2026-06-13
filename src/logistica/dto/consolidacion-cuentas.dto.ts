@@ -1,4 +1,4 @@
-import { IsNumber, IsString, IsOptional, Min } from 'class-validator';
+import { IsNumber, IsString, IsOptional, IsIn, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ConsolidacionCuentasDto {
@@ -10,4 +10,8 @@ export class ConsolidacionCuentasDto {
   @IsOptional()
   @IsString()
   nota_opcional?: string;
+
+  @IsString()
+  @IsIn(['ingreso', 'consolidacion', 'egreso'])
+  tipo_movimiento: string;
 }

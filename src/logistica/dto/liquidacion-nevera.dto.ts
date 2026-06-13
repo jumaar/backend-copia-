@@ -1,4 +1,4 @@
-import { IsNumber, IsString, IsOptional, IsArray, Min } from 'class-validator';
+import { IsNumber, IsString, IsOptional, IsArray, IsIn, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class LiquidacionNeveraDto {
@@ -16,4 +16,8 @@ export class LiquidacionNeveraDto {
   @Type(() => Number)
   @IsNumber({}, { each: true })
   empaques?: number[];
+
+  @IsString()
+  @IsIn(['ingreso', 'consolidacion', 'egreso'])
+  tipo_movimiento: string;
 }

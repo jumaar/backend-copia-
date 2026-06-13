@@ -737,7 +737,7 @@ export class LogisticaService {
     id_usuario_credenciales: number,
     consolidacionDto: ConsolidacionCuentasDto
   ) {
-    const { monto, nota_opcional } = consolidacionDto;
+    const { monto, nota_opcional, tipo_movimiento } = consolidacionDto;
 
     const usuarioAConsolidar = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario: id_usuario_consolidar },
@@ -752,17 +752,10 @@ export class LogisticaService {
       throw new BadRequestException('El usuario debe tener rol 3 (cliente frigorífico) para ser consolidado');
     }
 
-    const transaccionesPendientes = await this.transaccionesService.getPendientes({
-      idUsuario: id_usuario_consolidar,
-    });
+    const esTransferencia = tipo_movimiento === 'ingreso' || tipo_movimiento === 'egreso';
+    const esConsolidacion = tipo_movimiento === 'consolidacion';
 
-    if (monto === 0 && transaccionesPendientes.length === 0) {
-      throw new BadRequestException(
-        'No se puede realizar una consolidación con monto 0 si no hay transacciones pendientes.',
-      );
-    }
-
-    if (transaccionesPendientes.length === 0) {
+    if (esTransferencia) {
       try {
         const notaAdelanto = `Adelanto a frigorífico${nota_opcional ? ' | ' + nota_opcional : ''}`;
 
@@ -777,50 +770,84 @@ export class LogisticaService {
         });
 
         return {
-          message: 'Abono adelantado registrado exitosamente',
+          message: 'Abono registrado exitosamente',
           resumen: {
             usuario_consolidado: id_usuario_consolidar,
             usuario_acreedor: id_usuario_credenciales,
             monto_abonado: monto,
-            tipo_operacion: 'adelanto_sin_deuda'
+            tipo_operacion: 'transferencia_directa'
           }
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
-        throw new BadRequestException(`Error al registrar abono adelantado: ${errorMessage}`);
+        throw new BadRequestException(`Error al registrar abono: ${errorMessage}`);
       }
     }
 
-    const idsPendientes = transaccionesPendientes.map(t => t.id_transaccion);
-
-    try {
-      const notaTicket = monto === 0
-        ? `Cierre de caja frigorífico (saldo neto 0)${nota_opcional ? ' | ' + nota_opcional : ''}`
-        : `Consolidación con abono de $${monto.toLocaleString('es-CO')} a frigorífico${nota_opcional ? ' | ' + nota_opcional : ''}`;
-      const notaPagador = `Adelanto a frigorífico${nota_opcional ? ' | ' + nota_opcional : ''}`;
-
-      await this.transaccionesService.consolidar({
-        idsPendientes,
-        montoPagado: monto,
-        idUsuarioTicket: id_usuario_consolidar,
-        idUsuarioPagador: id_usuario_credenciales,
-        notaOpcional: notaTicket,
-        notaPagadorOpcional: notaPagador,
-        notaSaldoAFavor: 'Saldo adelantado pendiente | ',
+    if (esConsolidacion) {
+      const transaccionesPendientes = await this.transaccionesService.getPendientes({
+        idUsuario: id_usuario_consolidar,
       });
 
-      return {
-        message: 'Consolidación realizada exitosamente',
-        resumen: {
-          usuario_consolidado: id_usuario_consolidar,
-          usuario_acreedor: id_usuario_credenciales,
-          monto_abonado: monto,
-        }
-      };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new BadRequestException(`Error al consolidar cuentas: ${errorMessage}`);
+      if (transaccionesPendientes.length === 0) {
+        throw new BadRequestException(
+          'No hay transacciones pendientes del frigorífico. ' +
+          'Usa tipo_movimiento: "ingreso" para transferencia directa.',
+        );
+      }
+
+      const idsPendientes = transaccionesPendientes.map(t => t.id_transaccion);
+      const sumaPendientes = Math.round(
+        transaccionesPendientes.reduce((sum, t) => sum + parseFloat(t.monto.toString()), 0),
+      );
+
+      if (sumaPendientes < 0) {
+        throw new BadRequestException(
+          `El frigorífico tiene saldo negativo (${sumaPendientes}). ` +
+          'Usa tipo_movimiento: "ingreso" para transferencia directa.',
+        );
+      }
+
+      if (monto === 0 && sumaPendientes !== 0) {
+        throw new BadRequestException(
+          `No se puede consolidar con monto 0 porque hay ${sumaPendientes} en transacciones pendientes. ` +
+          'Para cerrar sin mover dinero, la suma de las pendientes debe ser 0.',
+        );
+      }
+
+      try {
+        const notaTicket = monto === 0
+          ? `Cierre de caja frigorífico (saldo neto 0)${nota_opcional ? ' | ' + nota_opcional : ''}`
+          : `Consolidación con abono de $${monto.toLocaleString('es-CO')} a frigorífico${nota_opcional ? ' | ' + nota_opcional : ''}`;
+        const notaPagador = `Adelanto a frigorífico${nota_opcional ? ' | ' + nota_opcional : ''}`;
+
+        await this.transaccionesService.consolidar({
+          idsPendientes,
+          montoPagado: monto,
+          idUsuarioTicket: id_usuario_consolidar,
+          idUsuarioPagador: id_usuario_credenciales,
+          notaOpcional: notaTicket,
+          notaPagadorOpcional: notaPagador,
+          notaSaldoAFavor: 'Saldo adelantado pendiente | ',
+        });
+
+        return {
+          message: 'Consolidación realizada exitosamente',
+          resumen: {
+            usuario_consolidado: id_usuario_consolidar,
+            usuario_acreedor: id_usuario_credenciales,
+            monto_abonado: monto,
+          }
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        throw new BadRequestException(`Error al consolidar cuentas: ${errorMessage}`);
+      }
     }
+
+    throw new BadRequestException(
+      'tipo_movimiento inválido. Usa "ingreso", "egreso" o "consolidacion".',
+    );
   }
 
   async getHermanosLogisticaPorScope(requesterId: number, requesterRole: number, accessibleUserIds: number[]) {
@@ -1853,7 +1880,15 @@ export class LogisticaService {
     idUsuarioLogistico: number,
     liquidacionDto: LiquidacionNeveraDto,
   ) {
-    const { monto, nota_opcional, empaques: idsEmpaques } = liquidacionDto;
+    const { monto, nota_opcional, empaques: idsEmpaques, tipo_movimiento } = liquidacionDto;
+    const esTransferencia = tipo_movimiento === 'ingreso' || tipo_movimiento === 'egreso';
+    const esConsolidacion = tipo_movimiento === 'consolidacion';
+
+    if (!esTransferencia && !esConsolidacion) {
+      throw new BadRequestException(
+        'tipo_movimiento inválido. Usa "ingreso", "egreso" o "consolidacion".',
+      );
+    }
 
     const nevera = await this.databaseService.nEVERAS.findUnique({
       where: { id_nevera: idNevera },
@@ -1884,6 +1919,36 @@ export class LogisticaService {
 
     const nombreLogistico = logisticoInfo?.nombre_usuario || 'Logistico';
     const nombreTienda = tiendaInfo?.nombre_usuario || 'Tienda';
+
+    if (esTransferencia) {
+      if (monto <= 0) {
+        throw new BadRequestException('El monto debe ser mayor a 0 para una transferencia.');
+      }
+
+      const notaAbono = `Abono a la NEVERA #${idNevera}${nota_opcional ? ' | ' + nota_opcional : ''}`;
+
+      try {
+        const r = await this.transaccionesService.transferenciaDirecta({
+          idUsuarioPagador: idUsuarioTienda,
+          idUsuarioReceptor: idUsuarioLogistico,
+          monto,
+          notaOpcional: notaAbono,
+          idNevera,
+        });
+
+        return {
+          message: `Abono recibido: $${monto.toLocaleString('es-CO')}`,
+          id_transaccion_receptor: r.idTransaccionReceptor,
+          id_transaccion_pagador: r.idTransaccionPagador,
+          monto,
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        throw new BadRequestException(`Error al registrar abono: ${errorMessage}`);
+      }
+    }
+
+    // ─── CONSOLIDACION ───
 
     // ─── CASO A: Liquidación con empaques ───
     if (idsEmpaques && idsEmpaques.length > 0) {
@@ -2000,41 +2065,17 @@ export class LogisticaService {
       );
     }
 
-    // ─── CASO B: Liquidación sin empaques (procesar transacciones pendientes) ───
+    // ─── CASO B: Consolidación sin empaques ───
     const transaccionesPendientes = await this.transaccionesService.getPendientes({
       idUsuario: idUsuarioTienda,
       idNevera: idNevera,
     });
 
     if (transaccionesPendientes.length === 0) {
-      if (monto <= 0) {
-        throw new BadRequestException(
-          'No hay transacciones pendientes. El monto debe ser mayor a 0.',
-        );
-      }
-
-      const montoAdelanto = Math.abs(monto);
-      const notaAdelanto = `Adelanto a la NEVERA #${idNevera}${nota_opcional ? ' | ' + nota_opcional : ''}`;
-
-      try {
-        const r = await this.transaccionesService.transferenciaDirecta({
-          idUsuarioPagador: idUsuarioTienda,
-          idUsuarioReceptor: idUsuarioLogistico,
-          monto: montoAdelanto,
-          notaOpcional: notaAdelanto,
-          idNevera,
-        });
-
-        return {
-          message: `Adelanto recibido: $${montoAdelanto.toLocaleString('es-CO')}`,
-          id_transaccion_receptor: r.idTransaccionReceptor,
-          id_transaccion_pagador: r.idTransaccionPagador,
-          monto: montoAdelanto,
-        };
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        throw new BadRequestException(`Error al registrar adelanto: ${errorMessage}`);
-      }
+      throw new BadRequestException(
+        'No hay transacciones pendientes para esta nevera. ' +
+        'Usa tipo_movimiento: "ingreso" para transferencia directa.',
+      );
     }
 
     const idsTransaccionesPendientes = transaccionesPendientes.map(t => t.id_transaccion);
