@@ -87,10 +87,10 @@ async function main() {
   // 4. DEPARTAMENTO
   console.log('🏔️ Creando departamentos...');
   const departamentos = [
-    { id__departamento: 1, nombre_departamento: 'Risaralda', id_admin: 1 },
-    { id__departamento: 2, nombre_departamento: 'Quindio', id_admin: 1 },
-    { id__departamento: 3, nombre_departamento: 'Valle Del Cauca', id_admin: 1 },
-    { id__departamento: 4, nombre_departamento: 'Caldas', id_admin: 1 },
+    { id__departamento: 1, nombre_departamento: 'Risaralda' },
+    { id__departamento: 2, nombre_departamento: 'Quindio' },
+    { id__departamento: 3, nombre_departamento: 'Valle Del Cauca' },
+    { id__departamento: 4, nombre_departamento: 'Caldas' },
   ];
 
   for (const departamento of departamentos) {
@@ -108,10 +108,30 @@ async function main() {
   // 5. CIUDAD
   console.log('🏙️ Creando ciudades...');
   const ciudades = [
-    { id_ciudad: 1, nombre_ciudad: 'Santa Rosa De Cabal', id__departamento: 1, id_admin: 1 },
-    { id_ciudad: 2, nombre_ciudad: 'Dosquebradas', id__departamento: 1, id_admin: 1 },
-    { id_ciudad: 3, nombre_ciudad: 'Pereira', id__departamento: 1, id_admin: 1 },
-    { id_ciudad: 4, nombre_ciudad: 'Chinchina', id__departamento: 4, id_admin: 1 },
+    // Risaralda (1)
+    { id_ciudad: 1, nombre_ciudad: 'Santa Rosa De Cabal', id__departamento: 1, id_admin: null },
+    { id_ciudad: 2, nombre_ciudad: 'Dosquebradas', id__departamento: 1, id_admin: null },
+    { id_ciudad: 3, nombre_ciudad: 'Pereira', id__departamento: 1, id_admin: null },
+    { id_ciudad: 4, nombre_ciudad: 'Marsella', id__departamento: 1, id_admin: null },
+    { id_ciudad: 5, nombre_ciudad: 'La Virginia', id__departamento: 1, id_admin: null },
+    // Quindio (2)
+    { id_ciudad: 6, nombre_ciudad: 'Armenia', id__departamento: 2, id_admin: null },
+    { id_ciudad: 7, nombre_ciudad: 'Calarcá', id__departamento: 2, id_admin: null },
+    { id_ciudad: 8, nombre_ciudad: 'Montenegro', id__departamento: 2, id_admin: null },
+    { id_ciudad: 9, nombre_ciudad: 'Quimbaya', id__departamento: 2, id_admin: null },
+    { id_ciudad: 10, nombre_ciudad: 'La Tebaida', id__departamento: 2, id_admin: null },
+    // Valle Del Cauca (3)
+    { id_ciudad: 11, nombre_ciudad: 'Cali', id__departamento: 3, id_admin: null },
+    { id_ciudad: 12, nombre_ciudad: 'Palmira', id__departamento: 3, id_admin: null },
+    { id_ciudad: 13, nombre_ciudad: 'Buenaventura', id__departamento: 3, id_admin: null },
+    { id_ciudad: 14, nombre_ciudad: 'Tuluá', id__departamento: 3, id_admin: null },
+    { id_ciudad: 15, nombre_ciudad: 'Cartago', id__departamento: 3, id_admin: null },
+    // Caldas (4)
+    { id_ciudad: 16, nombre_ciudad: 'Manizales', id__departamento: 4, id_admin: null },
+    { id_ciudad: 17, nombre_ciudad: 'Chinchiná', id__departamento: 4, id_admin: null },
+    { id_ciudad: 18, nombre_ciudad: 'Villamaría', id__departamento: 4, id_admin: null },
+    { id_ciudad: 19, nombre_ciudad: 'Neira', id__departamento: 4, id_admin: null },
+    { id_ciudad: 20, nombre_ciudad: 'Palestina', id__departamento: 4, id_admin: null },
   ];
 
   for (const ciudad of ciudades) {

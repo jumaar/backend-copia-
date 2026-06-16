@@ -69,8 +69,7 @@ model USUARIOS {
   admin_estaciones       ESTACIONES[]                @relation("AdminEstacion")
   admin_productos        PRODUCTOS[]                 @relation("AdminProducto")
   admin_promociones      PROMOCIONES[]               @relation("AdminPromocion")
-  admin_departamentos    DEPARTAMENTO[]              @relation("AdminDepartamento")
-  admin_ciudades         CIUDAD[]                    @relation("AdminCiudad")
+
   admin_reportes         REPORTE_ESTADO_NEVERAS[]    @relation("AdminReporteEstado")
   admin_stocks           STOCK_NEVERA[]              @relation("AdminStockNevera")
   admin_bibliotecas      BIBLIOTECA[]                @relation("AdminBiblioteca")
@@ -81,20 +80,17 @@ model USUARIOS {
 model DEPARTAMENTO {
   id__departamento    Int      @id @default(autoincrement())
   nombre_departamento String?
-  id_admin            Int
   ciudades            CIUDAD[]
-  admin               USUARIOS @relation("AdminDepartamento", fields: [id_admin], references: [id_usuario])
 }
 
 model CIUDAD {
   id_ciudad        Int           @id @default(autoincrement())
   nombre_ciudad    String?
   id__departamento Int
-  id_admin               Int
+  id_admin         Int?
   departamento     DEPARTAMENTO  @relation(fields: [id__departamento], references: [id__departamento])
   frigorificos     FRIGORIFICO[]
   tiendas          TIENDAS[]
-  admin            USUARIOS      @relation("AdminCiudad", fields: [id_admin], references: [id_usuario])
 }
 
 model TIENDAS {

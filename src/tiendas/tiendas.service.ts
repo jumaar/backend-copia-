@@ -961,29 +961,18 @@ export class TiendasService {
             email: true,
             celular: true,
             tiendas: {
+              ...(idAdmin !== 0 && { where: { ciudad: { id_admin: idAdmin } } }),
               include: {
-                ciudad: idAdmin !== 0
-                  ? {
-                      where: { id_admin: idAdmin },
+                ciudad: {
+                  select: {
+                    nombre_ciudad: true,
+                    departamento: {
                       select: {
-                        nombre_ciudad: true,
-                        departamento: {
-                          select: {
-                            nombre_departamento: true,
-                          },
-                        },
-                      },
-                    }
-                  : {
-                      select: {
-                        nombre_ciudad: true,
-                        departamento: {
-                          select: {
-                            nombre_departamento: true,
-                          },
-                        },
+                        nombre_departamento: true,
                       },
                     },
+                  },
+                },
                 neveras: {
                   select: {
                     id_nevera: true,
@@ -1021,22 +1010,23 @@ export class TiendasService {
         })),
       );
 
-      const ciudadesMap = new Map<number, { id_ciudad: number; nombre_ciudad: string | null; departamento: string | null }>();
-      for (const usuario of usuariosTiendaConTiendas) {
-        for (const tienda of usuario.tiendas) {
-          if (!ciudadesMap.has(tienda.id_ciudad)) {
-            ciudadesMap.set(tienda.id_ciudad, {
-              id_ciudad: tienda.id_ciudad,
-              nombre_ciudad: tienda.ciudad.nombre_ciudad,
-              departamento: tienda.ciudad.departamento.nombre_departamento,
-            });
-          }
-        }
-      }
+      const ciudadesDisponibles = await this.databaseService.cIUDAD.findMany({
+        where: idAdmin !== 0 ? { id_admin: idAdmin } : {},
+        select: {
+          id_ciudad: true,
+          nombre_ciudad: true,
+          departamento: { select: { nombre_departamento: true } },
+        },
+        orderBy: { nombre_ciudad: 'asc' },
+      });
 
       return {
         usuarios_tienda: resultadoUsuariosTienda,
-        ciudades_disponibles: Array.from(ciudadesMap.values()),
+        ciudades_disponibles: ciudadesDisponibles.map((c) => ({
+          id_ciudad: c.id_ciudad,
+          nombre_ciudad: c.nombre_ciudad,
+          departamento: c.departamento.nombre_departamento,
+        })),
       };
     } catch (error) {
       console.error('ERROR en getTiendasSobrinas:', error);
@@ -1109,14 +1099,15 @@ export class TiendasService {
     const neveras = await this.databaseService.nEVERAS.findMany({
       where: {
         ...(idAdmin !== 0 && { id_admin: idAdmin }),
-        id_estado_nevera: 2
+        id_estado_nevera: 2,
+        ...(idAdmin !== 0 && {
+          tienda: { ciudad: { id_admin: idAdmin } }
+        })
       },
       include: {
         tienda: {
           include: {
-            ciudad: idAdmin !== 0
-              ? { where: { id_admin: idAdmin }, select: { id_ciudad: true, nombre_ciudad: true } }
-              : { select: { id_ciudad: true, nombre_ciudad: true } }
+            ciudad: { select: { id_ciudad: true, nombre_ciudad: true } }
           }
         }
       }

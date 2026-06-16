@@ -16,7 +16,7 @@ export class FrigorificoController {
   @Get()
   @Roles(1, 2, 3)
   findAll(@Req() req: any) {
-    return this.frigorificoService.findAll(req.user.id_usuario);
+    return this.frigorificoService.findAll(req.user.id_usuario, req.user.idAdmin);
   }
 
   @Post()

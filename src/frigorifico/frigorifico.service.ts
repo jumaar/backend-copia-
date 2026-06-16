@@ -33,25 +33,15 @@ export class FrigorificoService {
     });
   }
 
-  async findAll(idUsuario: number) {
-    const userAdmin = await this.databaseService.uSUARIOS.findUnique({
-      where: { id_usuario: idUsuario },
-      select: { id_admin: true },
-    });
-    const idAdmin = userAdmin?.id_admin ?? 0;
-
+  async findAll(idUsuario: number, idAdmin: number) {
     // Obtener todos los frigoríficos del usuario con ciudad, departamento y básculas
     const frigorificos = await this.databaseService.fRIGORIFICO.findMany({
-      where: { id_usuario: idUsuario },
+      where: {
+        id_usuario: idUsuario,
+        ...(idAdmin !== 0 && { ciudad: { id_admin: idAdmin } }),
+      },
       include: {
-        ciudad: idAdmin !== 0
-          ? {
-              where: { id_admin: idAdmin },
-              include: { departamento: true },
-            }
-          : {
-              include: { departamento: true },
-            },
+        ciudad: { include: { departamento: true } },
         estaciones: {
           select: {
             id_estacion: true,
@@ -123,19 +113,12 @@ export class FrigorificoService {
         },
       });
 
-    // Ciudades disponibles: solo aquellas donde el usuario tiene frigoríficos
-    const seen = new Set<number>();
-    const ciudadesDisponibles = frigorificos
-      .filter((f) => {
-        if (seen.has(f.ciudad.id_ciudad)) return false;
-        seen.add(f.ciudad.id_ciudad);
-        return true;
-      })
-      .map((f) => ({
-        id_ciudad: f.ciudad.id_ciudad,
-        nombre_ciudad: f.ciudad.nombre_ciudad,
-      }))
-      .sort((a, b) => (a.nombre_ciudad || '').localeCompare(b.nombre_ciudad || ''));
+    // Ciudades disponibles: las asignadas al admin (o todas si es superadmin)
+    const ciudadesDisponibles = await this.databaseService.cIUDAD.findMany({
+      where: idAdmin !== 0 ? { id_admin: idAdmin } : {},
+      select: { id_ciudad: true, nombre_ciudad: true },
+      orderBy: { nombre_ciudad: 'asc' },
+    });
 
     // Inventario agrupado por producto: empaques con estado 1, agrupados por id_producto
     // Solo de los frigoríficos del usuario

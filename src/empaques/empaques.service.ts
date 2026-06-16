@@ -57,16 +57,12 @@ export class EmpaquesService {
   }
 
   private async buildRadiografia(where: { id_empaque?: number; EPC_id?: string }, idAdmin: number = 0) {
-    const ciudadSelect = idAdmin !== 0
-      ? { where: { id_admin: idAdmin }, select: CIUDAD_CON_DEPARTAMENTO }
-      : { select: CIUDAD_CON_DEPARTAMENTO };
-
     const neveraSelect = {
       ...NEVERA_CON_TIENDA,
       tienda: {
         select: {
           ...NEVERA_CON_TIENDA.tienda.select,
-          ciudad: ciudadSelect,
+          ciudad: { select: CIUDAD_CON_DEPARTAMENTO },
         },
       },
     };
@@ -98,7 +94,7 @@ export class EmpaquesService {
                 id_frigorifico: true,
                 nombre_frigorifico: true,
                 direccion: true,
-                ciudad: ciudadSelect,
+                ciudad: { select: CIUDAD_CON_DEPARTAMENTO },
                 usuario: { select: USUARIO_SELECT },
               },
             },

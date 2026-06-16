@@ -53,12 +53,10 @@ export class GestionUsuariosService {
       rol: true,
       tiendas: {
         include: {
-          ciudad: idAdmin !== 0
-            ? { where: { id_admin: idAdmin }, include: { departamento: true } }
-            : { include: { departamento: true } },
+          ciudad: { include: { departamento: true } },
           neveras: { select: { id_nevera: true, id_estado_nevera: true } }
         }
-      }
+      },
     };
     if (userRole === 4) {
       includeRelations['logisticas'] = true;
@@ -89,9 +87,16 @@ export class GestionUsuariosService {
 
     // Rol Tienda (5): ve sus tiendas con neveras
     if (userRole === 5) {
+      const ciudadesDisponibles = await this.databaseService.cIUDAD.findMany({
+        where: idAdmin !== 0 ? { id_admin: idAdmin } : {},
+        select: { id_ciudad: true, nombre_ciudad: true },
+        orderBy: { nombre_ciudad: 'asc' },
+      });
+
       return {
         usuario_actual: this.formatUser(currentUser),
         jerarquia: this.buildTiendas(currentUser.tiendas || []),
+        ciudades_disponibles: ciudadesDisponibles,
         tokens: [],
       };
     }
@@ -100,9 +105,7 @@ export class GestionUsuariosService {
       rol: true,
       tiendas: {
         include: {
-          ciudad: idAdmin !== 0
-            ? { where: { id_admin: idAdmin }, include: { departamento: true } }
-            : { include: { departamento: true } },
+          ciudad: { include: { departamento: true } },
           neveras: { select: { id_nevera: true, id_estado_nevera: true } }
         }
       },
@@ -178,9 +181,7 @@ export class GestionUsuariosService {
               rol: true,
               tiendas: {
                 include: {
-                  ciudad: idAdmin !== 0
-            ? { where: { id_admin: idAdmin }, include: { departamento: true } }
-            : { include: { departamento: true } },
+                  ciudad: { include: { departamento: true } },
                   neveras: { select: { id_nevera: true, id_estado_nevera: true } }
                 }
               }
@@ -226,9 +227,7 @@ export class GestionUsuariosService {
               rol: true,
               tiendas: {
                 include: {
-                  ciudad: idAdmin !== 0
-            ? { where: { id_admin: idAdmin }, include: { departamento: true } }
-            : { include: { departamento: true } },
+                  ciudad: { include: { departamento: true } },
                   neveras: { select: { id_nevera: true, id_estado_nevera: true } }
                 }
               }

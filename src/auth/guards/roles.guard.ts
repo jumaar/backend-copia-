@@ -29,7 +29,7 @@ export class RolesGuard implements CanActivate {
 
     const { user } = context.switchToHttp().getRequest();
 
-    if (!user || !user.roleId) {
+    if (!user || user.roleId == null) {
       this.logger.warn('Usuario no encontrado o sin roleId');
       throw new ForbiddenException('No se pudo determinar el rol del usuario.');
     }

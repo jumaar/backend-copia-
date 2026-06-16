@@ -14,6 +14,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { EmpaquesModule } from './empaques/empaques.module';
 import { TransaccionesModule } from './transacciones/transacciones.module';
+import { SuperadminModule } from './superadmin/superadmin.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { TransaccionesModule } from './transacciones/transacciones.module';
     GestionUsuariosModule,
     EmpaquesModule,
     TransaccionesModule,
+    SuperadminModule,
   ],
   providers: [
     {
