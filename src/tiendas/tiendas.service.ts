@@ -491,7 +491,7 @@ export class TiendasService {
     };
   }
 
-  async getProductosByNevera(id_nevera: number, id_usuario: number) {
+  async getProductosByNevera(id_nevera: number, id_usuario: number, idAdmin: number) {
     // Obtener información del usuario actual
     const usuarioActual = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario: id_usuario },
@@ -538,6 +538,18 @@ export class TiendasService {
           code: 'NEVERA_NOT_FOUND',
         },
         HttpStatus.NOT_FOUND,
+      );
+    }
+
+    if (idAdmin !== 0 && nevera.id_admin !== idAdmin) {
+      throw new HttpException(
+        {
+          status: HttpStatus.FORBIDDEN,
+          error: 'Acceso denegado',
+          message: 'No tienes acceso a esta nevera.',
+          code: 'NEVERA_FORBIDDEN',
+        },
+        HttpStatus.FORBIDDEN,
       );
     }
 
@@ -734,6 +746,7 @@ export class TiendasService {
     id_nevera: number,
     stockUpdates: any[],
     id_usuario: number,
+    idAdmin: number,
   ) {
     // Obtener información del usuario actual
     const usuarioActual = await this.databaseService.uSUARIOS.findUnique({
@@ -779,6 +792,18 @@ export class TiendasService {
           code: 'NEVERA_NOT_FOUND',
         },
         HttpStatus.NOT_FOUND,
+      );
+    }
+
+    if (idAdmin !== 0 && nevera.id_admin !== idAdmin) {
+      throw new HttpException(
+        {
+          status: HttpStatus.FORBIDDEN,
+          error: 'Acceso denegado',
+          message: 'No tienes acceso a esta nevera.',
+          code: 'NEVERA_FORBIDDEN',
+        },
+        HttpStatus.FORBIDDEN,
       );
     }
 
