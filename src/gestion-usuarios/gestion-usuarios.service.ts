@@ -45,9 +45,9 @@ export class GestionUsuariosService {
     }));
   }
 
-  async findAll(user: { id_usuario: number; roleId: number }, accessibleUserIds: number[]) {
+  async findAll(user: { id_usuario: number; roleId: number }, idAdmin: number) {
     const userRole = user.roleId;
-    this.logger.debug(`Iniciando findAll para el usuario ID: ${user.id_usuario} con Rol ID: ${userRole}, scope=${accessibleUserIds.length} usuarios`);
+    this.logger.debug(`Iniciando findAll para el usuario ID: ${user.id_usuario} con Rol ID: ${userRole}, idAdmin=${idAdmin}`);
 
     const includeRelations: any = {
       rol: true,
@@ -110,8 +110,11 @@ export class GestionUsuariosService {
         where: {
           id_usuario_creador: creatorId,
           es_usado: true,
-          id_usuario_nuevo: { not: null, in: accessibleUserIds },
-          nuevo_usuario: { email: { not: { endsWith: '@borrado.com' } } },
+          id_usuario_nuevo: { not: null },
+          nuevo_usuario: {
+            email: { not: { endsWith: '@borrado.com' } },
+            ...(idAdmin !== 0 && { id_admin: idAdmin }),
+          },
         },
         include: { nuevo_usuario: { include: includeDescRelations } },
       });
@@ -158,9 +161,12 @@ export class GestionUsuariosService {
         where: {
           id_usuario_creador: user.id_usuario,
           es_usado: true,
-          id_usuario_nuevo: { not: null, in: accessibleUserIds },
+          id_usuario_nuevo: { not: null },
           id_rol_nuevo_usuario: 5,
-          nuevo_usuario: { email: { not: { endsWith: '@borrado.com' } } },
+          nuevo_usuario: {
+            email: { not: { endsWith: '@borrado.com' } },
+            ...(idAdmin !== 0 && { id_admin: idAdmin }),
+          },
         },
         include: {
           nuevo_usuario: {
@@ -200,9 +206,12 @@ export class GestionUsuariosService {
         where: {
           id_usuario_creador: { not: user.id_usuario },
           es_usado: true,
-          id_usuario_nuevo: { not: null, in: accessibleUserIds },
+          id_usuario_nuevo: { not: null },
           id_rol_nuevo_usuario: 5,
-          nuevo_usuario: { email: { not: { endsWith: '@borrado.com' } } },
+          nuevo_usuario: {
+            email: { not: { endsWith: '@borrado.com' } },
+            ...(idAdmin !== 0 && { id_admin: idAdmin }),
+          },
         },
         include: {
           creador: { select: { nombre_usuario: true, apellido_usuario: true } },

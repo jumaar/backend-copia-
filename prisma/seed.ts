@@ -68,6 +68,7 @@ async function main() {
       contraseña: hashedPassword,
       activo: true,
       id_rol: 1,
+      id_admin: 0,
     },
   ];
 
@@ -86,10 +87,10 @@ async function main() {
   // 4. DEPARTAMENTO
   console.log('🏔️ Creando departamentos...');
   const departamentos = [
-    { id__departamento: 1, nombre_departamento: 'Risaralda' },
-    { id__departamento: 2, nombre_departamento: 'Quindio' },
-    { id__departamento: 3, nombre_departamento: 'Valle Del Cauca' },
-    { id__departamento: 4, nombre_departamento: 'Caldas' },
+    { id__departamento: 1, nombre_departamento: 'Risaralda', id_admin: 1 },
+    { id__departamento: 2, nombre_departamento: 'Quindio', id_admin: 1 },
+    { id__departamento: 3, nombre_departamento: 'Valle Del Cauca', id_admin: 1 },
+    { id__departamento: 4, nombre_departamento: 'Caldas', id_admin: 1 },
   ];
 
   for (const departamento of departamentos) {
@@ -107,10 +108,10 @@ async function main() {
   // 5. CIUDAD
   console.log('🏙️ Creando ciudades...');
   const ciudades = [
-    { id_ciudad: 1, nombre_ciudad: 'Santa Rosa De Cabal', id__departamento: 1 },
-    { id_ciudad: 2, nombre_ciudad: 'Dosquebradas', id__departamento: 1 },
-    { id_ciudad: 3, nombre_ciudad: 'Pereira', id__departamento: 1 },
-    { id_ciudad: 4, nombre_ciudad: 'Chinchina', id__departamento: 4 },
+    { id_ciudad: 1, nombre_ciudad: 'Santa Rosa De Cabal', id__departamento: 1, id_admin: 1 },
+    { id_ciudad: 2, nombre_ciudad: 'Dosquebradas', id__departamento: 1, id_admin: 1 },
+    { id_ciudad: 3, nombre_ciudad: 'Pereira', id__departamento: 1, id_admin: 1 },
+    { id_ciudad: 4, nombre_ciudad: 'Chinchina', id__departamento: 4, id_admin: 1 },
   ];
 
   for (const ciudad of ciudades) {
@@ -150,14 +151,14 @@ async function main() {
   // 11. PRODUCTOS
   console.log('📦 Creando productos...');
   const productos = [
-    { id_producto: 1, nombre_producto: 'lomo cerdo', descripcion_producto: 'lomo cerdo 1000g', peso_nominal_g: 1000, precio_venta: 10000, dias_vencimiento: 30, precio_frigorifico: 5.0, precio_tienda: 15.0 },
-    { id_producto: 2, nombre_producto: 'lomo cerdo', descripcion_producto: 'lomo cerdo 250g', peso_nominal_g: 250, precio_venta: 2500, dias_vencimiento: 30, precio_frigorifico: 3.0, precio_tienda: 15.0 },
-    { id_producto: 3, nombre_producto: 'costilla cerdo', descripcion_producto: 'costilla cerdo 250g', peso_nominal_g: 250, precio_venta: 2500, dias_vencimiento: 25, precio_frigorifico: 3.0, precio_tienda: 15.0 },
-    { id_producto: 4, nombre_producto: 'costilla cerdo', descripcion_producto: 'costilla cerdo 500g', peso_nominal_g: 500, precio_venta: 5000, dias_vencimiento: 25, precio_frigorifico: 3.0, precio_tienda: 15.0 },
-    { id_producto: 5, nombre_producto: 'costilla cerdo', descripcion_producto: 'costilla cerdo 1000g', peso_nominal_g: 1000, precio_venta: 10000, dias_vencimiento: 25, precio_frigorifico: 3.0, precio_tienda: 15.0 },
-    { id_producto: 6, nombre_producto: 'panceta', descripcion_producto: 'panceta 1000g', peso_nominal_g: 1000, precio_venta: 10000, dias_vencimiento: 40, precio_frigorifico: 3.0, precio_tienda: 15.0 },
-    { id_producto: 7, nombre_producto: 'chorizo', descripcion_producto: 'de cerdo *3', peso_nominal_g: 300, precio_venta: 9000, dias_vencimiento: 20, precio_frigorifico: 3.0, precio_tienda: 15.0 },
-    { id_producto: 8, nombre_producto: 'chorizo', descripcion_producto: 'de cerdo *7', peso_nominal_g: 700, precio_venta: 19000, dias_vencimiento: 20, precio_frigorifico: 3.0, precio_tienda: 15.0 },
+    { id_producto: 1, nombre_producto: 'lomo cerdo', descripcion_producto: 'lomo cerdo 1000g', peso_nominal_g: 1000, precio_venta: 10000, dias_vencimiento: 30, precio_frigorifico: 5.0, precio_tienda: 15.0, id_admin: 1 },
+    { id_producto: 2, nombre_producto: 'lomo cerdo', descripcion_producto: 'lomo cerdo 250g', peso_nominal_g: 250, precio_venta: 2500, dias_vencimiento: 30, precio_frigorifico: 3.0, precio_tienda: 15.0, id_admin: 1 },
+    { id_producto: 3, nombre_producto: 'costilla cerdo', descripcion_producto: 'costilla cerdo 250g', peso_nominal_g: 250, precio_venta: 2500, dias_vencimiento: 25, precio_frigorifico: 3.0, precio_tienda: 15.0, id_admin: 1 },
+    { id_producto: 4, nombre_producto: 'costilla cerdo', descripcion_producto: 'costilla cerdo 500g', peso_nominal_g: 500, precio_venta: 5000, dias_vencimiento: 25, precio_frigorifico: 3.0, precio_tienda: 15.0, id_admin: 1 },
+    { id_producto: 5, nombre_producto: 'costilla cerdo', descripcion_producto: 'costilla cerdo 1000g', peso_nominal_g: 1000, precio_venta: 10000, dias_vencimiento: 25, precio_frigorifico: 3.0, precio_tienda: 15.0, id_admin: 1 },
+    { id_producto: 6, nombre_producto: 'panceta', descripcion_producto: 'panceta 1000g', peso_nominal_g: 1000, precio_venta: 10000, dias_vencimiento: 40, precio_frigorifico: 3.0, precio_tienda: 15.0, id_admin: 1 },
+    { id_producto: 7, nombre_producto: 'chorizo', descripcion_producto: 'de cerdo *3', peso_nominal_g: 300, precio_venta: 9000, dias_vencimiento: 20, precio_frigorifico: 3.0, precio_tienda: 15.0, id_admin: 1 },
+    { id_producto: 8, nombre_producto: 'chorizo', descripcion_producto: 'de cerdo *7', peso_nominal_g: 700, precio_venta: 19000, dias_vencimiento: 20, precio_frigorifico: 3.0, precio_tienda: 15.0, id_admin: 1 },
   ];
 
   for (const producto of productos) {
@@ -200,10 +201,10 @@ async function main() {
   // 13. PROMOCIONES
   console.log('🎉 Creando promociones...');
   const promociones = [
-    { id_promocion: 1, nombre: '20% Descuento', tipo: 'PORCENTAJE', valor: 20.0 },
-    { id_promocion: 2, nombre: '2x1 (50% en 2da unidad)', tipo: 'BOGOF', valor: 50.0 },
-    { id_promocion: 3, nombre: '50% Descuento', tipo: 'PORCENTAJE', valor: 50.0 },
-    { id_promocion: 4, nombre: 'Liquidación Total', tipo: 'PORCENTAJE', valor: 80.0 },
+    { id_promocion: 1, nombre: '20% Descuento', tipo: 'PORCENTAJE', valor: 20.0, id_admin: 1 },
+    { id_promocion: 2, nombre: '2x1 (50% en 2da unidad)', tipo: 'BOGOF', valor: 50.0, id_admin: 1 },
+    { id_promocion: 3, nombre: '50% Descuento', tipo: 'PORCENTAJE', valor: 50.0, id_admin: 1 },
+    { id_promocion: 4, nombre: 'Liquidación Total', tipo: 'PORCENTAJE', valor: 80.0, id_admin: 1 },
   ];  
 
   for (const promocion of promociones) {
@@ -292,8 +293,7 @@ const listasReproduccion = [
   {
     id_lista_reproduccion: 1,
     nombre: 'LISTA DIARIA',
-    
-    
+    id_admin: 1,
     lista_json: [
         {
           "url": "http://0.0.0.0:8000/local_media/4253351-uhd_4096_2160_25fps.mp4",
@@ -327,9 +327,9 @@ console.log('✅ Listas de reproducción creadas');
   // 20. BIBLIOTECA
   console.log('📚 Creando biblioteca...');
   const biblioteca = [
-    { id: 1, nombre: 'CHORIZOS DE CERDO', tipo: 'IMAGEN' as const, url: '/images/chorizos-cerdo.jpg' },
-    { id: 2, nombre: 'PROMOCION DE CHORIZO', tipo: 'VIDEO' as const, url: '/videos/promocion-chorizo.mp4' },
-    { id: 3, nombre: 'PUBLICIDAD DIARIA', tipo: 'VIDEO' as const, url: '/videos/publicidad-diaria.mp4' },
+    { id: 1, nombre: 'CHORIZOS DE CERDO', tipo: 'IMAGEN' as const, url: '/images/chorizos-cerdo.jpg', id_admin: 1 },
+    { id: 2, nombre: 'PROMOCION DE CHORIZO', tipo: 'VIDEO' as const, url: '/videos/promocion-chorizo.mp4', id_admin: 1 },
+    { id: 3, nombre: 'PUBLICIDAD DIARIA', tipo: 'VIDEO' as const, url: '/videos/publicidad-diaria.mp4', id_admin: 1 },
   ];
 
   for (const item of biblioteca) {
@@ -347,9 +347,9 @@ console.log('✅ Listas de reproducción creadas');
   // 21. ITEMS_DE_REPRODUCCION
   console.log('🎵 Creando items de reproducción...');
   const itemsReproduccion = [
-    { id: 1, id_lista_reproduccion: 1, id_biblioteca: 1, tiempo_reproduccion_s: 20, orden_reproduccion: 1 },
-    { id: 2, id_lista_reproduccion: 1, id_biblioteca: 2, tiempo_reproduccion_s: 20, orden_reproduccion: 2 },
-    { id: 3, id_lista_reproduccion: 1, id_biblioteca: 3, tiempo_reproduccion_s: 30, orden_reproduccion: 3 },
+    { id: 1, id_lista_reproduccion: 1, id_biblioteca: 1, tiempo_reproduccion_s: 20, orden_reproduccion: 1, id_admin: 1 },
+    { id: 2, id_lista_reproduccion: 1, id_biblioteca: 2, tiempo_reproduccion_s: 20, orden_reproduccion: 2, id_admin: 1 },
+    { id: 3, id_lista_reproduccion: 1, id_biblioteca: 3, tiempo_reproduccion_s: 30, orden_reproduccion: 3, id_admin: 1 },
   ];
 
   for (const item of itemsReproduccion) {

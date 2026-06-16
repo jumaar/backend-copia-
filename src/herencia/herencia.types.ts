@@ -99,6 +99,7 @@ export interface HerenciaRequestUser {
   id_usuario: number;
   roleId: number;
   email?: string;
+  idAdmin: number;
 }
 
 /**

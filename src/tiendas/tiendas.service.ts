@@ -72,10 +72,16 @@ export class TiendasService {
       }
     }
 
+    const usuarioAdmin = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario: id_usuario },
+      select: { id_admin: true },
+    });
+
     // Crear la tienda
     const nuevaTienda = await this.databaseService.tIENDAS.create({
       data: {
         id_usuario,
+        id_admin: usuarioAdmin?.id_admin ?? 1,
         nombre_tienda,
         direccion,
         id_ciudad,
@@ -164,6 +170,7 @@ export class TiendasService {
         contraseña: contraseña,
         id_estado_nevera: 1, // Estado inactiva
         id_tienda: id_tienda,
+        id_admin: tienda.id_admin,
         version_software: 0,
         fecha_creacion: new Date(),
       },
@@ -817,6 +824,7 @@ export class TiendasService {
             data: {
               id_nevera: id_nevera,
               id_producto: id_producto,
+              id_admin: nevera.id_admin,
               stock_minimo: stock_minimo,
               stock_maximo: stock_maximo,
               venta_semanal: 0,
@@ -873,12 +881,12 @@ export class TiendasService {
     };
   }
 
-  async getTiendasSobrinas(id_usuario: number, rol_usuario: number, accessibleUserIds: number[]) {
+  async getTiendasSobrinas(id_usuario: number, rol_usuario: number, idAdmin: number) {
     try {
       const usuariosTiendaConTiendas =
         await this.databaseService.uSUARIOS.findMany({
           where: {
-            id_usuario: { in: accessibleUserIds },
+            ...(idAdmin !== 0 && { id_admin: idAdmin }),
             id_rol: 5,
             activo: true,
           },
@@ -960,8 +968,7 @@ export class TiendasService {
     }
   }
 
-  async getNeverasActivas(id_usuario: number, accessibleUserIds?: number[]) {
-    const idsAccesibles = accessibleUserIds || [id_usuario];
+  async getNeverasActivas(id_usuario: number, idAdmin: number) {
 
     const empaquesScan = await this.databaseService.eMPAQUES.findMany({
       where: {
@@ -1023,23 +1030,9 @@ export class TiendasService {
       }
     }
 
-    const tiendas = await this.databaseService.tIENDAS.findMany({
-      where: { id_usuario: { in: idsAccesibles } },
-      select: { id_tienda: true }
-    });
-
-    const tiendasIds = tiendas.map(t => t.id_tienda);
-
-    if (tiendasIds.length === 0) {
-      return {
-        neveras_activas: [],
-        total_neveras: 0
-      };
-    }
-
     const neveras = await this.databaseService.nEVERAS.findMany({
       where: {
-        id_tienda: { in: tiendasIds },
+        ...(idAdmin !== 0 && { id_admin: idAdmin }),
         id_estado_nevera: 2
       },
       include: {

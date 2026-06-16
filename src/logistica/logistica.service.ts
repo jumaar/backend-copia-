@@ -34,11 +34,9 @@ export class LogisticaService {
   async getProductosPorLogistica(
     id_usuario: number,
     id_rol: number,
+    idAdmin: number,
     idUsuarioTarget?: number,
-    accessibleUserIds?: number[],
   ) {
-    const idsAccesibles = accessibleUserIds || [id_usuario];
-
     // ═══════════════════════════════════════════════════════════════
     // CASO ADMIN (rol 1 o 2) SIN target: devolver lista de usuarios
     // logística que son sus descendientes
@@ -46,9 +44,9 @@ export class LogisticaService {
     if ((id_rol === 1 || id_rol === 2) && !idUsuarioTarget) {
       const usuariosLogistica = await this.databaseService.uSUARIOS.findMany({
         where: {
-          id_usuario: { in: idsAccesibles },
           id_rol: 4,
           activo: true,
+          ...(idAdmin !== 0 && { id_admin: idAdmin }),
         },
         select: {
           id_usuario: true,
@@ -69,8 +67,14 @@ export class LogisticaService {
     // accesible en la jerarquía
     // ═══════════════════════════════════════════════════════════════
     if (idUsuarioTarget && (id_rol === 1 || id_rol === 2)) {
-      if (idUsuarioTarget !== id_usuario && !idsAccesibles.includes(idUsuarioTarget)) {
-        throw new ForbiddenException('No tienes acceso a este usuario logístico');
+      if (idUsuarioTarget !== id_usuario && idAdmin !== 0) {
+        const targetAccessible = await this.databaseService.uSUARIOS.findFirst({
+          where: { id_usuario: idUsuarioTarget, id_admin: idAdmin, id_rol: 4, activo: true },
+          select: { id_usuario: true },
+        });
+        if (!targetAccessible) {
+          throw new ForbiddenException('No tienes acceso a este usuario logístico');
+        }
       }
     }
 
@@ -161,7 +165,20 @@ export class LogisticaService {
       select: { id_rol: true },
     });
 
-    let usuariosPermitidos: number[] = idsAccesibles;
+    let usuariosPermitidos: number[];
+    if (idAdmin === 0) {
+      const allUsers = await this.databaseService.uSUARIOS.findMany({
+        where: { activo: true },
+        select: { id_usuario: true },
+      });
+      usuariosPermitidos = allUsers.map(u => u.id_usuario);
+    } else {
+      const adminUsers = await this.databaseService.uSUARIOS.findMany({
+        where: { id_admin: idAdmin, activo: true },
+        select: { id_usuario: true },
+      });
+      usuariosPermitidos = adminUsers.map(u => u.id_usuario);
+    }
 
     const empaquesEstado5 = await this.databaseService.eMPAQUES.findMany({
       where: {
@@ -619,8 +636,7 @@ export class LogisticaService {
       }
     };
   }
-  async getNeverasActivas(id_usuario: number, accessibleUserIds?: number[]) {
-    const idsAccesibles = accessibleUserIds || [id_usuario];
+  async getNeverasActivas(id_usuario: number, idAdmin: number) {
 
     // FASE 0: Escanea empaques en estado 3 y 5, cambia a estado 5 los ≥75%
     // que aun esten en estado 3, y setea mensaje_sistema para ambos.
@@ -684,9 +700,24 @@ export class LogisticaService {
       }
     }
 
-    // Obtener tiendas de los usuarios accesibles (ya resueltos por el guard)
+    // Obtener tiendas de los usuarios accesibles por id_admin
+    let usuarioIdsParaTiendas: number[];
+    if (idAdmin === 0) {
+      const allUsers = await this.databaseService.uSUARIOS.findMany({
+        where: { activo: true },
+        select: { id_usuario: true },
+      });
+      usuarioIdsParaTiendas = allUsers.map(u => u.id_usuario);
+    } else {
+      const adminUsers = await this.databaseService.uSUARIOS.findMany({
+        where: { id_admin: idAdmin, activo: true },
+        select: { id_usuario: true },
+      });
+      usuarioIdsParaTiendas = adminUsers.map(u => u.id_usuario);
+    }
+
     const tiendas = await this.databaseService.tIENDAS.findMany({
-      where: { id_usuario: { in: idsAccesibles } },
+      where: { id_usuario: { in: usuarioIdsParaTiendas } },
       select: { id_tienda: true }
     });
 
@@ -850,7 +881,7 @@ export class LogisticaService {
     );
   }
 
-  async getHermanosLogisticaPorScope(requesterId: number, requesterRole: number, accessibleUserIds: number[]) {
+  async getHermanosLogisticaPorScope(requesterId: number, requesterRole: number, idAdmin: number) {
     if (requesterRole === 1) {
       const admins = await this.databaseService.uSUARIOS.findMany({
         where: { id_rol: 2, activo: true },
@@ -916,9 +947,9 @@ export class LogisticaService {
 
     const hermanos = await this.databaseService.uSUARIOS.findMany({
       where: {
-        id_usuario: { in: accessibleUserIds },
         id_rol: 4,
         activo: true,
+        ...(idAdmin !== 0 && { id_admin: idAdmin }),
       },
       select: {
         id_usuario: true,

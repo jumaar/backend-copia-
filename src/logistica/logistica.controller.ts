@@ -31,8 +31,8 @@ export class LogisticaController {
     return this.logisticaService.getProductosPorLogistica(
       id_usuario_jwt,
       id_rol_jwt,
+      req.user.idAdmin,
       idUsuarioTarget,
-      req.accessibleUserIds,
     );
   }
 
@@ -54,7 +54,7 @@ export class LogisticaController {
   @Roles(1, 2, 4)
   @Herencia({ tipo: 'resolver', scope: 'descendientes', entidad: 'usuario' })
   getHermanosLogistica(@Req() req: any) {
-    return this.logisticaService.getHermanosLogisticaPorScope(req.user.id_usuario, req.user.roleId, req.accessibleUserIds);
+    return this.logisticaService.getHermanosLogisticaPorScope(req.user.id_usuario, req.user.roleId, req.user.idAdmin);
   }
 
   @Post('consolidar-admin')

@@ -16,9 +16,15 @@ export class FrigorificoService {
   ) {}
 
   async create(idUsuario: number, createFrigorificoDto: CreateFrigorificoDto) {
+    const usuario = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario: idUsuario },
+      select: { id_admin: true },
+    });
+
     return this.databaseService.fRIGORIFICO.create({
       data: {
         id_usuario: idUsuario,
+        id_admin: usuario!.id_admin,
         nombre_frigorifico: createFrigorificoDto.nombre_frigorifico,
         direccion: createFrigorificoDto.direccion,
         id_ciudad: createFrigorificoDto.id_ciudad,
@@ -377,6 +383,11 @@ export class FrigorificoService {
     // Asegurarse de que no se envíe id_producto
     const { id_producto, ...data } = createProductoDto;
 
+    const usuario = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario: idUsuario },
+      select: { id_admin: true },
+    });
+
     // Convertir tipos de datos según el schema de Prisma
     const processedData = {
       nombre_producto: data.nombre_producto,
@@ -389,6 +400,7 @@ export class FrigorificoService {
       media: data.media ? parseFloat(data.media) : null,
       baja: data.baja ? parseFloat(data.baja) : null,
       alta: data.alta ? parseFloat(data.alta) : null,
+      id_admin: usuario!.id_admin,
     };
 
     return this.databaseService.pRODUCTOS.create({
@@ -530,6 +542,7 @@ export class FrigorificoService {
       data: {
         id_estacion: idCompuesto,
         id_frigorifico: idFrigorifico,
+        id_admin: frigorifico.id_admin,
         clave_vinculacion: claveVinculacion,
         activa: false, // Nueva estación inicia inactiva
       },
@@ -701,6 +714,16 @@ export class FrigorificoService {
       errores: [],
     };
 
+    const estacion = await this.databaseService.eSTACIONES.findUnique({
+      where: { id_estacion: estacionId },
+      select: {
+        frigorifico: {
+          select: { id_admin: true },
+        },
+      },
+    });
+    const idAdminEmpaque = estacion?.frigorifico.id_admin;
+
     // Procesar en lotes de 10 para optimizar BD
     const lotes = this.chunkArray(empaques, 10);
 
@@ -778,6 +801,7 @@ export class FrigorificoService {
               costo_frigorifico: costoFrigorificoRedondeado.toString(), // Redondeado a entero
               costo_tienda: costoTiendaRedondeado.toString(), // Costo para la tienda
               id_estado_empaque: 1, // En stock
+              id_admin: idAdminEmpaque!,
             },
           });
 
@@ -1284,7 +1308,7 @@ export class FrigorificoService {
     id_producto: number,
     id_logistica: number,
     id_usuario: number,
-    accessibleUserIds: number[],
+    idAdmin: number,
   ) {
     const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
@@ -1311,14 +1335,12 @@ export class FrigorificoService {
       );
     }
 
-    // Verificar que la estación pertenece a un frigorífico hermano (mismo admin)
-    // accessibleUserIds ya contiene los hermanos resueltos por HerenciaGuard
+    // Verificar que la estación pertenece a un frigorífico del mismo admin
+    // ESTACIONES tiene columna id_admin directamente
     const estacion = await this.databaseService.eSTACIONES.findFirst({
       where: {
         id_estacion: id_estacion,
-        frigorifico: {
-          id_usuario: { in: accessibleUserIds },
-        },
+        ...(idAdmin !== 0 && { id_admin: idAdmin }),
       },
     });
 
@@ -1517,7 +1539,7 @@ export class FrigorificoService {
     return idUsuario;
   }
 
-  async getHermanosFrigorificoPorScope(requesterId: number, requesterRole: number, accessibleUserIds: number[]) {
+  async getHermanosFrigorificoPorScope(requesterId: number, requesterRole: number, idAdmin: number) {
     if (requesterRole === 1) {
       const admins = await this.databaseService.uSUARIOS.findMany({
         where: { id_rol: 2, activo: true },
@@ -1583,39 +1605,11 @@ export class FrigorificoService {
       );
     }
 
-    let frigorificoIds: number[];
-
-    if (requesterRole === 4) {
-      const token = await this.databaseService.tOKEN_REGISTRO.findFirst({
-        where: { id_usuario_nuevo: requesterId },
-        select: { id_usuario_creador: true },
-      });
-
-      if (token?.id_usuario_creador) {
-        const adminHijos = await this.databaseService.tOKEN_REGISTRO.findMany({
-          where: {
-            id_usuario_creador: token.id_usuario_creador,
-            es_usado: true,
-            id_rol_nuevo_usuario: 3,
-            id_usuario_nuevo: { not: null },
-          },
-          select: { id_usuario_nuevo: true },
-        });
-        frigorificoIds = adminHijos
-          .filter((t) => t.id_usuario_nuevo !== null)
-          .map((t) => t.id_usuario_nuevo!);
-      } else {
-        frigorificoIds = [];
-      }
-    } else {
-      frigorificoIds = accessibleUserIds;
-    }
-
     const hermanos = await this.databaseService.uSUARIOS.findMany({
       where: {
-        id_usuario: { in: frigorificoIds },
         id_rol: 3,
         activo: true,
+        ...(idAdmin !== 0 && { id_admin: idAdmin }),
       },
       select: {
         id_usuario: true,

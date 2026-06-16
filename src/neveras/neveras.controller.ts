@@ -46,7 +46,7 @@ export class NeverasController {
     const idUsuario = req.user.id_usuario;
     return this.neverasService.ejecutarCalificacion(
       idUsuario,
-      req.accessibleUserIds,
+      req.user.idAdmin,
     );
   }
 
@@ -77,7 +77,7 @@ export class NeverasController {
       idCiudad || null,
       diasExcluir ? Number(diasExcluir) : 0,
       idUsuario,
-      req.accessibleUserIds,
+      req.user.idAdmin,
     );
   }
 

@@ -88,6 +88,7 @@ export class NeverasService {
       sub: nevera.id_nevera,
       tipo: 'nevera_activacion',
       contrasena: contrasena,
+      id_admin: nevera.id_admin,
     };
 
     // Generar token con una expiración muy larga (aproximadamente 100 años) para simular "infinito"
@@ -201,7 +202,7 @@ export class NeverasService {
    */
   async ejecutarCalificacion(
     idUsuario: number,
-    accessibleUserIds: number[],
+    idAdmin: number,
   ) {
     const horaCalificacion = new Date();
 
@@ -209,7 +210,7 @@ export class NeverasService {
     const neverasActivas = await this.databaseService.nEVERAS.findMany({
       where: {
         id_estado_nevera: 2,
-        tienda: { id_usuario: { in: accessibleUserIds } },
+        ...(idAdmin !== 0 && { id_admin: idAdmin }),
       },
       select: {
         id_nevera: true,
@@ -265,6 +266,12 @@ export class NeverasService {
 
     // ─── FASE 2: Verificar y crear STOCK_NEVERA faltantes ───
     for (const nevera of neverasActivas) {
+      const neveraAdmin = await this.databaseService.nEVERAS.findUnique({
+        where: { id_nevera: nevera.id_nevera },
+        select: { id_admin: true },
+      });
+      const idAdmin = neveraAdmin?.id_admin ?? 1;
+
       for (const producto of todosLosProductos) {
         const existente = stockExistente.find(
           (s) =>
@@ -277,6 +284,7 @@ export class NeverasService {
             data: {
               id_nevera: nevera.id_nevera,
               id_producto: producto.id_producto,
+              id_admin: idAdmin,
               stock_en_tiempo_real: 0,
               venta_semanal: 0,
               calificacion_surtido: 'MEDIA',
@@ -453,14 +461,14 @@ export class NeverasService {
    * @param diasExcluir    Días hacia atrás para excluir neveras ya surtidas.
    *                       0 o null = incluir TODAS (incluso las surtidas hoy).
    * @param idUsuario      ID del usuario autenticado
-   * @param accessibleUserIds  IDs de usuarios accesibles por herencia
+   * @param idAdmin          ID del admin del usuario (0 = Super Admin, sin filtro)
    */
   async surtirNevera(
     idNevera: number,
     idCiudad: string | null,
     diasExcluir: number,
     idUsuario: number,
-    accessibleUserIds: number[],
+    idAdmin: number,
   ) {
     if (!idNevera || isNaN(idNevera)) {
       throw new HttpException(
@@ -508,7 +516,7 @@ export class NeverasService {
       );
     }
 
-    if (!accessibleUserIds.includes(nevera.tienda.id_usuario)) {
+    if (idAdmin !== 0 && nevera.id_admin !== idAdmin) {
       throw new HttpException(
         {
           success: false,
@@ -601,7 +609,7 @@ export class NeverasService {
     }
 
     const tiendaWhere: any = {
-      id_usuario: { in: accessibleUserIds },
+      ...(idAdmin !== 0 && { id_admin: idAdmin }),
     };
     if (idsCiudades && idsCiudades.length > 0) {
       tiendaWhere.ciudad = { id_ciudad: { in: idsCiudades } };
@@ -1032,6 +1040,7 @@ export class NeverasService {
           sub: nevera.id_nevera,
           tipo: 'nevera_actualizacion',
           contrasena: nevera.contraseña,
+          id_admin: nevera.id_admin,
         };
 
         const token = this.jwtService.sign(payload, { expiresIn: '876000h' }); // 100 años aproximadamente

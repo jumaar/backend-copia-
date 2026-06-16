@@ -18,7 +18,7 @@ export class GestionUsuariosController {
     return this.gestionUsuariosService.findAll({
       id_usuario: req.user.id_usuario,
       roleId: req.user.roleId,
-    }, req.accessibleUserIds);
+    }, req.user.idAdmin);
   }
 
   @Get(':id')

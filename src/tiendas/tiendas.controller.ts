@@ -24,7 +24,7 @@ export class TiendasController {
   @Roles(1, 2, 4, 5)
   @Herencia({ tipo: 'resolver', scope: 'descendientes', entidad: 'usuario' })
   getNeverasActivas(@Req() req: any) {
-    return this.tiendasService.getNeverasActivas(req.user.id_usuario, req.accessibleUserIds);
+    return this.tiendasService.getNeverasActivas(req.user.id_usuario, req.user.idAdmin);
   }
 
   @Patch(':id')
@@ -75,6 +75,6 @@ export class TiendasController {
   @Roles(1, 2, 4, 5)
   @Herencia({ tipo: 'resolver', scope: 'descendientes', entidad: 'usuario' })
   getSobrinas(@Param('id') id: string, @Req() req: any) {
-    return this.tiendasService.getTiendasSobrinas(+id, req.user.roleId, req.accessibleUserIds);
+    return this.tiendasService.getTiendasSobrinas(+id, req.user.roleId, req.user.idAdmin);
   }
 }

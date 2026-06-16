@@ -25,11 +25,21 @@ type TxClient = Prisma.TransactionClient;
 export class TransaccionesService {
   constructor(private readonly db: DatabaseService) {}
 
+  private async resolveIdAdmin(idUsuario: number): Promise<number> {
+    const user = await this.db.uSUARIOS.findUnique({
+      where: { id_usuario: idUsuario },
+      select: { id_admin: true },
+    });
+    return user?.id_admin ?? 1;
+  }
+
   async crearTransaccion(params: CrearTransaccionParams): Promise<number> {
+    const id_admin = params.id_admin ?? await this.resolveIdAdmin(params.id_usuario);
     const tx = await this.db.tRANSACCIONES.create({
       data: {
         id_empaque: params.id_empaque ?? null,
         id_usuario: params.id_usuario,
+        id_admin,
         id_transaccion_rel: params.id_transaccion_rel ?? null,
         id_nevera: params.id_nevera ?? null,
         monto: params.monto,
@@ -47,10 +57,19 @@ export class TransaccionesService {
     tx: TxClient,
     params: CrearTransaccionParams,
   ): Promise<number> {
+    let id_admin = params.id_admin;
+    if (id_admin === undefined) {
+      const user = await tx.uSUARIOS.findUnique({
+        where: { id_usuario: params.id_usuario },
+        select: { id_admin: true },
+      });
+      id_admin = user?.id_admin ?? 1;
+    }
     const result = await tx.tRANSACCIONES.create({
       data: {
         id_empaque: params.id_empaque ?? null,
         id_usuario: params.id_usuario,
+        id_admin,
         id_transaccion_rel: params.id_transaccion_rel ?? null,
         id_nevera: params.id_nevera ?? null,
         monto: params.monto,
@@ -119,10 +138,16 @@ export class TransaccionesService {
     let idPagoPagador: number | undefined;
     let idPagoReceptor: number | undefined;
 
+    const idAdminTicket = (await tx.uSUARIOS.findUnique({
+      where: { id_usuario: idUsuarioTicket },
+      select: { id_admin: true },
+    }))?.id_admin ?? 1;
+
     const ticket = await tx.tRANSACCIONES.create({
       data: {
         id_empaque: null,
         id_usuario: idUsuarioTicket,
+        id_admin: idAdminTicket,
         id_transaccion_rel: null,
         monto: -montoConsolidado,
         hora_transaccion: new Date(),
@@ -189,6 +214,7 @@ export class TransaccionesService {
         data: {
           id_empaque: null,
           id_usuario: idUsuarioTicket,
+          id_admin: idAdminTicket,
           id_transaccion_rel: ticket.id_transaccion,
           monto: saldo,
           hora_transaccion: new Date(),
@@ -312,10 +338,21 @@ export class TransaccionesService {
     return this.db.$transaction(async (tx) => {
       const montoReceptor = montoReceptorNegativo ? -monto : monto;
 
+      const idAdminReceptor = (await tx.uSUARIOS.findUnique({
+        where: { id_usuario: idUsuarioReceptor },
+        select: { id_admin: true },
+      }))?.id_admin ?? 1;
+
+      const idAdminPagador = (await tx.uSUARIOS.findUnique({
+        where: { id_usuario: idUsuarioPagador },
+        select: { id_admin: true },
+      }))?.id_admin ?? 1;
+
       const txReceptor = await tx.tRANSACCIONES.create({
         data: {
           id_empaque: null,
           id_usuario: idUsuarioReceptor,
+          id_admin: idAdminReceptor,
           id_transaccion_rel: null,
           monto: montoReceptor,
           hora_transaccion: new Date(),
@@ -331,6 +368,7 @@ export class TransaccionesService {
         data: {
           id_empaque: null,
           id_usuario: idUsuarioPagador,
+          id_admin: idAdminPagador,
           id_transaccion_rel: txReceptor.id_transaccion,
           monto: -monto,
           hora_transaccion: new Date(),

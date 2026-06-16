@@ -133,7 +133,7 @@ export class FrigorificoController {
   @Roles(1, 2, 4)
   @Herencia({ tipo: 'resolver', scope: 'hijos', entidad: 'usuario' })
   getHermanosFrigorifico(@Req() req: any) {
-    return this.frigorificoService.getHermanosFrigorificoPorScope(req.user.id_usuario, req.user.roleId, req.accessibleUserIds);
+    return this.frigorificoService.getHermanosFrigorificoPorScope(req.user.id_usuario, req.user.roleId, req.user.idAdmin);
   }
 
   @Post('empaques/cambiar-estado')
@@ -142,6 +142,6 @@ export class FrigorificoController {
   @Herencia({ tipo: 'resolver', scope: 'hermanos', entidad: 'usuario' })
   async empaqueDeUnoaDos(@Req() req: any, @Body() body: { id_estacion: string; id_producto: number; id_logistica: number }) {
     const { id_estacion, id_producto, id_logistica } = body;
-    return this.frigorificoService.empaqueDeUnoaDos(id_estacion, id_producto, id_logistica, req.user.id_usuario, req.accessibleUserIds);
+    return this.frigorificoService.empaqueDeUnoaDos(id_estacion, id_producto, id_logistica, req.user.id_usuario, req.user.idAdmin);
   }
 }
