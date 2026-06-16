@@ -38,7 +38,7 @@ export class FrigorificoService {
     const frigorificos = await this.databaseService.fRIGORIFICO.findMany({
       where: {
         id_usuario: idUsuario,
-        ...(idAdmin !== 0 && { ciudad: { id_admin: idAdmin } }),
+        ...(idAdmin !== 0 && { id_admin: idAdmin }),
       },
       include: {
         ciudad: { include: { departamento: true } },
@@ -1053,14 +1053,7 @@ export class FrigorificoService {
       const frigorificos = await this.databaseService.fRIGORIFICO.findMany({
         where: { id_usuario: idUsuario },
         include: {
-          ciudad: idAdmin !== 0
-            ? {
-                where: { id_admin: idAdmin },
-                include: { departamento: true },
-              }
-            : {
-                include: { departamento: true },
-              },
+          ciudad: { include: { departamento: true } },
         },
       });
 
@@ -1093,14 +1086,7 @@ export class FrigorificoService {
     const frigorifico = await this.databaseService.fRIGORIFICO.findFirst({
       where: { id_frigorifico: idFrigorifico, id_usuario: idUsuario },
       include: {
-        ciudad: idAdmin !== 0
-          ? {
-              where: { id_admin: idAdmin },
-              include: { departamento: true },
-            }
-          : {
-              include: { departamento: true },
-            },
+        ciudad: { include: { departamento: true } },
         estaciones: {
           select: {
             id_estacion: true,

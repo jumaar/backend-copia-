@@ -1100,9 +1100,6 @@ export class TiendasService {
       where: {
         ...(idAdmin !== 0 && { id_admin: idAdmin }),
         id_estado_nevera: 2,
-        ...(idAdmin !== 0 && {
-          tienda: { ciudad: { id_admin: idAdmin } }
-        })
       },
       include: {
         tienda: {
