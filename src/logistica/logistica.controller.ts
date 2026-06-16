@@ -10,7 +10,6 @@ import { ConsolidarAdminDto } from './dto/consolidar-admin.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { HerenciaGuard, Herencia } from '../herencia';
 
 @Controller('api/logistica')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -18,9 +17,7 @@ export class LogisticaController {
   constructor(private readonly logisticaService: LogisticaService) {}
 
   @Get()
-  @UseGuards(HerenciaGuard)
   @Roles(1, 2, 4)
-  @Herencia({ tipo: 'resolver', scope: 'descendientes', entidad: 'usuario' })
   getProductosPorLogistica(
     @Req() req: any,
     @Query('id_usuario') idUsuarioParam?: string,
@@ -50,9 +47,7 @@ export class LogisticaController {
   }
 
   @Get('hermanos')
-  @UseGuards(HerenciaGuard)
   @Roles(1, 2, 4)
-  @Herencia({ tipo: 'resolver', scope: 'descendientes', entidad: 'usuario' })
   getHermanosLogistica(@Req() req: any) {
     return this.logisticaService.getHermanosLogisticaPorScope(req.user.id_usuario, req.user.roleId, req.user.idAdmin);
   }

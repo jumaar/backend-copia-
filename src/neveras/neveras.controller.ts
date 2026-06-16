@@ -12,7 +12,8 @@ import {
   Req,
   HttpException,
   HttpStatus,
-  HttpCode
+  HttpCode,
+  ForbiddenException,
 } from '@nestjs/common';
 import { NeverasService } from './neveras.service';
 import { CreateNeveraDto } from './dto/create-nevera.dto';
@@ -20,7 +21,7 @@ import { UpdateNeveraDto } from './dto/update-nevera.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { HerenciaGuard, Herencia } from '../herencia';
+import { DatabaseService } from '../database/database.service';
 import { ValidacionDosaTresDto } from './dto/validacion-dosatres.dto';
 import { InventarioDto } from './dto/inventario.dto';
 
@@ -28,7 +29,10 @@ import { InventarioDto } from './dto/inventario.dto';
 export class NeverasController {
   private readonly logger = new Logger(NeverasController.name);
 
-  constructor(private readonly neverasService: NeverasService) {}
+  constructor(
+    private readonly neverasService: NeverasService,
+    private readonly databaseService: DatabaseService,
+  ) {}
 
 
   /**
@@ -39,9 +43,8 @@ export class NeverasController {
    * para todas las neveras activas accesibles por herencia.
    */
   @Post('calificacion')
-  @UseGuards(JwtAuthGuard, RolesGuard, HerenciaGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1, 2, 4)
-  @Herencia({ tipo: 'resolver', scope: 'descendientes', entidad: 'usuario' })
   async ejecutarCalificacion(@Req() req: any) {
     const idUsuario = req.user.id_usuario;
     return this.neverasService.ejecutarCalificacion(
@@ -62,15 +65,23 @@ export class NeverasController {
    * dias_excluir = 0 o no enviado: incluye TODAS las neveras, incluso las surtidas hoy.
    */
   @Get('surtir')
-  @UseGuards(JwtAuthGuard, RolesGuard, HerenciaGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1, 2, 4)
-  @Herencia({ tipo: 'verificar', scope: 'descendientes', entidad: 'nevera', paramKey: 'id_nevera' })
   async surtirNevera(
     @Query('id_nevera') idNevera: string,
     @Req() req: any,
     @Query('id_ciudad') idCiudad?: string,
     @Query('dias_excluir') diasExcluir?: string,
   ) {
+    if (req.user.idAdmin !== 0) {
+      const nevera = await this.databaseService.nEVERAS.findUnique({
+        where: { id_nevera: Number(idNevera) },
+        select: { id_admin: true },
+      });
+      if (!nevera || nevera.id_admin !== req.user.idAdmin) {
+        throw new ForbiddenException('No tienes acceso a esta nevera');
+      }
+    }
     const idUsuario = req.user.id_usuario;
     return this.neverasService.surtirNevera(
       Number(idNevera),

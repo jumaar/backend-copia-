@@ -10,7 +10,6 @@ import { TiendasModule } from './tiendas/tiendas.module';
 import { RegistrationTokensModule } from './registration-tokens/registration-tokens.module';
 import { LoggingMiddleware } from './common/middleware/logging.middleware';
 import { GestionUsuariosModule } from './gestion-usuarios/gestion-usuarios.module';
-import { HerenciaModule } from './herencia/herencia.module';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { EmpaquesModule } from './empaques/empaques.module';
@@ -34,7 +33,6 @@ import { TransaccionesModule } from './transacciones/transacciones.module';
     TiendasModule,
     RegistrationTokensModule,
     GestionUsuariosModule,
-    HerenciaModule,
     EmpaquesModule,
     TransaccionesModule,
   ],

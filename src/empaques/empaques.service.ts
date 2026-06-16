@@ -48,15 +48,29 @@ export class EmpaquesService {
 
   constructor(private readonly databaseService: DatabaseService) {}
 
-  async findById(id: number) {
-    return this.buildRadiografia({ id_empaque: id });
+  async findById(id: number, idAdmin: number = 0) {
+    return this.buildRadiografia({ id_empaque: id }, idAdmin);
   }
 
-  async findByEpc(epc: string) {
-    return this.buildRadiografia({ EPC_id: epc });
+  async findByEpc(epc: string, idAdmin: number = 0) {
+    return this.buildRadiografia({ EPC_id: epc }, idAdmin);
   }
 
-  private async buildRadiografia(where: { id_empaque?: number; EPC_id?: string }) {
+  private async buildRadiografia(where: { id_empaque?: number; EPC_id?: string }, idAdmin: number = 0) {
+    const ciudadSelect = idAdmin !== 0
+      ? { where: { id_admin: idAdmin }, select: CIUDAD_CON_DEPARTAMENTO }
+      : { select: CIUDAD_CON_DEPARTAMENTO };
+
+    const neveraSelect = {
+      ...NEVERA_CON_TIENDA,
+      tienda: {
+        select: {
+          ...NEVERA_CON_TIENDA.tienda.select,
+          ciudad: ciudadSelect,
+        },
+      },
+    };
+
     const empaque = await this.databaseService.eMPAQUES.findFirst({
       where,
       include: {
@@ -84,7 +98,7 @@ export class EmpaquesService {
                 id_frigorifico: true,
                 nombre_frigorifico: true,
                 direccion: true,
-                ciudad: { select: CIUDAD_CON_DEPARTAMENTO },
+                ciudad: ciudadSelect,
                 usuario: { select: USUARIO_SELECT },
               },
             },
@@ -98,7 +112,7 @@ export class EmpaquesService {
             usuario: { select: USUARIO_SELECT },
           },
         },
-        nevera: { select: NEVERA_CON_TIENDA },
+        nevera: { select: neveraSelect },
         promocion: {
           select: {
             id_promocion: true,
@@ -149,7 +163,7 @@ export class EmpaquesService {
     if (empaque.id_nevera_anterior) {
       neveraAnterior = await this.databaseService.nEVERAS.findUnique({
         where: { id_nevera: empaque.id_nevera_anterior },
-        select: NEVERA_CON_TIENDA,
+        select: neveraSelect,
       });
     }
 

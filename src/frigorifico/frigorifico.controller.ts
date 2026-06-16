@@ -5,7 +5,6 @@ import { UpdateFrigorificoDto } from './dto/update-frigorifico.dto';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { HerenciaGuard, Herencia } from '../herencia';
 
 @Controller('api/frigorifico')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -108,9 +107,7 @@ export class FrigorificoController {
   }
 
   @Get('gestion')
-  @UseGuards(HerenciaGuard)
   @Roles(2, 3, 4)
-  @Herencia({ tipo: 'resolver', scope: 'hermanos', entidad: 'usuario' })
   getGestionFrigorifico(@Query('id_usuario') id_usuario: string, @Query('id_frigorifico') id_frigorifico: string, @Req() req: any) {
     const requesterId = req.user.id_usuario;
     const requesterRole = req.user.roleId;
@@ -129,17 +126,13 @@ export class FrigorificoController {
   }
 
   @Get('hermanos')
-  @UseGuards(HerenciaGuard)
   @Roles(1, 2, 4)
-  @Herencia({ tipo: 'resolver', scope: 'hijos', entidad: 'usuario' })
   getHermanosFrigorifico(@Req() req: any) {
     return this.frigorificoService.getHermanosFrigorificoPorScope(req.user.id_usuario, req.user.roleId, req.user.idAdmin);
   }
 
   @Post('empaques/cambiar-estado')
-  @UseGuards(HerenciaGuard)
   @Roles(4)
-  @Herencia({ tipo: 'resolver', scope: 'hermanos', entidad: 'usuario' })
   async empaqueDeUnoaDos(@Req() req: any, @Body() body: { id_estacion: string; id_producto: number; id_logistica: number }) {
     const { id_estacion, id_producto, id_logistica } = body;
     return this.frigorificoService.empaqueDeUnoaDos(id_estacion, id_producto, id_logistica, req.user.id_usuario, req.user.idAdmin);

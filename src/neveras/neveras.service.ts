@@ -218,9 +218,14 @@ export class NeverasService {
           select: {
             id_tienda: true,
             nombre_tienda: true,
-            ciudad: {
-              select: { id_ciudad: true, nombre_ciudad: true },
-            },
+            ciudad: idAdmin !== 0
+              ? {
+                  where: { id_admin: idAdmin },
+                  select: { id_ciudad: true, nombre_ciudad: true },
+                }
+              : {
+                  select: { id_ciudad: true, nombre_ciudad: true },
+                },
           },
         },
       },
@@ -499,7 +504,9 @@ export class NeverasService {
             id_tienda: true,
             nombre_tienda: true,
             id_usuario: true,
-            ciudad: { select: { id_ciudad: true, nombre_ciudad: true } },
+            ciudad: idAdmin !== 0
+              ? { where: { id_admin: idAdmin }, select: { id_ciudad: true, nombre_ciudad: true } }
+              : { select: { id_ciudad: true, nombre_ciudad: true } },
           },
         },
       },

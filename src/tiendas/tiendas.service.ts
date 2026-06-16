@@ -88,16 +88,28 @@ export class TiendasService {
         fecha_creacion: new Date(),
       },
       include: {
-        ciudad: {
-          select: {
-            nombre_ciudad: true,
-            departamento: {
+        ciudad: usuarioAdmin?.id_admin !== 0
+          ? {
+              where: { id_admin: usuarioAdmin!.id_admin },
               select: {
-                nombre_departamento: true,
+                nombre_ciudad: true,
+                departamento: {
+                  select: {
+                    nombre_departamento: true,
+                  },
+                },
+              },
+            }
+          : {
+              select: {
+                nombre_ciudad: true,
+                departamento: {
+                  select: {
+                    nombre_departamento: true,
+                  },
+                },
               },
             },
-          },
-        },
       },
     });
 
@@ -203,15 +215,24 @@ export class TiendasService {
   }
 
   async findOne(id: number, id_usuario: number) {
+    const userAdmin = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario },
+      select: { id_admin: true },
+    });
+    const idAdmin = userAdmin?.id_admin ?? 0;
+
     // Obtener todas las tiendas del usuario
     const tiendas = await this.databaseService.tIENDAS.findMany({
       where: { id_usuario: id_usuario },
       include: {
-        ciudad: {
-          select: {
-            nombre_ciudad: true,
-          },
-        },
+        ciudad: idAdmin !== 0
+          ? {
+              where: { id_admin: idAdmin },
+              select: { nombre_ciudad: true },
+            }
+          : {
+              select: { nombre_ciudad: true },
+            },
         neveras: {
           include: {
             estadoNevera: {
@@ -293,21 +314,39 @@ export class TiendasService {
       throw new Error('Tienda no encontrada o no tienes permiso para editarla');
     }
 
+    const userAdmin = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario },
+      select: { id_admin: true },
+    });
+    const idAdmin = userAdmin?.id_admin ?? 0;
+
     // Actualizar la tienda
     const tiendaActualizada = await this.databaseService.tIENDAS.update({
       where: { id_tienda: id },
       data: updateTiendaDto,
       include: {
-        ciudad: {
-          select: {
-            nombre_ciudad: true,
-            departamento: {
+        ciudad: idAdmin !== 0
+          ? {
+              where: { id_admin: idAdmin },
               select: {
-                nombre_departamento: true,
+                nombre_ciudad: true,
+                departamento: {
+                  select: {
+                    nombre_departamento: true,
+                  },
+                },
+              },
+            }
+          : {
+              select: {
+                nombre_ciudad: true,
+                departamento: {
+                  select: {
+                    nombre_departamento: true,
+                  },
+                },
               },
             },
-          },
-        },
       },
     });
 
@@ -898,16 +937,28 @@ export class TiendasService {
             celular: true,
             tiendas: {
               include: {
-                ciudad: {
-                  select: {
-                    nombre_ciudad: true,
-                    departamento: {
+                ciudad: idAdmin !== 0
+                  ? {
+                      where: { id_admin: idAdmin },
                       select: {
-                        nombre_departamento: true,
+                        nombre_ciudad: true,
+                        departamento: {
+                          select: {
+                            nombre_departamento: true,
+                          },
+                        },
+                      },
+                    }
+                  : {
+                      select: {
+                        nombre_ciudad: true,
+                        departamento: {
+                          select: {
+                            nombre_departamento: true,
+                          },
+                        },
                       },
                     },
-                  },
-                },
                 neveras: {
                   select: {
                     id_nevera: true,
@@ -1038,7 +1089,9 @@ export class TiendasService {
       include: {
         tienda: {
           include: {
-            ciudad: true
+            ciudad: idAdmin !== 0
+              ? { where: { id_admin: idAdmin }, select: { id_ciudad: true, nombre_ciudad: true } }
+              : { select: { id_ciudad: true, nombre_ciudad: true } }
           }
         }
       }

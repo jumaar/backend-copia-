@@ -53,7 +53,9 @@ export class GestionUsuariosService {
       rol: true,
       tiendas: {
         include: {
-          ciudad: { include: { departamento: true } },
+          ciudad: idAdmin !== 0
+            ? { where: { id_admin: idAdmin }, include: { departamento: true } }
+            : { include: { departamento: true } },
           neveras: { select: { id_nevera: true, id_estado_nevera: true } }
         }
       }
@@ -98,7 +100,9 @@ export class GestionUsuariosService {
       rol: true,
       tiendas: {
         include: {
-          ciudad: { include: { departamento: true } },
+          ciudad: idAdmin !== 0
+            ? { where: { id_admin: idAdmin }, include: { departamento: true } }
+            : { include: { departamento: true } },
           neveras: { select: { id_nevera: true, id_estado_nevera: true } }
         }
       },
@@ -174,7 +178,9 @@ export class GestionUsuariosService {
               rol: true,
               tiendas: {
                 include: {
-                  ciudad: { include: { departamento: true } },
+                  ciudad: idAdmin !== 0
+            ? { where: { id_admin: idAdmin }, include: { departamento: true } }
+            : { include: { departamento: true } },
                   neveras: { select: { id_nevera: true, id_estado_nevera: true } }
                 }
               }
@@ -220,7 +226,9 @@ export class GestionUsuariosService {
               rol: true,
               tiendas: {
                 include: {
-                  ciudad: { include: { departamento: true } },
+                  ciudad: idAdmin !== 0
+            ? { where: { id_admin: idAdmin }, include: { departamento: true } }
+            : { include: { departamento: true } },
                   neveras: { select: { id_nevera: true, id_estado_nevera: true } }
                 }
               }
@@ -423,8 +431,7 @@ export class GestionUsuariosService {
       throw new ForbiddenException('No puedes eliminar tu propia cuenta.');
     }
 
-    // La verificación de jerarquía (que el target está en el scope del usuario)
-    // es manejada por HerenciaGuard con @Herencia({ tipo: 'verificar', scope: 'hijos' })
+    // La verificación de acceso se realiza en el controller vía id_admin
 
     if (remover.roleId === 4) {
       // Verificar si el usuario a eliminar es de rol 5 (tienda)

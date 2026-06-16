@@ -34,15 +34,24 @@ export class FrigorificoService {
   }
 
   async findAll(idUsuario: number) {
+    const userAdmin = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario: idUsuario },
+      select: { id_admin: true },
+    });
+    const idAdmin = userAdmin?.id_admin ?? 0;
+
     // Obtener todos los frigoríficos del usuario con ciudad, departamento y básculas
     const frigorificos = await this.databaseService.fRIGORIFICO.findMany({
       where: { id_usuario: idUsuario },
       include: {
-        ciudad: {
-          include: {
-            departamento: true,
-          },
-        },
+        ciudad: idAdmin !== 0
+          ? {
+              where: { id_admin: idAdmin },
+              include: { departamento: true },
+            }
+          : {
+              include: { departamento: true },
+            },
         estaciones: {
           select: {
             id_estacion: true,
@@ -1054,16 +1063,21 @@ export class FrigorificoService {
       );
     }
 
+    const idAdmin = usuarioActual.id_admin ?? 0;
+
     // --- MODO LIGERO: sin id_frigorifico, solo lista de frigoríficos disponibles ---
     if (!idFrigorifico) {
       const frigorificos = await this.databaseService.fRIGORIFICO.findMany({
         where: { id_usuario: idUsuario },
         include: {
-          ciudad: {
-            include: {
-              departamento: true,
-            },
-          },
+          ciudad: idAdmin !== 0
+            ? {
+                where: { id_admin: idAdmin },
+                include: { departamento: true },
+              }
+            : {
+                include: { departamento: true },
+              },
         },
       });
 
@@ -1096,11 +1110,14 @@ export class FrigorificoService {
     const frigorifico = await this.databaseService.fRIGORIFICO.findFirst({
       where: { id_frigorifico: idFrigorifico, id_usuario: idUsuario },
       include: {
-        ciudad: {
-          include: {
-            departamento: true,
-          },
-        },
+        ciudad: idAdmin !== 0
+          ? {
+              where: { id_admin: idAdmin },
+              include: { departamento: true },
+            }
+          : {
+              include: { departamento: true },
+            },
         estaciones: {
           select: {
             id_estacion: true,

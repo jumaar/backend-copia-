@@ -1,4 +1,4 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, UseGuards, Req } from '@nestjs/common';
 import { EmpaquesService } from './empaques.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -11,11 +11,12 @@ export class EmpaquesController {
 
   @Get(':idOrEpc')
   @Roles(1, 2, 3, 4, 5)
-  findOne(@Param('idOrEpc') idOrEpc: string) {
+  findOne(@Param('idOrEpc') idOrEpc: string, @Req() req: any) {
+    const idAdmin: number = req.user?.idAdmin ?? 0;
     const numericId = Number(idOrEpc);
     if (!isNaN(numericId)) {
-      return this.empaquesService.findById(numericId);
+      return this.empaquesService.findById(numericId, idAdmin);
     }
-    return this.empaquesService.findByEpc(idOrEpc);
+    return this.empaquesService.findByEpc(idOrEpc, idAdmin);
   }
 }

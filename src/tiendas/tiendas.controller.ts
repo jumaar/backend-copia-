@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Req, UseGuards, ForbiddenException } from '@nestjs/common';
 import { TiendasService } from './tiendas.service';
 import { CreateTiendaDto } from './dto/create-tienda.dto';
 import { UpdateTiendaDto } from './dto/update-tienda.dto';
@@ -6,11 +6,14 @@ import { CreateNeveraDto } from './dto/create-nevera.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { HerenciaGuard, Herencia } from '../herencia';
+import { DatabaseService } from '../database/database.service';
 
 @Controller('api/tiendas')
 export class TiendasController {
-  constructor(private readonly tiendasService: TiendasService) {}
+  constructor(
+    private readonly tiendasService: TiendasService,
+    private readonly databaseService: DatabaseService,
+  ) {}
 
   @Post()
   @UseGuards(JwtAuthGuard)
@@ -20,9 +23,8 @@ export class TiendasController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard, RolesGuard, HerenciaGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1, 2, 4, 5)
-  @Herencia({ tipo: 'resolver', scope: 'descendientes', entidad: 'usuario' })
   getNeverasActivas(@Req() req: any) {
     return this.tiendasService.getNeverasActivas(req.user.id_usuario, req.user.idAdmin);
   }
@@ -49,18 +51,34 @@ export class TiendasController {
   }
 
   @Get('neveras/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard, HerenciaGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1, 2, 4, 5)
-  @Herencia({ tipo: 'verificar', scope: 'descendientes', entidad: 'nevera', paramKey: 'id' })
-  getProductosByNevera(@Param('id') id: string, @Req() req: any) {
+  async getProductosByNevera(@Param('id') id: string, @Req() req: any) {
+    if (req.user.idAdmin !== 0) {
+      const nevera = await this.databaseService.nEVERAS.findUnique({
+        where: { id_nevera: Number(id) },
+        select: { id_admin: true },
+      });
+      if (!nevera || nevera.id_admin !== req.user.idAdmin) {
+        throw new ForbiddenException('No tienes acceso a esta nevera');
+      }
+    }
     return this.tiendasService.getProductosByNevera(+id, req.user.id_usuario);
   }
 
   @Patch('neveras/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard, HerenciaGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1, 2, 4, 5)
-  @Herencia({ tipo: 'verificar', scope: 'descendientes', entidad: 'nevera', paramKey: 'id' })
-  updateStocksByNevera(@Param('id') id: string, @Body() stockUpdates: any[], @Req() req: any) {
+  async updateStocksByNevera(@Param('id') id: string, @Body() stockUpdates: any[], @Req() req: any) {
+    if (req.user.idAdmin !== 0) {
+      const nevera = await this.databaseService.nEVERAS.findUnique({
+        where: { id_nevera: Number(id) },
+        select: { id_admin: true },
+      });
+      if (!nevera || nevera.id_admin !== req.user.idAdmin) {
+        throw new ForbiddenException('No tienes acceso a esta nevera');
+      }
+    }
     return this.tiendasService.updateStocksByNevera(+id, stockUpdates, req.user.id_usuario);
   }
 
@@ -71,9 +89,8 @@ export class TiendasController {
   }
 
   @Get('sobrinas/:id')
-  @UseGuards(JwtAuthGuard, RolesGuard, HerenciaGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1, 2, 4, 5)
-  @Herencia({ tipo: 'resolver', scope: 'descendientes', entidad: 'usuario' })
   getSobrinas(@Param('id') id: string, @Req() req: any) {
     return this.tiendasService.getTiendasSobrinas(+id, req.user.roleId, req.user.idAdmin);
   }
