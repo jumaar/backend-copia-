@@ -56,7 +56,7 @@ export class FrigorificoController {
   }
 
   @Delete('productos/:id')
-  @Roles(1, 2)
+  @Roles(2)
   async removeProducto(@Req() req: any, @Param('id') id: string) {
     return this.frigorificoService.removeProducto(+id, req.user);
   }

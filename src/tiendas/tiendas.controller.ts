@@ -24,7 +24,7 @@ export class TiendasController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1, 2, 4, 5)
   getNeverasActivas(@Req() req: any) {
-    return this.tiendasService.getNeverasActivas(req.user.id_usuario, req.user.idAdmin);
+    return this.tiendasService.getNeverasActivas(req.user.id_usuario, req.user.idAdmin, req.user.roleId);
   }
 
   @Patch(':id')

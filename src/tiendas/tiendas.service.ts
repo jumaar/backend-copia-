@@ -541,7 +541,8 @@ export class TiendasService {
       );
     }
 
-    if (idAdmin !== 0 && nevera.id_admin !== idAdmin) {
+    const effectiveIdAdmin = usuarioActual.id_rol === 2 ? id_usuario : idAdmin;
+    if (idAdmin !== 0 && nevera.id_admin !== effectiveIdAdmin) {
       throw new HttpException(
         {
           status: HttpStatus.FORBIDDEN,
@@ -795,7 +796,8 @@ export class TiendasService {
       );
     }
 
-    if (idAdmin !== 0 && nevera.id_admin !== idAdmin) {
+    const effectiveIdAdmin = usuarioActual.id_rol === 2 ? id_usuario : idAdmin;
+    if (idAdmin !== 0 && nevera.id_admin !== effectiveIdAdmin) {
       throw new HttpException(
         {
           status: HttpStatus.FORBIDDEN,
@@ -947,10 +949,20 @@ export class TiendasService {
 
   async getTiendasSobrinas(id_usuario: number, rol_usuario: number, idAdmin: number) {
     try {
+      const idAdminFilter = idAdmin !== 0
+        ? (rol_usuario === 2
+            ? { OR: [{ id_admin: id_usuario }, ...(idAdmin !== id_usuario ? [{ id_admin: idAdmin }] : [])] }
+            : { id_admin: idAdmin })
+        : {};
+      const ciudadFilter = idAdmin !== 0
+        ? (rol_usuario === 2
+            ? { OR: [{ id_admin: id_usuario }, ...(idAdmin !== id_usuario ? [{ id_admin: idAdmin }] : [])] }
+            : { id_admin: idAdmin })
+        : {};
       const usuariosTiendaConTiendas =
         await this.databaseService.uSUARIOS.findMany({
           where: {
-            ...(idAdmin !== 0 && { id_admin: idAdmin }),
+            ...idAdminFilter,
             id_rol: 5,
             activo: true,
           },
@@ -961,7 +973,7 @@ export class TiendasService {
             email: true,
             celular: true,
             tiendas: {
-              ...(idAdmin !== 0 && { where: { ciudad: { id_admin: idAdmin } } }),
+              ...(idAdmin !== 0 && { where: { ciudad: ciudadFilter } }),
               include: {
                 ciudad: {
                   select: {
@@ -1011,7 +1023,7 @@ export class TiendasService {
       );
 
       const ciudadesDisponibles = await this.databaseService.cIUDAD.findMany({
-        where: idAdmin !== 0 ? { id_admin: idAdmin } : {},
+        where: idAdmin !== 0 ? ciudadFilter : {},
         select: {
           id_ciudad: true,
           nombre_ciudad: true,
@@ -1034,7 +1046,7 @@ export class TiendasService {
     }
   }
 
-  async getNeverasActivas(id_usuario: number, idAdmin: number) {
+  async getNeverasActivas(id_usuario: number, idAdmin: number, roleId?: number) {
 
     const empaquesScan = await this.databaseService.eMPAQUES.findMany({
       where: {
@@ -1098,7 +1110,9 @@ export class TiendasService {
 
     const neveras = await this.databaseService.nEVERAS.findMany({
       where: {
-        ...(idAdmin !== 0 && { id_admin: idAdmin }),
+        ...(idAdmin !== 0 && roleId === 2
+          ? { tienda: { id_admin: id_usuario } }
+          : { id_admin: idAdmin }),
         id_estado_nevera: 2,
       },
       include: {

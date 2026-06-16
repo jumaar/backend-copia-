@@ -203,15 +203,22 @@ export class NeverasService {
   async ejecutarCalificacion(
     idUsuario: number,
     idAdmin: number,
+    idRol: number,
   ) {
     const horaCalificacion = new Date();
 
     // ─── FASE 1: Obtener neveras activas accesibles por herencia ───
+    const neveraWhere: any = { id_estado_nevera: 2 };
+    if (idAdmin !== 0) {
+      if (idRol === 2 && idAdmin !== idUsuario) {
+        neveraWhere.OR = [{ id_admin: idUsuario }, { id_admin: idAdmin }];
+      } else {
+        neveraWhere.id_admin = idAdmin;
+      }
+    }
+
     const neverasActivas = await this.databaseService.nEVERAS.findMany({
-      where: {
-        id_estado_nevera: 2,
-        ...(idAdmin !== 0 && { id_admin: idAdmin }),
-      },
+      where: neveraWhere,
       select: {
         id_nevera: true,
         tienda: {
@@ -514,7 +521,12 @@ export class NeverasService {
       );
     }
 
-    if (idAdmin !== 0 && nevera.id_admin !== idAdmin) {
+    const usuarioActual = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario: idUsuario },
+      select: { id_rol: true },
+    });
+    const effectiveIdAdmin = usuarioActual?.id_rol === 2 ? idUsuario : idAdmin;
+    if (idAdmin !== 0 && nevera.id_admin !== effectiveIdAdmin) {
       throw new HttpException(
         {
           success: false,
