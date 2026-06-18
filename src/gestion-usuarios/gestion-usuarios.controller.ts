@@ -46,10 +46,7 @@ export class GestionUsuariosController {
         where: { id_usuario: id },
         select: { id_admin: true },
       });
-      const allowedAdmins = req.user.roleId === 2
-        ? [req.user.id_usuario, req.user.idAdmin]
-        : [req.user.idAdmin];
-      if (!targetUser || !allowedAdmins.includes(targetUser.id_admin)) {
+      if (!targetUser || targetUser.id_admin !== req.user.idAdmin) {
         throw new ForbiddenException('No tienes permiso para eliminar este usuario');
       }
     }

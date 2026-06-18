@@ -49,19 +49,6 @@ export class GestionUsuariosService {
     const userRole = user.roleId;
     this.logger.debug(`Iniciando findAll para el usuario ID: ${user.id_usuario} con Rol ID: ${userRole}, idAdmin=${idAdmin}`);
 
-    // Filtro de id_admin compuesto: para admin (rol 2) cubre tanto nuevos
-    // registros (id_admin = id_usuario) como legacy (id_admin = idAdmin)
-    const buildIdAdminFilter = (): any => {
-      if (userRole === 2) {
-        const conditions: any[] = [{ id_admin: user.id_usuario }];
-        if (idAdmin !== 0 && idAdmin !== user.id_usuario) {
-          conditions.push({ id_admin: idAdmin });
-        }
-        return { OR: conditions };
-      }
-      return idAdmin !== 0 ? { id_admin: idAdmin } : {};
-    };
-
     const includeRelations: any = {
       rol: true,
       tiendas: {
@@ -114,8 +101,6 @@ export class GestionUsuariosService {
       };
     }
 
-    const adminFilter = buildIdAdminFilter();
-
     const includeDescRelations: any = {
       rol: true,
       tiendas: {
@@ -127,18 +112,7 @@ export class GestionUsuariosService {
       logisticas: true,
     };
 
-    const getDescendants = async (creatorId: number, isTopLevel: boolean = true) => {
-      const childFilter: any = {};
-      if (isTopLevel) {
-        // Top level: usar el filtro compuesto
-        Object.assign(childFilter, adminFilter);
-      } else if (userRole === 2) {
-        // Recursión: para admin rol 2, filtrar por el id_usuario del creador de este nivel
-        childFilter.id_admin = creatorId;
-      } else if (idAdmin !== 0) {
-        childFilter.id_admin = idAdmin;
-      }
-
+    const getDescendants = async (creatorId: number) => {
       const createdTokens = await this.databaseService.tOKEN_REGISTRO.findMany({
         where: {
           id_usuario_creador: creatorId,
@@ -146,7 +120,7 @@ export class GestionUsuariosService {
           id_usuario_nuevo: { not: null },
           nuevo_usuario: {
             email: { not: { endsWith: '@borrado.com' } },
-            ...childFilter,
+            ...(idAdmin !== 0 && { id_admin: idAdmin }),
           },
         },
         include: { nuevo_usuario: { include: includeDescRelations } },
@@ -161,7 +135,7 @@ export class GestionUsuariosService {
           const childUser: any = token.nuevo_usuario;
           if (!childUser) return null;
 
-          const descendants = await getDescendants(childUser.id_usuario, false);
+          const descendants = await getDescendants(childUser.id_usuario);
 
           const node: any = {
             ...this.formatUser(childUser),
@@ -198,7 +172,7 @@ export class GestionUsuariosService {
           id_rol_nuevo_usuario: 5,
           nuevo_usuario: {
             email: { not: { endsWith: '@borrado.com' } },
-            ...adminFilter,
+            ...(idAdmin !== 0 && { id_admin: idAdmin }),
           },
         },
         include: {
@@ -243,7 +217,7 @@ export class GestionUsuariosService {
           id_rol_nuevo_usuario: 5,
           nuevo_usuario: {
             email: { not: { endsWith: '@borrado.com' } },
-            ...adminFilter,
+            ...(idAdmin !== 0 && { id_admin: idAdmin }),
           },
         },
         include: {
@@ -431,7 +405,6 @@ export class GestionUsuariosService {
         logisticaResult = await this.databaseService.lOGISTICA.create({
           data: {
             id_usuario: id,
-            id_admin: userToUpdate.id_admin,
             ...logisticaData as any
           },
         });

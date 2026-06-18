@@ -128,7 +128,7 @@ export class AuthService {
       where: { id_usuario: token.id_usuario_creador },
       select: { id_usuario: true, id_rol: true, id_admin: true },
     });
-    const idAdmin = creador?.id_rol === 1 ? 1 : creador!.id_usuario;
+    const idAdmin = creador?.id_rol === 1 ? 1 : (creador?.id_admin ?? 1);
 
     // 4. Hashear contraseña
     const hashedPassword = await bcrypt.hash(password, 10);

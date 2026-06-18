@@ -1637,9 +1637,7 @@ export class FrigorificoService {
       where: {
         id_rol: 3,
         activo: true,
-        ...(idAdmin !== 0 && requesterRole === 2
-          ? { OR: [{ id_admin: requesterId }, ...(idAdmin !== requesterId ? [{ id_admin: idAdmin }] : [])] }
-          : { id_admin: idAdmin }),
+        ...(idAdmin !== 0 && { id_admin: idAdmin }),
       },
       select: {
         id_usuario: true,

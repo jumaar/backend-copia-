@@ -43,10 +43,10 @@ export class NeverasController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(1, 2, 4)
   async ejecutarCalificacion(@Req() req: any) {
+    const idUsuario = req.user.id_usuario;
     return this.neverasService.ejecutarCalificacion(
-      req.user.id_usuario,
+      idUsuario,
       req.user.idAdmin,
-      req.user.roleId,
     );
   }
 

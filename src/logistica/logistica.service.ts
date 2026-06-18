@@ -42,24 +42,12 @@ export class LogisticaService {
     // logística que son sus descendientes
     // ═══════════════════════════════════════════════════════════════
     if ((id_rol === 1 || id_rol === 2) && !idUsuarioTarget) {
-      const whereClause: any = {
-        id_rol: 4,
-        activo: true,
-      };
-
-      if (id_rol === 2) {
-        whereClause.OR = [
-          { id_admin: id_usuario },
-        ];
-        if (idAdmin !== 0 && idAdmin !== id_usuario) {
-          whereClause.OR.push({ id_admin: idAdmin });
-        }
-      } else if (idAdmin !== 0) {
-        whereClause.id_admin = idAdmin;
-      }
-
       const usuariosLogistica = await this.databaseService.uSUARIOS.findMany({
-        where: whereClause,
+        where: {
+          id_rol: 4,
+          activo: true,
+          ...(idAdmin !== 0 && { id_admin: idAdmin }),
+        },
         select: {
           id_usuario: true,
           nombre_usuario: true,
@@ -81,15 +69,7 @@ export class LogisticaService {
     if (idUsuarioTarget && (id_rol === 1 || id_rol === 2)) {
       if (idUsuarioTarget !== id_usuario && idAdmin !== 0) {
         const targetAccessible = await this.databaseService.uSUARIOS.findFirst({
-          where: {
-            id_usuario: idUsuarioTarget,
-            id_rol: 4,
-            activo: true,
-            OR: [
-              { id_admin: id_usuario },
-              { id_admin: idAdmin },
-            ],
-          },
+          where: { id_usuario: idUsuarioTarget, id_admin: idAdmin, id_rol: 4, activo: true },
           select: { id_usuario: true },
         });
         if (!targetAccessible) {
@@ -158,22 +138,15 @@ export class LogisticaService {
       return acc;
     }, {});
 
-    // Obtener la última hora de calificación de surtido, escopada por id_admin
+    // Obtener la última hora de calificación de surtido de toda la tabla STOCK_NEVERA
     let ultimaHoraCalificacion: string | null = null;
 
-    const stockFilter: any = { hora_calificacion: { not: null } };
-    if (idAdmin !== 0) {
-      if (id_rol === 2 && idAdmin !== id_usuario) {
-        stockFilter.OR = [{ id_admin: id_usuario }, { id_admin: idAdmin }];
-      } else {
-        stockFilter.id_admin = idAdmin;
-      }
-    }
-
     const ultimaCalificacion = await this.databaseService.sTOCK_NEVERA.findFirst({
-      where: stockFilter,
+      where: {
+        hora_calificacion: { not: null }
+      },
       select: { hora_calificacion: true },
-      orderBy: { hora_calificacion: 'desc' },
+      orderBy: { hora_calificacion: 'desc' }
     });
 
     if (ultimaCalificacion && ultimaCalificacion.hora_calificacion) {
@@ -199,18 +172,6 @@ export class LogisticaService {
         select: { id_usuario: true },
       });
       usuariosPermitidos = allUsers.map(u => u.id_usuario);
-    } else if (id_rol === 2) {
-      const adminUsers = await this.databaseService.uSUARIOS.findMany({
-        where: {
-          activo: true,
-          OR: [
-            { id_admin: id_usuario },
-            { id_admin: idAdmin },
-          ],
-        },
-        select: { id_usuario: true },
-      });
-      usuariosPermitidos = adminUsers.map(u => u.id_usuario);
     } else {
       const adminUsers = await this.databaseService.uSUARIOS.findMany({
         where: { id_admin: idAdmin, activo: true },
@@ -988,9 +949,7 @@ export class LogisticaService {
       where: {
         id_rol: 4,
         activo: true,
-        ...(idAdmin !== 0 && requesterRole === 2
-          ? { OR: [{ id_admin: requesterId }, ...(idAdmin !== requesterId ? [{ id_admin: idAdmin }] : [])] }
-          : { id_admin: idAdmin }),
+        ...(idAdmin !== 0 && { id_admin: idAdmin }),
       },
       select: {
         id_usuario: true,
