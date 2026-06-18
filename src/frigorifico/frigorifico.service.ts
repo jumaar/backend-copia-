@@ -352,7 +352,10 @@ export class FrigorificoService {
     }
   }
 
-  async createProducto(createProductoDto: any, user: { id_usuario: number; roleId: number; idAdmin: number }) {
+  async createProducto(createProductoDto: any, idUsuario: number) {
+    // Verificar que el usuario tiene permisos para crear productos (roles 1, 2)
+    // Los productos son globales, no específicos de frigorífico
+
     // Validar que precio_tienda sea requerido
     if (
       !createProductoDto.precio_tienda &&
@@ -372,19 +375,24 @@ export class FrigorificoService {
     // Asegurarse de que no se envíe id_producto
     const { id_producto, ...data } = createProductoDto;
 
+    const usuario = await this.databaseService.uSUARIOS.findUnique({
+      where: { id_usuario: idUsuario },
+      select: { id_admin: true },
+    });
+
     // Convertir tipos de datos según el schema de Prisma
     const processedData = {
       nombre_producto: data.nombre_producto,
       descripcion_producto: data.descripcion_producto || null,
       peso_nominal_g: parseInt(data.peso_nominal_g),
-      precio_venta: data.precio_venta.toString(),
+      precio_venta: data.precio_venta.toString(), // Mantener como string para Decimal
       dias_vencimiento: parseInt(data.dias_vencimiento),
-      precio_frigorifico: data.precio_frigorifico.toString(),
-      precio_tienda: data.precio_tienda.toString(),
+      precio_frigorifico: data.precio_frigorifico.toString(), // Mantener como string para Decimal
+      precio_tienda: data.precio_tienda.toString(), // Porcentaje para tienda (REQUERIDO)
       media: data.media ? parseFloat(data.media) : null,
       baja: data.baja ? parseFloat(data.baja) : null,
       alta: data.alta ? parseFloat(data.alta) : null,
-      id_admin: user.id_usuario,
+      id_admin: usuario!.id_admin,
     };
 
     return this.databaseService.pRODUCTOS.create({
@@ -392,72 +400,29 @@ export class FrigorificoService {
     });
   }
 
-  async findAllProductos(user: { id_usuario: number; roleId: number; idAdmin: number }) {
-    const selectFields = {
-      id_producto: true,
-      nombre_producto: true,
-      descripcion_producto: true,
-      peso_nominal_g: true,
-      precio_venta: true,
-      dias_vencimiento: true,
-      precio_frigorifico: true,
-      precio_tienda: true,
-      baja: true,
-      media: true,
-      alta: true,
-      id_admin: true,
-      admin: {
-        select: {
-          id_usuario: true,
-          nombre_usuario: true,
-          apellido_usuario: true,
-          email: true,
-        },
+  async findAllProductos(idUsuario: number) {
+    // Los productos son globales, cualquier usuario autorizado puede verlos
+    return this.databaseService.pRODUCTOS.findMany({
+      select: {
+        id_producto: true,
+        nombre_producto: true,
+        descripcion_producto: true,
+        peso_nominal_g: true,
+        precio_venta: true,
+        dias_vencimiento: true,
+        precio_frigorifico: true,
+        precio_tienda: true,
+        baja: true,
+        media: true,
+        alta: true,
       },
-    };
-
-    if (user.roleId === 3) {
-      return this.databaseService.pRODUCTOS.findMany({
-        where: { id_admin: user.idAdmin },
-        select: selectFields,
-      });
-    }
-
-    if (user.roleId === 2) {
-      return this.databaseService.pRODUCTOS.findMany({
-        where: { id_admin: user.id_usuario },
-        select: selectFields,
-      });
-    }
-
-    const allProducts = await this.databaseService.pRODUCTOS.findMany({
-      select: selectFields,
-      orderBy: [{ id_admin: 'asc' }, { id_producto: 'asc' }],
     });
-
-    const grouped = new Map<number, {
-      id_admin: number;
-      nombre_admin: string;
-      email_admin: string;
-      productos: typeof allProducts;
-    }>();
-
-    for (const p of allProducts) {
-      if (!grouped.has(p.id_admin)) {
-        grouped.set(p.id_admin, {
-          id_admin: p.id_admin,
-          nombre_admin: (p.admin as any)?.nombre_usuario || `Admin #${p.id_admin}`,
-          email_admin: (p.admin as any)?.email || '',
-          productos: [],
-        });
-      }
-      grouped.get(p.id_admin)!.productos.push(p);
-    }
-
-    return Array.from(grouped.values());
   }
 
-  async updateProducto(id: number, updateProductoDto: any, user: { id_usuario: number; roleId: number; idAdmin: number }) {
+  async updateProducto(id: number, updateProductoDto: any, idUsuario: number) {
+    // Verificar que el usuario tiene permisos para actualizar productos (roles 1, 2)
+    // Los productos son globales
+    // Si viene media, asegurarnos de que sea float
     if (updateProductoDto.media !== undefined) {
       updateProductoDto.media = updateProductoDto.media
         ? parseFloat(updateProductoDto.media)
@@ -474,30 +439,23 @@ export class FrigorificoService {
         : null;
     }
 
+    // Procesar precio_tienda si viene como número
     if (updateProductoDto.precio_tienda !== undefined) {
       updateProductoDto.precio_tienda =
         updateProductoDto.precio_tienda.toString();
     }
 
-    const where: any = { id_producto: id };
-    if (user.roleId !== 1) {
-      where.id_admin = user.id_usuario;
-    }
-
     return this.databaseService.pRODUCTOS.update({
-      where,
+      where: { id_producto: id },
       data: updateProductoDto,
     });
   }
 
-  async removeProducto(id: number, user: { id_usuario: number; roleId: number; idAdmin: number }) {
-    const where: any = { id_producto: id };
-    if (user.roleId !== 1) {
-      where.id_admin = user.id_usuario;
-    }
-
+  async removeProducto(id: number, idUsuario: number) {
+    // Verificar que el usuario tiene permisos para eliminar productos (roles 1, 2)
+    // Los productos son globales
     return this.databaseService.pRODUCTOS.delete({
-      where,
+      where: { id_producto: id },
     });
   }
 

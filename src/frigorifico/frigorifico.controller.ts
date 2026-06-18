@@ -40,25 +40,25 @@ export class FrigorificoController {
   @Post('productos')
   @Roles(1, 2)
   async createProducto(@Req() req: any, @Body() createProductoDto: any) {
-    return this.frigorificoService.createProducto(createProductoDto, req.user);
+    return this.frigorificoService.createProducto(createProductoDto, req.user.id_usuario);
   }
 
   @Get('productos')
   @Roles(1, 2, 3, 4)
   async findAllProductos(@Req() req: any) {
-    return this.frigorificoService.findAllProductos(req.user);
+    return this.frigorificoService.findAllProductos(req.user.id_usuario);
   }
 
   @Patch('productos/:id')
   @Roles(1, 2)
   async updateProducto(@Req() req: any, @Param('id') id: string, @Body() updateProductoDto: any) {
-    return this.frigorificoService.updateProducto(+id, updateProductoDto, req.user);
+    return this.frigorificoService.updateProducto(+id, updateProductoDto, req.user.id_usuario);
   }
 
   @Delete('productos/:id')
   @Roles(1, 2)
   async removeProducto(@Req() req: any, @Param('id') id: string) {
-    return this.frigorificoService.removeProducto(+id, req.user);
+    return this.frigorificoService.removeProducto(+id, req.user.id_usuario);
   }
 
   @Post('estacion/:frigorificoId')
