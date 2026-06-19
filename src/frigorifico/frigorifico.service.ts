@@ -18,13 +18,13 @@ export class FrigorificoService {
   async create(idUsuario: number, createFrigorificoDto: CreateFrigorificoDto) {
     const usuario = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario: idUsuario },
-      select: { id_admin: true },
+      select: { id_admin: true, id_rol: true },
     });
 
     return this.databaseService.fRIGORIFICO.create({
       data: {
         id_usuario: idUsuario,
-        id_admin: usuario!.id_admin,
+        id_admin: usuario!.id_rol === 2 ? idUsuario : usuario!.id_admin,
         nombre_frigorifico: createFrigorificoDto.nombre_frigorifico,
         direccion: createFrigorificoDto.direccion,
         id_ciudad: createFrigorificoDto.id_ciudad,
@@ -377,7 +377,7 @@ export class FrigorificoService {
 
     const usuario = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario: idUsuario },
-      select: { id_admin: true },
+      select: { id_admin: true, id_rol: true },
     });
 
     // Convertir tipos de datos según el schema de Prisma
@@ -392,7 +392,7 @@ export class FrigorificoService {
       media: data.media ? parseFloat(data.media) : null,
       baja: data.baja ? parseFloat(data.baja) : null,
       alta: data.alta ? parseFloat(data.alta) : null,
-      id_admin: usuario!.id_admin,
+      id_admin: usuario!.id_rol === 2 ? idUsuario : usuario!.id_admin,
     };
 
     return this.databaseService.pRODUCTOS.create({

@@ -74,14 +74,14 @@ export class TiendasService {
 
     const usuarioAdmin = await this.databaseService.uSUARIOS.findUnique({
       where: { id_usuario: id_usuario },
-      select: { id_admin: true },
+      select: { id_admin: true, id_rol: true },
     });
 
     // Crear la tienda
     const nuevaTienda = await this.databaseService.tIENDAS.create({
       data: {
         id_usuario,
-        id_admin: usuarioAdmin?.id_admin ?? 1,
+        id_admin: usuarioAdmin?.id_rol === 2 ? id_usuario : (usuarioAdmin?.id_admin ?? 1),
         nombre_tienda,
         direccion,
         id_ciudad,

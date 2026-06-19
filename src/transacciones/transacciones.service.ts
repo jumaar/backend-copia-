@@ -28,9 +28,10 @@ export class TransaccionesService {
   private async resolveIdAdmin(idUsuario: number): Promise<number> {
     const user = await this.db.uSUARIOS.findUnique({
       where: { id_usuario: idUsuario },
-      select: { id_admin: true },
+      select: { id_admin: true, id_rol: true },
     });
-    return user?.id_admin ?? 1;
+    if (!user) return 1;
+    return user.id_rol === 2 ? idUsuario : user.id_admin;
   }
 
   async crearTransaccion(params: CrearTransaccionParams): Promise<number> {
@@ -61,9 +62,9 @@ export class TransaccionesService {
     if (id_admin === undefined) {
       const user = await tx.uSUARIOS.findUnique({
         where: { id_usuario: params.id_usuario },
-        select: { id_admin: true },
+        select: { id_admin: true, id_rol: true },
       });
-      id_admin = user?.id_admin ?? 1;
+      id_admin = user ? (user.id_rol === 2 ? params.id_usuario : user.id_admin) : 1;
     }
     const result = await tx.tRANSACCIONES.create({
       data: {
@@ -138,10 +139,13 @@ export class TransaccionesService {
     let idPagoPagador: number | undefined;
     let idPagoReceptor: number | undefined;
 
-    const idAdminTicket = (await tx.uSUARIOS.findUnique({
+    const ticketUser = await tx.uSUARIOS.findUnique({
       where: { id_usuario: idUsuarioTicket },
-      select: { id_admin: true },
-    }))?.id_admin ?? 1;
+      select: { id_admin: true, id_rol: true },
+    });
+    const idAdminTicket = ticketUser
+      ? (ticketUser.id_rol === 2 ? idUsuarioTicket : ticketUser.id_admin)
+      : 1;
 
     const ticket = await tx.tRANSACCIONES.create({
       data: {
@@ -338,15 +342,21 @@ export class TransaccionesService {
     return this.db.$transaction(async (tx) => {
       const montoReceptor = montoReceptorNegativo ? -monto : monto;
 
-      const idAdminReceptor = (await tx.uSUARIOS.findUnique({
+      const receptorUser = await tx.uSUARIOS.findUnique({
         where: { id_usuario: idUsuarioReceptor },
-        select: { id_admin: true },
-      }))?.id_admin ?? 1;
+        select: { id_admin: true, id_rol: true },
+      });
+      const idAdminReceptor = receptorUser
+        ? (receptorUser.id_rol === 2 ? idUsuarioReceptor : receptorUser.id_admin)
+        : 1;
 
-      const idAdminPagador = (await tx.uSUARIOS.findUnique({
+      const pagadorUser = await tx.uSUARIOS.findUnique({
         where: { id_usuario: idUsuarioPagador },
-        select: { id_admin: true },
-      }))?.id_admin ?? 1;
+        select: { id_admin: true, id_rol: true },
+      });
+      const idAdminPagador = pagadorUser
+        ? (pagadorUser.id_rol === 2 ? idUsuarioPagador : pagadorUser.id_admin)
+        : 1;
 
       const txReceptor = await tx.tRANSACCIONES.create({
         data: {

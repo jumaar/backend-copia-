@@ -48,7 +48,7 @@ export class AuthService {
       }
       
       const { contraseña, ...result } = user;
-      const payload = { email: user.email, sub: user.id_usuario, roleId: user.id_rol, idAdmin: user.id_admin };
+      const payload = { email: user.email, sub: user.id_usuario, roleId: user.id_rol, idAdmin: user.id_rol === 1 ? 0 : (user.id_rol === 2 ? user.id_usuario : user.id_admin) };
 
       // Generar Access Token (corto)
       const accessTokenExpiry = this.configService.get<number>('ACCESS_TOKEN_EXPIRY', 900);
@@ -128,7 +128,7 @@ export class AuthService {
       where: { id_usuario: token.id_usuario_creador },
       select: { id_usuario: true, id_rol: true, id_admin: true },
     });
-    const idAdmin = creador?.id_rol === 1 ? 1 : (creador?.id_admin ?? 1);
+    const idAdmin = creador?.id_rol === 1 ? 1 : creador!.id_usuario;
 
     // 4. Hashear contraseña
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -234,7 +234,7 @@ export class AuthService {
       email: usuario.email,
       sub: usuario.id_usuario,
       roleId: usuario.id_rol,
-      idAdmin: usuario.id_admin,
+      idAdmin: usuario.id_rol === 1 ? 0 : (usuario.id_rol === 2 ? usuario.id_usuario : usuario.id_admin),
     };
     const newAccessToken = this.jwtService.sign(accessPayload, { expiresIn: `${accessTokenExpiry}s` });
 

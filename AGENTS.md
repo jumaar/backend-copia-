@@ -1,6 +1,33 @@
 # AGENTS.md — Reglas para nuevos endpoints que mnodifican la tabla `tRANSACCIONES`
 
+## Firma JWT: por qué `idAdmin` varía según el rol
+
+El campo `idAdmin` en el JWT (`req.user.idAdmin`) determina el alcance de TODAS las consultas. Se asigna así en `auth.service.ts` (login y refreshToken):
+
+| Rol | `idAdmin` en JWT | Significado |
+|---|---|---|
+| 1 (Super Admin) | `0` | `idAdmin !== 0` → false → **sin filtro**, ve todo |
+| 2 (Admin/Bloque) | `id_usuario` propio | `id_admin = id_usuario` → solo su bloque |
+| 3, 4, 5 | `USUARIOS.id_admin` | `id_admin = id_admin` → bloque de su admin padre |
+
+**Motivo:** el dueño del bloque es el rol 2, identificado por su `id_usuario`. Sus subordinados (roles 3/4/5) heredan ese `id_usuario` como `id_admin` en la tabla USUARIOS. El super admin (rol 1) recibe `0` para que el guard `idAdmin !== 0` desactive cualquier filtro y sus consultas sean globales.
+
+**Consecuencia en queries:** TODOS los endpoints usan el mismo patrón directo:
+```typescript
+...(idAdmin !== 0 && { id_admin: idAdmin })
+```
+Sin condicionales de rol, sin OR compuestos, sin effectiveIdAdmin. La lógica se resuelve en el JWT, no en cada query.
+
+**Consecuencia en creación de entidades:** al crear tiendas, neveras, frigoríficos, productos o transacciones, el `id_admin` debe asignarse así:
+```typescript
+id_admin: usuario.id_rol === 2 ? id_usuario : usuario.id_admin
+```
+Solo el rol 2 usa su `id_usuario` (él ES el bloque). Los demás usan su `USUARIOS.id_admin` heredado. El super admin (rol 1) cae en el else y usa su `id_admin` normal, ya que su visibilidad es global por JWT.
+
+**Regla para nuevos endpoints:** no repliques lógica de roles en los filtros. Usá `req.user.idAdmin` directamente con el patrón `idAdmin !== 0 && { id_admin: idAdmin }`. La firma del JWT ya resolvió el alcance.
+
 ## Regla de oro: Nunca escribas directamente sobre `tRANSACCIONES`
+
 
 Cualquier endpoint que necesite modificar la tabla `tRANSACCIONES` **debe pasar por `TransaccionesService`**. Es el único servicio autorizado (@Global, sin controller).
 
