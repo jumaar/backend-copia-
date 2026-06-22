@@ -196,37 +196,32 @@ export class AuthService {
       throw new UnauthorizedException('No se proporcionó un refresh token.');
     }
 
-    // 1. Buscar y eliminar el token en una transacción para evitar race conditions
-    const storedToken = await this.databaseService.$transaction(async (prisma) => {
-      const tokenData = await prisma.rEFRESH_TOKENS.findUnique({
-        where: { token: refreshToken },
-        include: { usuario: true },
-      });
-
-      if (!tokenData) {
-        this.logger.error(`Refresh fallido: El token no fue encontrado en la base de datos.`);
-        throw new UnauthorizedException('Refresh Token inválido o expirado.');
-      }
-
-      if (tokenData.expira_en < new Date()) {
-        // Medida de seguridad: si se intenta usar un token expirado, invalidamos todos los de ese usuario.
-        await prisma.rEFRESH_TOKENS.deleteMany({
-          where: { id_usuario: tokenData.id_usuario },
-        });
-        throw new UnauthorizedException('Refresh Token inválido o expirado.');
-      }
-
-      this.logger.debug(`Token encontrado para el usuario ID: ${tokenData.usuario.id_usuario}`);
-
-      // Eliminar el token usado
-      await prisma.rEFRESH_TOKENS.deleteMany({
-        where: { id_refresh_token: tokenData.id_refresh_token },
-      });
-
-      return tokenData;
+    // 1. Buscar y eliminar el token
+    const tokenData = await this.databaseService.rEFRESH_TOKENS.findUnique({
+      where: { token: refreshToken },
+      include: { usuario: true },
     });
 
-    const { usuario } = storedToken;
+    if (!tokenData) {
+      this.logger.error(`Refresh fallido: El token no fue encontrado en la base de datos.`);
+      throw new UnauthorizedException('Refresh Token inválido o expirado.');
+    }
+
+    if (tokenData.expira_en < new Date()) {
+      await this.databaseService.rEFRESH_TOKENS.deleteMany({
+        where: { id_usuario: tokenData.id_usuario },
+      });
+      throw new UnauthorizedException('Refresh Token inválido o expirado.');
+    }
+
+    this.logger.debug(`Token encontrado para el usuario ID: ${tokenData.usuario.id_usuario}`);
+
+    // Eliminar el token usado (deleteMany es idempotente; no necesita transacción)
+    await this.databaseService.rEFRESH_TOKENS.deleteMany({
+      where: { id_refresh_token: tokenData.id_refresh_token },
+    });
+
+    const { usuario } = tokenData;
 
     // 2. Generar un nuevo Access Token
     const accessTokenExpiry = this.configService.get<number>('ACCESS_TOKEN_EXPIRY', 900);
