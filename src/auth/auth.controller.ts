@@ -9,7 +9,7 @@ import {
   Req,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import type { Response, Request } from 'express';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { AuthService } from './auth.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
@@ -23,23 +23,25 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Post('login')
   @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 peticiones por minuto
-  async login(@Body() loginDto: LoginDto, @Res({ passthrough: true }) response: Response) {
+  async login(@Body() loginDto: LoginDto, @Res({ passthrough: true }) reply: FastifyReply) {
     const result = await this.authService.login(loginDto);
 
     // Establecer Access Token en cookie HttpOnly
-    response.cookie('accessToken', result.accessToken, {
+    reply.setCookie('accessToken', result.accessToken, {
       httpOnly: true,
-      secure: true, // HTTPS requerido para sameSite: 'none'
-      sameSite: 'none', // Permite cross-origin
-      maxAge: 15 * 60 * 1000, // 15 minutos
+      secure: true,
+      sameSite: 'none',
+      maxAge: 15 * 60, // 15 minutos (segundos, no ms)
+      path: '/',
     });
 
     // Establecer Refresh Token en cookie HttpOnly
-    response.cookie('refreshToken', result.refreshToken, {
+    reply.setCookie('refreshToken', result.refreshToken, {
       httpOnly: true,
-      secure: true, // HTTPS requerido para sameSite: 'none'
-      sameSite: 'none', // Permite cross-origin
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
+      secure: true,
+      sameSite: 'none',
+      maxAge: 7 * 24 * 60 * 60, // 7 días (segundos)
+      path: '/',
     });
 
     // No devolver tokens en la respuesta JSON
@@ -53,24 +55,26 @@ export class AuthController {
     return this.authService.createUser(createUserDto);
   }
   @Post('refresh')
-  async refresh(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
-    const oldRefreshToken = request.cookies['refreshToken'];
+  async refresh(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
+    const oldRefreshToken = request.cookies['refreshToken'] || '';
     const result = await this.authService.refreshToken(oldRefreshToken);
 
     // Establecer el NUEVO Access Token en cookie HttpOnly
-    response.cookie('accessToken', result.accessToken, {
+    reply.setCookie('accessToken', result.accessToken, {
       httpOnly: true,
-      secure: true, // HTTPS requerido para sameSite: 'none'
-      sameSite: 'none', // Permite cross-origin
-      maxAge: 15 * 60 * 1000, // 15 minutos
+      secure: true,
+      sameSite: 'none',
+      maxAge: 15 * 60, // 15 minutos (segundos)
+      path: '/',
     });
 
     // Establecer el NUEVO Refresh Token en la cookie
-    response.cookie('refreshToken', result.refreshToken, {
+    reply.setCookie('refreshToken', result.refreshToken, {
       httpOnly: true,
-      secure: true, // HTTPS requerido para sameSite: 'none'
-      sameSite: 'none', // Permite cross-origin
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
+      secure: true,
+      sameSite: 'none',
+      maxAge: 7 * 24 * 60 * 60, // 7 días (segundos)
+      path: '/',
     });
 
     // Devolver la información del usuario (igual que en login)
@@ -80,23 +84,25 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('logout')
-  async logout(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
+  async logout(@Req() request: FastifyRequest, @Res({ passthrough: true }) reply: FastifyReply) {
     const refreshToken = request.cookies['refreshToken'];
     if (refreshToken) {
       await this.authService.logout(refreshToken);
     }
 
     // Limpiar cookies HttpOnly
-    response.clearCookie('accessToken', {
+    reply.clearCookie('accessToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
+      path: '/',
     });
 
-    response.clearCookie('refreshToken', {
+    reply.clearCookie('refreshToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
+      path: '/',
     });
 
     return { message: 'Logout exitoso' };
